@@ -1,11 +1,11 @@
 /**
- * Releases of the NyxPlay monorepo (GitLab). Host builds are attached to tags named
+ * Releases of the NyxPlay monorepo (GitHub). Host builds are attached to tags named
  * `vYYYY.MM.DD.BUILD` (all components) or `host-vYYYY.MM.DD.BUILD`.
  */
-export const RELEASES_API = "https://gitlab.com/api/v4/projects/siberanka%2FNyxPlay/releases";
+export const RELEASES_API = "https://api.github.com/repos/siberanka/NyxPlay/releases";
 
 /**
- * Normalise a GitLab (or GitHub) release object to the fields used by the UI:
+ * Normalise a GitHub (or GitLab mirror) release object to the fields used by the UI:
  * tag_name, name, body, html_url, prerelease and draft.
  */
 export function normalizeRelease(release) {
@@ -17,7 +17,7 @@ export function normalizeRelease(release) {
     tag_name: tag,
     name: release.name || tag,
     body: release.body ?? release.description ?? "",
-    html_url: release.html_url ?? (release._links && release._links.self) ?? "https://gitlab.com/siberanka/NyxPlay/-/releases",
+    html_url: release.html_url ?? (release._links && release._links.self) ?? "https://github.com/siberanka/NyxPlay/releases",
     prerelease: Boolean(release.prerelease ?? release.upcoming_release) || /-(alpha|beta|rc)/i.test(tag),
     draft: Boolean(release.draft),
   };

@@ -1050,14 +1050,14 @@
             app:iconSpaceReserved="false" />
 
         <com.limelight.preferences.WebLauncherPreference
-            url="https://gitlab.com/siberanka/NyxPlay/-/blob/main/CREDITS.md"
+            url="https://github.com/siberanka/NyxPlay/blob/main/CREDITS.md"
             android:key="option_about_licenses"
             android:summary="@string/summary_about_licenses"
             android:title="@string/title_about_licenses"
             app:iconSpaceReserved="false" />
 
         <com.limelight.preferences.WebLauncherPreference
-            url="https://gitlab.com/siberanka/NyxPlay/-/releases"
+            url="https://github.com/siberanka/NyxPlay/releases"
             android:key="option_software_release"
             android:summary="@string/summary_software_update"
             android:title="@string/title_software_update"

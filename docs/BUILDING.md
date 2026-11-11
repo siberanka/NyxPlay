@@ -3,7 +3,7 @@
 Clone the repository with all submodules first:
 
 ```bash
-git clone --recurse-submodules https://gitlab.com/siberanka/NyxPlay.git
+git clone --recurse-submodules https://github.com/siberanka/NyxPlay.git
 cd NyxPlay
 # existing clone:
 git submodule update --init --recursive

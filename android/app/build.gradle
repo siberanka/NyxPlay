@@ -55,7 +55,7 @@ android {
 
             resValue "string",
                     "obtainium_app_url",
-                    "https://gitlab.com/siberanka/NyxPlay/-/releases"
+                    "https://github.com/siberanka/NyxPlay/releases"
 
             applicationId "com.siberanka.nyxplay"
             dimension "root"
