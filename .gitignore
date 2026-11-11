@@ -1,0 +1,44 @@
+# NyxPlay monorepo – files that must never be committed.
+# Component specific rules live in android/.gitignore, host/.gitignore and pc/.gitignore.
+
+# Build output
+/android/app/build/
+/android/build/
+/android/.gradle/
+/android/.kotlin/
+/host/build/
+/host/node_modules/
+/pc/libs/
+/pc-build/
+/build/
+
+# Local machine configuration and secrets
+local.properties
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+!**/third-party/**/*.pem
+.env
+.env.*
+signing.properties
+key.properties
+
+# Host runtime state (credentials, paired clients, logs)
+sunshine_state.json
+sunshine.conf
+nyxplay-host.log
+**/credentials/
+
+# Editors and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python
+__pycache__/
+*.pyc
