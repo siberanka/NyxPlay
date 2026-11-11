@@ -248,8 +248,16 @@ namespace text_input {
 
       HRESULT STDMETHODCALLTYPE HandleFocusChangedEvent(IUIAutomationElement *sender) override;
 
+      /**
+       * @brief Stop forwarding events to the monitor and wait for callbacks that are already running.
+       * @note After this returns the monitor may be destroyed safely, even if UI Automation still
+       *       delivers late events on its worker threads.
+       */
       void detach() {
         _monitor.store(nullptr);
+        while (_inflight.load() > 0) {
+          std::this_thread::yield();
+        }
       }
 
     private:
@@ -257,6 +265,7 @@ namespace text_input {
 
       std::atomic<ULONG> _refs {1};
       std::atomic<monitor_t *> _monitor;
+      std::atomic<int> _inflight {0};
     };
 
     /**
@@ -323,11 +332,14 @@ namespace text_input {
       }
 
       void unregister_uia() {
+        if (_handler) {
+          // Detach first so late events can no longer reach this monitor
+          _handler->detach();
+        }
         if (_automation && _handler) {
           _automation->RemoveFocusChangedEventHandler(_handler);
         }
         if (_handler) {
-          _handler->detach();
           _handler->Release();
           _handler = nullptr;
         }
@@ -462,12 +474,18 @@ namespace text_input {
     };
 
     HRESULT STDMETHODCALLTYPE focus_handler_t::HandleFocusChangedEvent(IUIAutomationElement *sender) {
-      auto monitor = _monitor.load();
-      if (!monitor || !sender) {
+      if (!sender) {
         return S_OK;
       }
 
-      monitor->on_focus(classify(describe(sender)));
+      // Inspect the element before touching the monitor (cross process UIA calls can be slow)
+      auto state = classify(describe(sender));
+
+      ++_inflight;
+      if (auto monitor = _monitor.load()) {
+        monitor->on_focus(state);
+      }
+      --_inflight;
       return S_OK;
     }
   }  // namespace
