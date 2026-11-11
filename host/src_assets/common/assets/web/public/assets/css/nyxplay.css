@@ -1,0 +1,111 @@
+/* NyxPlay Host web UI theme
+ * Selectors are prefixed with "html" so they win over the bundled Bootstrap styles
+ * regardless of the order in which the bundler emits the stylesheets. */
+
+/* Hide pages while localization is loading */
+[v-cloak] {
+    display: none;
+}
+
+html:root,
+html[data-bs-theme=light] {
+    --nyx-night: #0b0c21;
+    --nyx-violet: #6d4dff;
+    --nyx-violet-strong: #5636e8;
+    --nyx-lavender: #c4b5fd;
+
+    --bs-primary: #6d4dff;
+    --bs-primary-rgb: 109, 77, 255;
+    --bs-primary-text-emphasis: #3b23a8;
+    --bs-primary-bg-subtle: #ebe5ff;
+    --bs-primary-border-subtle: #c9bcff;
+    --bs-link-color: #5636e8;
+    --bs-link-color-rgb: 86, 54, 232;
+    --bs-link-hover-color: #3f22c7;
+    --bs-link-hover-color-rgb: 63, 34, 199;
+    --bs-focus-ring-color: rgba(109, 77, 255, .25);
+    --bs-body-bg: #f7f6fc;
+    --bs-body-bg-rgb: 247, 246, 252;
+}
+
+html[data-bs-theme=dark] {
+    --nyx-violet: #8b73ff;
+    --nyx-violet-strong: #a08cff;
+
+    --bs-body-bg: #0d0e22;
+    --bs-body-bg-rgb: 13, 14, 34;
+    --bs-secondary-bg: #191a3d;
+    --bs-secondary-bg-rgb: 25, 26, 61;
+    --bs-tertiary-bg: #141535;
+    --bs-tertiary-bg-rgb: 20, 21, 53;
+    --bs-border-color: #2c2d5c;
+    --bs-primary: #8b73ff;
+    --bs-primary-rgb: 139, 115, 255;
+    --bs-primary-text-emphasis: #d4c9ff;
+    --bs-primary-bg-subtle: #231a55;
+    --bs-primary-border-subtle: #3d2f8a;
+    --bs-link-color: #b6a6ff;
+    --bs-link-color-rgb: 182, 166, 255;
+    --bs-link-hover-color: #d4c9ff;
+    --bs-link-hover-color-rgb: 212, 201, 255;
+}
+
+html .btn-primary {
+    --bs-btn-bg: var(--nyx-violet);
+    --bs-btn-border-color: var(--nyx-violet);
+    --bs-btn-hover-bg: var(--nyx-violet-strong);
+    --bs-btn-hover-border-color: var(--nyx-violet-strong);
+    --bs-btn-active-bg: var(--nyx-violet-strong);
+    --bs-btn-active-border-color: var(--nyx-violet-strong);
+    --bs-btn-disabled-bg: var(--nyx-violet);
+    --bs-btn-disabled-border-color: var(--nyx-violet);
+}
+
+html .btn-outline-primary {
+    --bs-btn-color: var(--nyx-violet);
+    --bs-btn-border-color: var(--nyx-violet);
+    --bs-btn-hover-bg: var(--nyx-violet);
+    --bs-btn-hover-border-color: var(--nyx-violet);
+    --bs-btn-active-bg: var(--nyx-violet-strong);
+    --bs-btn-active-border-color: var(--nyx-violet-strong);
+}
+
+html .form-check-input:checked {
+    background-color: var(--nyx-violet);
+    border-color: var(--nyx-violet);
+}
+
+html .form-control:focus,
+html .form-select:focus,
+html .form-check-input:focus {
+    border-color: var(--bs-primary-border-subtle);
+    box-shadow: 0 0 0 .25rem var(--bs-focus-ring-color, rgba(109, 77, 255, .25));
+}
+
+html .card {
+    border-radius: 14px;
+    border-color: var(--bs-border-color-translucent);
+    box-shadow: 0 1px 2px rgba(11, 12, 33, .06), 0 6px 24px rgba(11, 12, 33, .05);
+}
+
+html[data-bs-theme=dark] .card {
+    background-color: var(--bs-tertiary-bg);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 8px 28px rgba(0, 0, 0, .25);
+}
+
+.nav-tabs .nav-link.active,
+.nav-pills .nav-link.active {
+    border-bottom-color: var(--nyx-violet);
+}
+
+[data-bs-theme=dark] .element {
+    color: var(--bs-primary-text-emphasis);
+    background-color: var(--bs-primary-bg-subtle);
+}
+
+@media (prefers-color-scheme: dark) {
+    .element {
+        color: var(--bs-primary-text-emphasis);
+        background-color: var(--bs-primary-bg-subtle);
+    }
+}

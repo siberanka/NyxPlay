@@ -4,19 +4,22 @@ cmake_minimum_required(VERSION 3.20)
 # `cmake_path(CONVERT ... TO_NATIVE_PATH_LIST ...)` requires 3.20
 # todo - set this conditionally
 
-project(Apollo VERSION 0.0.0
-        DESCRIPTION "Self-hosted game stream host for Artemis"
-        HOMEPAGE_URL "https://github.com/ClassicOldSong/Apollo")
+project(NyxPlayHost VERSION 2026.11.11.1
+        DESCRIPTION "Self-hosted game stream host for NyxPlay"
+        HOMEPAGE_URL "https://github.com/siberanka/NyxPlay")
+
+# User facing product name (the CMake project name cannot contain spaces safely)
+set(PROJECT_DISPLAY_NAME "NyxPlay Host")
 
 set(PROJECT_LICENSE "GPL-3.0-only")
 
 set(PROJECT_FQDN "dev.lizardbyte.app.Sunshine")
 
-set(PROJECT_BRIEF_DESCRIPTION "GameStream host for Artemis")  # must be <= 35 characters
+set(PROJECT_BRIEF_DESCRIPTION "GameStream host for NyxPlay")  # must be <= 35 characters
 
 set(PROJECT_LONG_DESCRIPTION "Offering low latency, cloud gaming server capabilities with support for AMD, Intel, \
-and Nvidia GPUs for hardware encoding. Software encoding is also available. You can connect to Apollo from any \
-Artemis client on a variety of devices. A web UI is provided to allow configuration, and client pairing, from \
+and Nvidia GPUs for hardware encoding. Software encoding is also available. You can connect to NyxPlay Host from \
+NyxPlay, Artemis and Moonlight clients on a variety of devices. A web UI is provided to allow configuration, and client pairing, from \
 your favorite web browser. Pair from the local server or any mobile device.")
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)

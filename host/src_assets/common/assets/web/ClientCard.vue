@@ -23,20 +23,20 @@
         {
             platform: 'Android',
             icon: 'fa-brands fa-android',
+            name: 'NyxPlay',
+            link: 'https://github.com/siberanka/NyxPlay/tree/main/android'
+        },
+        {
+            platform: 'Windows / Linux / macOS',
+            icon: 'fa-solid fa-desktop',
+            name: 'NyxPlay',
+            link: 'https://github.com/siberanka/NyxPlay/tree/main/pc'
+        },
+        {
+            platform: 'Android',
+            icon: 'fa-brands fa-android',
             name: 'Artemis',
             link: 'https://github.com/ClassicOldSong/moonlight-android'
-        },
-        {
-            platform: 'iOS',
-            icon: 'fa-brands fa-apple',
-            name: 'Coming soon...',
-            link: ''
-        },
-        {
-            platform: 'Desktop',
-            icon: 'fa-solid fa-desktop',
-            name: 'Coming soon...',
-            link: ''
         }
     ]
 

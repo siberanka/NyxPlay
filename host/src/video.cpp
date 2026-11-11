@@ -824,14 +824,10 @@ namespace video {
         {"coder"s, &config::video.amd.amd_coder},
         {"enforce_hrd"s, &config::video.amd.amd_enforce_hrd},
       },
-      {
-        // SDR-specific options
-        {"profile"s, [](const config_t &cfg) {
-           if (cfg.profile == 66) return "baseline"s;
-           if (cfg.profile == 77) return "main"s;
-           return "high"s;
-         }},
-      },
+      // SDR-specific options
+      // NyxPlay: upstream referenced a non-existent config_t::profile field here, which broke the
+      // build. Keep FFmpeg's default AMF H.264 profile (behaviour prior to that change).
+      {},
       {},  // HDR-specific options
       {},  // YUV444 SDR-specific options
       {},  // YUV444 HDR-specific options

@@ -515,6 +515,7 @@ namespace config {
 
     "1920x1080x60",  // fallback_mode
     false, // isolated Display
+    true, // virtual_display_driver
     false, // ignore_encoder_probe_failure
   };
 
@@ -1208,6 +1209,7 @@ namespace config {
 
     string_f(vars, "fallback_mode", video.fallback_mode);
     bool_f(vars, "isolated_virtual_display_option", video.isolated_virtual_display_option);
+    bool_f(vars, "virtual_display_driver", video.virtual_display_driver);
     bool_f(vars, "ignore_encoder_probe_failure", video.ignore_encoder_probe_failure);
 
     path_f(vars, "pkey", nvhttp.pkey);
@@ -1479,7 +1481,7 @@ namespace config {
     // so that service instance will do the work instead.
 
     if (!config_loaded && !shortcut_launch) {
-      BOOST_LOG(fatal) << "To relaunch Apollo successfully, use the shortcut in the Start Menu. Do not run sunshine.exe manually."sv;
+      BOOST_LOG(fatal) << "To relaunch NyxPlay Host successfully, use the shortcut in the Start Menu. Do not run nyxplay-host.exe manually."sv;
       std::this_thread::sleep_for(10s);
 #else
     if (!config_loaded) {

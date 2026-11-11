@@ -1,43 +1,66 @@
-# Apollo
+<p align="center"><img src="../branding/logo/nyxplay-host-logo.png" width="120" alt="NyxPlay Host"></p>
 
-Apollo is a self-hosted desktop stream host for [Artemis(Moonlight Noir)](https://github.com/ClassicOldSong/moonlight-android). Offering low latency, native client resolution, cloud gaming server capabilities with support for AMD, Intel, and Nvidia GPUs for hardware encoding. Software encoding is also available. A web UI is provided to allow configuration and client pairing from your favorite web browser. Pair from the local server or any mobile device.
+# NyxPlay Host
 
-Major features:
+NyxPlay Host is the self-hosted game and desktop streaming server of [NyxPlay](../README.md). It offers
+low latency streaming at the native resolution of every client, hardware encoding on AMD, Intel and
+NVIDIA GPUs (software encoding is available too) and a web UI for configuration and pairing.
 
-- [x] Built-in Virtual Display with HDR support that matches the resolution/framerate config of your client automatically
+NyxPlay Host is based on [Apollo](https://github.com/ClassicOldSong/Apollo) by ClassicOldSong, which is a
+fork of [Sunshine](https://github.com/LizardByte/Sunshine) by LizardByte. Every Apollo feature is kept:
+
+- [x] Built-in virtual display (SudoVDA) with HDR support that follows the resolution and refresh rate of each client
 - [x] Permission management for clients
 - [x] Clipboard sync
-- [x] Commands for client connection/disconnection (checkout [Auto pause/resume games](https://github.com/ClassicOldSong/Apollo/wiki/Auto-pause-resume-games))
+- [x] Commands for client connection/disconnection and server commands
 - [x] Input only mode
+
+NyxPlay additions:
+
+- [x] **Text input focus detection** (Windows UI Automation): NyxPlay clients open their on-screen keyboard
+  when a text field is tapped ([protocol](../docs/protocol/text-input-state.md))
+- [x] **Coexistence with Apollo/Sunshine:** own executable (`nyxplay-host.exe`), service
+  (`NyxPlayHostService`), firewall rule, NVIDIA profile, install directory and logs; the
+  `virtual_display_driver` option leaves SudoVDA to another host
+- [x] `NYXPLAY_*` environment variables for application and client commands (`APOLLO_*`/`SUNSHINE_*` stay available)
+- [x] NyxPlay web UI theme, tray icons and a complete Turkish translation
+- [x] Calendar versioning (`2026.11.11.1`)
 
 ## Usage
 
-Refer to LizardByte's documentation hosted on [Read the Docs](https://docs.lizardbyte.dev/projects/sunshine) for now.
+Install NyxPlay Host, open the web UI (`https://localhost:47990` by default) and create an account. Pair
+NyxPlay, Artemis or Moonlight clients from the PIN page. The upstream documentation applies to most
+options: [Sunshine docs](https://docs.lizardbyte.dev/projects/sunshine) and the
+[Apollo wiki](https://github.com/ClassicOldSong/Apollo/wiki).
 
-Currently Virtual Display support is Windows only, Linux support is planned and will be implemented in the future.
+### Running next to Apollo or Sunshine
+
+Both hosts use the GameStream ports by default. To run them at the same time give NyxPlay Host a different
+base port (`port = 57989` in the configuration or on the *Network* tab) and, if Apollo should keep control of
+the virtual display driver, disable *Use the virtual display driver (SudoVDA)* on the *Audio/Video* tab.
 
 ## About Permission System
 
 Check out the [Wiki](https://github.com/ClassicOldSong/Apollo/wiki/Permission-System)
 
 > [!NOTE]
-> The **FIRST** client paired with Apollo will be granted with FULL permissions, then other newly paired clients will only be granted with `View Streams` and `List Apps` permission. If you encounter `Permission Denied` error when trying to launch any app, go check the permission for that device and grant `Launch Apps` permission. The same applies to the situation when you find that you can't move mouse or type with keyboard on newly paired clients, grant the corresponding client `Mouse Input` and `Keyboard Input` permissions.
+> The **FIRST** client paired with NyxPlay Host will be granted with FULL permissions, then other newly paired clients will only be granted with `View Streams` and `List Apps` permission. If you encounter `Permission Denied` error when trying to launch any app, go check the permission for that device and grant `Launch Apps` permission. The same applies to the situation when you find that you can't move mouse or type with keyboard on newly paired clients, grant the corresponding client `Mouse Input` and `Keyboard Input` permissions.
 
 ## About Virtual Display
 
 > [!WARNING]
-> ***It is highly recommend to remove any other virtual display solutions from your system and Apollo/Sunshine config, to reduce confusions and compatibility issues.***
+> ***It is highly recommend to remove any other virtual display solutions from your system and NyxPlay Host/Sunshine config, to reduce confusions and compatibility issues.***
 
 > [!NOTE]
-> **TL;DR** Just treat your Artemis/Moonlight client like a dedicated PnP monitor with Apollo.
+> **TL;DR** Just treat your NyxPlay/Artemis/Moonlight client like a dedicated PnP monitor with NyxPlay Host.
 
-Apollo uses SudoVDA for virtual display. It features auto resolution and framerate matching for your Artemis/Moonlight clients. The virtual display is created upon the stream starts and removed once the app quits. **If you do not see a new virtual display added or removed when the stream starts or stops, there may be a driver misconfiguration, or another persistent virtual display might still be active.**
+NyxPlay Host uses SudoVDA for virtual display. It features auto resolution and framerate matching for your NyxPlay/Artemis/Moonlight clients. The virtual display is created upon the stream starts and removed once the app quits. **If you do not see a new virtual display added or removed when the stream starts or stops, there may be a driver misconfiguration, or another persistent virtual display might still be active.**
 
-The virtual display works just like any physically attached monitors with SudoVDA, there's completely no need for a super complicated solution to "fix" resolution configurations for your devices. Unlike all other solutions that reuses one identity or generate a random one each time for any virtual display sessions, **Apollo assigns a fixed identity for each Artemis/Moonlight client, so your display configuration will be automatically remembered and managed by Windows natively.**
+The virtual display works just like any physically attached monitors with SudoVDA, there's completely no need for a super complicated solution to "fix" resolution configurations for your devices. Unlike all other solutions that reuses one identity or generate a random one each time for any virtual display sessions, **NyxPlay Host assigns a fixed identity for each NyxPlay/Artemis/Moonlight client, so your display configuration will be automatically remembered and managed by Windows natively.**
 
 ## Configuration for dual GPU laptops
 
-Apollo supports dual GPUs seamlessly.
+NyxPlay Host supports dual GPUs seamlessly.
 
 If you want to use your dGPU, just set the `Adapter Name` to your dGPU and enable `Headless mode` in `Audio/Video` tab, save and restart your computer. No dummy plug is needed any more, the image will be rendered and encoded directly from your dGPU.
 
@@ -48,17 +71,17 @@ HDR starts supporting from Windows 11 23H2 and generally supported on 24H2. Some
 > [!NOTE]
 > The below section is written for professional media workers. It doesn't stop you from enabling HDR if you know what you're doing and have deep understanding about how HDR works.
 >
-> Apollo and SudoVDA can handle HDR just fine like any other streaming solutions.
+> NyxPlay Host and SudoVDA can handle HDR just fine like any other streaming solutions.
 >
 > If you have had good experience with HDR previously, you can safely ignore this section.
 >
-> If you're curious, read on, but don't blame Apollo for poor HDR support.
+> If you're curious, read on, but don't blame NyxPlay Host for poor HDR support.
 
 Whether HDR streaming looks good, it depends completely on your client.
 
 In short, ICC color correction should be totally useless while streaming HDR. It's your client's job to get HDR content displayed right, not the host. But in fact, it does affect the captured video stream and reflect changes on devices that can handle HDR correctly. On other devices that can't, the info is not respected at all.
 
-It's very complicated to explain why HDR is a total mess, and why enabling HDR makes the image appear dark/yellow. If it's your first time got HDR streaming working, and thinks HDR looks awful, you're right, but that's not Apollo's fault, it's your device that tone mapped SDR content to the maximum of the capability of its screen, there's no headroom for anything beyond that actual peak brightness for HDR. For details, please take a look [here](https://github.com/ClassicOldSong/Apollo/issues/164).
+It's very complicated to explain why HDR is a total mess, and why enabling HDR makes the image appear dark/yellow. If it's your first time got HDR streaming working, and thinks HDR looks awful, you're right, but that's not NyxPlay Host's fault, it's your device that tone mapped SDR content to the maximum of the capability of its screen, there's no headroom for anything beyond that actual peak brightness for HDR. For details, please take a look [here](https://github.com/ClassicOldSong/Apollo/issues/164).
 
 For client devices, usually Apple products that have HDR capability can be trusted to have good results, other than that, your luck depends.
 
@@ -71,7 +94,7 @@ SDR actually provides much more stable color accuracy, and are widely supported 
 
 </details>
 
-## How to run multiple instances of Apollo for multiple virtual displays
+## How to run multiple instances of NyxPlay Host for multiple virtual displays
 
 Follow the instructions in the [Wiki](https://github.com/ClassicOldSong/Apollo/wiki/How-to-start-multiple-instances-of-Apollo).
 
@@ -83,7 +106,7 @@ Here're some common causes and solutions for stutters: [WiKi](https://github.com
 
 ## Device specific setups
 - Pixel devices might not be able to use native resolution:
-  - Change the device resolution to Max: https://github.com/ClassicOldSong/Apollo/issues/700
+  - Change the device resolution to Max: https://github.com/ClassicOldSong/NyxPlay Host/issues/700
 
 ## System Requirements
 
@@ -131,79 +154,11 @@ Here're some common causes and solutions for stutters: [WiKi](https://github.com
 | Network       | Host: CAT5e ethernet or better |
 |               | Client: CAT5e ethernet or better |
 
-## Integrations
+## Building
 
-SudoVDA: Virtual Display Adapter Driver used in Apollo
-
-[Artemis](https://github.com/ClassicOldSong/moonlight-android): Integrated Virtual Display options control from client side
-
-**NOTE**: Artemis currently supports Android only. Other platforms will come later.
-
-## Support
-
-Currently support is only provided via GitHub Issues/Discussions.
-
-No real time chat support will ever be provided for Apollo and Artemis. Including but not limited to:
-
-- Discord
-- Telegram
-- Whatsapp
-- QQ
-- WeChat 
-
-> When there's a chat, there're dramas. -- Confucius
-
-## Downloads
-
-### Direct Download
-
-**Recommended**
-
-[Releases](https://github.com/ClassicOldSong/Apollo/releases)
-
-### WinGet
-
-**Note:** Community maintained
-
-In an elevated PowerShell window, run
-
-```pwsh
-winget install ClassicOldSong.Apollo
-
-```
-
-You'll need WinGet installed first.
-
-### Chocolatey
-
-**Note:** Community maintained
-
-You can also install the apollo streaming server with chocolatey.
-
-Install Chocolatey if you don't have it, then run the following command in an elevated PowerShell/CMD window:
-
-```pwsh
-choco upgrade apollo -y 
-```
-
-Same command can be used to upgrade, add to a scheduled task to automate updates.
-
-See more details on the chocolatey package [here](https://community.chocolatey.org/packages/apollo)
-
-## Disclaimer
-
-I got kicked from Moonlight and Sunshine's Discord server and banned from Sunshine's GitHub repo literally for helping people out.
-
-This is what I got for finding a bug, opened an issue, getting no response, troubleshoot myself, fixed the issue myself, shared it by PR to the main repo hoping my efforts can help someone else during the maintenance gap.
-
-Yes, I'm going away. [Apollo](https://github.com/ClassicOldSong/Apollo) and [Artemis(Moonlight Noir)](https://github.com/ClassicOldSong/moonlight-android) will no longer be compatible with OG Sunshine and OG Moonlight eventually, but they'll work even better with much more carefully designed features.
-
-The Moonlight repo had stayed silent for 5 months, with nobody actually responding to issues, and people are getting totally no help besides the limited FAQ in their Discord server. I tried to answer issues and questions, solve problems within my ability but I got kicked out just for helping others.
-
-**PRs for feature improvements are welcomed here unlike the main repo, your ideas are more likely to be appreciated and your efforts are actually being respected. We welcome people who can and willing to share their efforts, helping yourselves and other people in need.**
-
-**Update**: They have contacted me and apologized for this incident, but the fact it **happened** still motivated me to start my own fork.
+See [docs/BUILDING.md](../docs/BUILDING.md#nyxplay-host) (Windows, MSYS2 UCRT64) and the upstream
+[building guide](docs/building.md) for Linux and macOS.
 
 ## License
 
-GPLv3
+GPLv3 – see [LICENSE](LICENSE), [NOTICE](NOTICE) and [CREDITS.md](../CREDITS.md).

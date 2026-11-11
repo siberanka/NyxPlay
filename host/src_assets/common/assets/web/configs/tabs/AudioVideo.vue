@@ -170,6 +170,15 @@ const validateFallbackMode = (event) => {
               v-if="platform === 'windows'"
     ></Checkbox>
 
+    <!-- Virtual Display Driver (NyxPlay) -->
+    <Checkbox class="mb-3"
+              id="virtual_display_driver"
+              locale-prefix="config"
+              v-model="config.virtual_display_driver"
+              default="true"
+              v-if="platform === 'windows'"
+    ></Checkbox>
+
     <!-- SudoVDA Driver Status -->
     <div class="alert" :class="[vdisplay ? 'alert-warning' : 'alert-success']" v-if="platform === 'windows'">
       <i class="fa-solid fa-xl fa-circle-info"></i> SudoVDA Driver status: {{currentDriverStatus}}

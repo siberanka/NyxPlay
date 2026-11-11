@@ -1,8 +1,9 @@
 <template>
-  <nav class="navbar navbar-light navbar-expand-lg navbar-background header">
+  <nav class="navbar navbar-dark navbar-expand-lg navbar-background header">
     <div class="container">
-      <a class="navbar-brand" href="./" title="Apollo">
-        <img src="/images/logo-apollo-45.png" height="45" alt="Apollo">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="./" title="NyxPlay Host">
+        <img src="/images/logo-nyxplay-host-45.png" height="45" width="45" alt="NyxPlay Host">
+        <span class="brand-text">NyxPlay <span class="brand-accent">Host</span></span>
       </a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
               aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,30 +55,44 @@ export default {
 
 <style>
 .navbar-background {
-  background-color: #ffc400
+  background: linear-gradient(100deg, var(--nyx-night) 0%, #17133f 55%, #2a1c6b 100%);
+  box-shadow: 0 2px 18px rgba(11, 12, 33, .35);
+}
+
+.header .brand-text {
+  color: #f4f0ff;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.header .brand-accent {
+  color: var(--nyx-lavender);
+  font-weight: 400;
 }
 
 .header .nav-link {
-  color: rgba(0, 0, 0, .65) !important;
+  color: rgba(237, 233, 254, .72) !important;
+  border-radius: .5rem;
 }
 
 .header .nav-link.active {
-  color: rgb(0, 0, 0) !important;
+  color: #ffffff !important;
   font-weight: 500;
+  background: rgba(196, 181, 253, .14);
 }
 
 .header .nav-link:hover {
-  color: rgb(0, 0, 0) !important;
-  font-weight: 500;
+  color: #ffffff !important;
+  background: rgba(196, 181, 253, .10);
 }
 
 .header .navbar-toggler {
-  color: rgba(var(--bs-dark-rgb), .65) !important;
-  border: var(--bs-border-width) solid rgba(var(--bs-dark-rgb), 0.15) !important;
+  color: rgba(237, 233, 254, .8) !important;
+  border: var(--bs-border-width) solid rgba(237, 233, 254, .25) !important;
 }
 
 .header .navbar-toggler-icon {
-  --bs-navbar-toggler-icon-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%2833, 37, 41, 0.75%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") !important;
+  --bs-navbar-toggler-icon-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28237, 233, 254, 0.85%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") !important;
 }
 
 .form-control::placeholder {

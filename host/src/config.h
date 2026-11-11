@@ -148,6 +148,7 @@ namespace config {
 
     std::string fallback_mode;
     bool isolated_virtual_display_option;
+    bool virtual_display_driver;  ///< NyxPlay: allow using the SudoVDA virtual display driver
     bool ignore_encoder_probe_failure;
   };
 

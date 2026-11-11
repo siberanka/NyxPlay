@@ -1,5 +1,5 @@
 {
-  "name": "sunshine",
+  "name": "nyxplay-host",
   "version": "0.0.0",
   "scripts": {
     "build": "vite build --debug",

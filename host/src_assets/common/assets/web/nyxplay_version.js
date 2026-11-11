@@ -1,8 +1,21 @@
-class ApolloVersion {
+/**
+ * Releases of the NyxPlay monorepo. Host builds are attached to tags named
+ * `vYYYY.MM.DD.BUILD` (all components) or `host-vYYYY.MM.DD.BUILD`.
+ */
+export const RELEASES_API = "https://api.github.com/repos/siberanka/NyxPlay/releases";
+
+class NyxPlayVersion {
+  static isHostRelease(release) {
+    if (!release || !release.tag_name) {
+      return false;
+    }
+    return /^(host-)?v?\d{4}\.\d{1,2}\.\d{1,2}\.\d+/.test(release.tag_name);
+  }
+
   constructor(release = null, version = null) {
     if (release) {
       this.release = release;
-      this.version = release.tag_name;
+      this.version = release.tag_name.replace(/^host-/, '');
       this.versionName = release.name;
       this.versionTag = release.tag_tag;
     } else if (version) {
@@ -46,18 +59,18 @@ class ApolloVersion {
 
   isGreater(otherVersion, checkIncremental) {
     let otherVersionParts;
-    if (otherVersion instanceof ApolloVersion) {
+    if (otherVersion instanceof NyxPlayVersion) {
       otherVersionParts = otherVersion.versionParts;
     } else if (typeof otherVersion === 'string') {
       otherVersionParts = this.parseVersion(otherVersion);
     } else {
-      throw new Error('Invalid argument: otherVersion must be a ApolloVersion object or a version string');
+      throw new Error('Invalid argument: otherVersion must be a NyxPlayVersion object or a version string');
     }
 
     if (!this.versionParts || !otherVersionParts) {
       return false;
     }
-    for (let i = 0; i < Math.min(checkIncremental && 4 || 3, this.versionParts.length, otherVersionParts.length); i++) {
+    for (let i = 0; i < Math.min(4, this.versionParts.length, otherVersionParts.length); i++) {
       if (this.versionParts[i] > otherVersionParts[i]) {
         return true;
       } else if (this.versionParts[i] < otherVersionParts[i]) {
@@ -68,4 +81,4 @@ class ApolloVersion {
   }
 }
 
-export default ApolloVersion;
+export default NyxPlayVersion;

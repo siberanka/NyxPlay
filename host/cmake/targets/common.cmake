@@ -2,6 +2,10 @@
 # this file will also load platform specific macros
 
 add_executable(sunshine ${SUNSHINE_TARGET_FILES})
+if(WIN32)
+    # NyxPlay: distinct executable name so the host can live next to Sunshine/Apollo installs
+    set_target_properties(sunshine PROPERTIES OUTPUT_NAME "nyxplay-host")
+endif()
 foreach(dep ${SUNSHINE_TARGET_DEPENDENCIES})
     add_dependencies(sunshine ${dep})  # compile these before sunshine
 endforeach()

@@ -49,6 +49,22 @@
 #define DEFAULT_APP_IMAGE_PATH SUNSHINE_ASSETS_DIR "/box.png"
 
 namespace proc {
+  /**
+   * @brief Mirror APOLLO_* environment variables as NYXPLAY_* (NyxPlay Host).
+   */
+  static void mirror_nyxplay_env(boost::process::v1::environment &env) {
+    std::vector<std::pair<std::string, std::string>> mirrored;
+    for (const auto &entry : env) {
+      const auto name = entry.get_name();
+      if (name.rfind("APOLLO_", 0) == 0) {
+        mirrored.emplace_back("NYXPLAY_" + name.substr(7), entry.to_string());
+      }
+    }
+    for (const auto &[name, value] : mirrored) {
+      env[name] = value;
+    }
+  }
+
   using namespace std::literals;
   namespace pt = boost::property_tree;
 
@@ -68,6 +84,18 @@ namespace proc {
   }
 
   void initVDisplayDriver() {
+    if (!config::video.virtual_display_driver) {
+      // NyxPlay: the virtual display driver can be disabled, e.g. when another host
+      // (Apollo) owns SudoVDA on this machine or for isolated test instances.
+      static bool logged = false;
+      if (!logged) {
+        BOOST_LOG(info) << "Virtual display driver disabled by configuration (virtual_display_driver = disabled)"sv;
+        logged = true;
+      }
+      vDisplayDriverStatus = VDISPLAY::DRIVER_STATUS::UNKNOWN;
+      return;
+    }
+
     vDisplayDriverStatus = VDISPLAY::openVDisplayDevice();
     if (vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK) {
       if (!VDISPLAY::startPingThread(onVDisplayWatchdogFailed)) {
@@ -381,6 +409,7 @@ namespace proc {
     _env["APOLLO_APP_NAME"] = _app.name;
     _env["APOLLO_APP_UUID"] = _app.uuid;
     _env["APOLLO_APP_STATUS"] = "STARTING";
+    _env["NYXPLAY_APP_STATUS"] = "STARTING";
     _env["APOLLO_CLIENT_UUID"] = launch_session->unique_id;
     _env["APOLLO_CLIENT_NAME"] = launch_session->device_name;
     _env["APOLLO_CLIENT_WIDTH"] = std::to_string(render_width);
@@ -411,6 +440,9 @@ namespace proc {
     }
     _env["SUNSHINE_CLIENT_AUDIO_SURROUND_PARAMS"] = launch_session->surround_params;
     _env["APOLLO_CLIENT_AUDIO_SURROUND_PARAMS"] = launch_session->surround_params;
+
+    // NyxPlay: expose every APOLLO_* variable as NYXPLAY_* as well
+    mirror_nyxplay_env(_env);
 
     if (!_app.output.empty() && _app.output != "null"sv) {
 #ifdef _WIN32
@@ -464,6 +496,7 @@ namespace proc {
     }
 
     _env["APOLLO_APP_STATUS"] = "RUNNING";
+    _env["NYXPLAY_APP_STATUS"] = "RUNNING";
 
     for (auto &cmd : _app.detached) {
       boost::filesystem::path working_dir = _app.working_dir.empty() ?
@@ -608,6 +641,7 @@ namespace proc {
       auto exec_thread = std::thread([cmd_list = _app.state_cmds, app_working_dir = _app.working_dir, _env = _env]() mutable {
 
         _env["APOLLO_APP_STATUS"] = "RESUMING";
+        _env["NYXPLAY_APP_STATUS"] = "RESUMING";
 
         std::error_code ec;
         auto _state_resume_it = std::begin(cmd_list);
@@ -662,6 +696,7 @@ namespace proc {
     if (!_app.state_cmds.empty()) {
       auto exec_thread = std::thread([cmd_list = _app.state_cmds, app_working_dir = _app.working_dir, _env = _env]() mutable {
         _env["APOLLO_APP_STATUS"] = "PAUSING";
+        _env["NYXPLAY_APP_STATUS"] = "PAUSING";
 
         std::error_code ec;
         auto _state_pause_it = std::begin(cmd_list);
@@ -715,6 +750,7 @@ namespace proc {
     _process_group = boost::process::v1::group();
 
     _env["APOLLO_APP_STATUS"] = "TERMINATING";
+    _env["NYXPLAY_APP_STATUS"] = "TERMINATING";
 
     for (; _app_prep_it != _app_prep_begin; --_app_prep_it) {
       auto &cmd = *(_app_prep_it - 1);
@@ -1569,7 +1605,7 @@ namespace proc {
 
   #ifdef _WIN32
     size_t fail_count = 0;
-    while (fail_count < 5 && vDisplayDriverStatus != VDISPLAY::DRIVER_STATUS::OK) {
+    while (config::video.virtual_display_driver && fail_count < 5 && vDisplayDriverStatus != VDISPLAY::DRIVER_STATUS::OK) {
       initVDisplayDriver();
       if (vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK) {
         break;

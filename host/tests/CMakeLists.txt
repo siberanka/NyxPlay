@@ -52,6 +52,11 @@ file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
         ${CMAKE_SOURCE_DIR}/tests/*.h
         ${CMAKE_SOURCE_DIR}/tests/*.cpp)
 
+# NyxPlay: this upstream Sunshine test targets Sunshine's certificate queue based pairing API.
+# Apollo (and therefore NyxPlay Host) replaced it with permission aware named certificates that
+# are persisted directly, so the test no longer matches the implementation.
+list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/unit/test_http_pairing\.cpp$")
+
 set(SUNSHINE_SOURCES
         ${SUNSHINE_TARGET_FILES})
 
