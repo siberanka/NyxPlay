@@ -12,4 +12,10 @@ can be maintained next to the PC client. Nested dependencies (`enet`,
 `nanors`) remain git submodules and are declared in the repository root
 `.gitmodules`.
 
-All NyxPlay changes are marked with `NyxPlay:` comments.
+## Local changes
+
+- NyxPlay text input state extension (packet type `0x4E01`, `setTextInputState` callback).
+- Legacy (Gen 3-7) packet type tables padded with the missing adaptive trigger entry so that newer
+  indices never read past the end of the arrays.
+
+NyxPlay changes are marked with `NyxPlay` comments.

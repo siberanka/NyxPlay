@@ -20,7 +20,7 @@ AutoUpdateChecker::AutoUpdateChecker(QObject *parent) :
             this, &AutoUpdateChecker::handleUpdateCheckRequestFinished);
 
     QString currentVersion(VERSION_STR);
-    qDebug() << "Current Moonlight version:" << currentVersion;
+    qDebug() << "Current NyxPlay version:" << currentVersion;
     parseStringToVersionQuad(currentVersion, m_CurrentVersionQuad);
 
     // Should at least have a 1.0-style version number
@@ -44,7 +44,8 @@ void AutoUpdateChecker::start()
 #endif
 
     // We'll get a callback when this is finished
-    QUrl url("https://moonlight-stream.org/updates/qt.json");
+    // NyxPlay publishes its own update manifest (same format as moonlight-stream.org/updates/qt.json)
+    QUrl url("https://raw.githubusercontent.com/siberanka/NyxPlay/main/pc/deploy/updates/qt.json");
     QNetworkRequest request(url);
 #if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
     request.setAttribute(QNetworkRequest::Http2AllowedAttribute, true);
@@ -180,7 +181,7 @@ void AutoUpdateChecker::handleUpdateCheckRequestFinished(QNetworkReply* reply)
                     qDebug() << "Found update manifest match for current platform";
 
                     QString latestVersion = updateObj["version"].toString();
-                    qDebug() << "Latest version of Moonlight for this platform is:" << latestVersion;
+                    qDebug() << "Latest version of NyxPlay for this platform is:" << latestVersion;
 
                     QVector<int> latestVersionQuad;
                     parseStringToVersionQuad(latestVersion, latestVersionQuad);

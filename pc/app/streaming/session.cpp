@@ -971,7 +971,7 @@ void Session::emitLaunchWarning(QString text)
 bool Session::validateLaunch(SDL_Window* testWindow)
 {
     if (!m_Computer->isSupportedServerVersion) {
-        emit displayLaunchError(tr("The version of GeForce Experience on %1 is not supported by this build of Moonlight. You must update Moonlight to stream from %1.").arg(m_Computer->name));
+        emit displayLaunchError(tr("The version of GeForce Experience on %1 is not supported by this build of NyxPlay. You must update NyxPlay to stream from %1.").arg(m_Computer->name));
         return false;
     }
 
@@ -1200,7 +1200,7 @@ bool Session::validateLaunch(SDL_Window* testWindow)
 
     // Check for unmapped gamepads
     if (!SdlInputHandler::getUnmappedGamepads().isEmpty()) {
-        emitLaunchWarning(tr("An attached gamepad has no mapping and won't be usable. Visit the Moonlight help to resolve this."));
+        emitLaunchWarning(tr("An attached gamepad has no mapping and won't be usable. Visit the NyxPlay help to resolve this."));
     }
 
     // If we removed all codecs with the checks above, use H.264 as the codec of last resort.
@@ -1856,7 +1856,7 @@ void Session::exec()
 #ifdef Q_OS_DARWIN
     std::string windowName = QString(m_Computer->name).toStdString();
 #else
-    std::string windowName = QString(m_Computer->name + " - Moonlight").toStdString();
+    std::string windowName = QString(m_Computer->name + " - NyxPlay").toStdString();
 #endif
 
     m_Window = SDL_CreateWindow(windowName.c_str(),
