@@ -481,10 +481,44 @@
             android:title="@string/title_checkbox_ignore_synth_events"
             app:iconSpaceReserved="false" />
         <CheckBoxPreference
-            android:defaultValue="false"
+            android:defaultValue="true"
             android:key="checkbox_enable_commit_text"
             android:summary="@string/summary_enable_commit_text"
             android:title="@string/title_enable_commit_text"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/category_text_input"
+        app:iconSpaceReserved="false">
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="checkbox_auto_show_keyboard"
+            android:summary="@string/summary_auto_show_keyboard"
+            android:title="@string/title_auto_show_keyboard"
+            app:iconSpaceReserved="false" />
+        <ListPreference
+            android:defaultValue="smart"
+            android:entries="@array/keyboard_text_mode_names"
+            android:entryValues="@array/keyboard_text_mode_values"
+            android:key="list_keyboard_text_mode"
+            android:summary="@string/summary_keyboard_text_mode"
+            android:title="@string/title_keyboard_text_mode"
+            app:iconSpaceReserved="false" />
+        <ListPreference
+            android:defaultValue="auto"
+            android:entries="@array/physical_keyboard_layout_names"
+            android:entryValues="@array/physical_keyboard_layout_values"
+            android:key="list_physical_keyboard_layout"
+            android:summary="@string/summary_physical_keyboard_layout"
+            android:title="@string/title_physical_keyboard_layout"
+            app:iconSpaceReserved="false" />
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:dependency="checkbox_enable_commit_text"
+            android:key="checkbox_ime_predictions"
+            android:summary="@string/summary_ime_predictions"
+            android:title="@string/title_ime_predictions"
             app:iconSpaceReserved="false" />
     </PreferenceCategory>
 
@@ -1016,7 +1050,14 @@
             app:iconSpaceReserved="false" />
 
         <com.limelight.preferences.WebLauncherPreference
-            url="https://github.com/ClassicOldSong/moonlight-android/releases"
+            url="https://github.com/siberanka/NyxPlay/blob/main/CREDITS.md"
+            android:key="option_about_licenses"
+            android:summary="@string/summary_about_licenses"
+            android:title="@string/title_about_licenses"
+            app:iconSpaceReserved="false" />
+
+        <com.limelight.preferences.WebLauncherPreference
+            url="https://github.com/siberanka/NyxPlay/releases"
             android:key="option_software_release"
             android:summary="@string/summary_software_update"
             android:title="@string/title_software_update"

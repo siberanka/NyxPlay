@@ -328,6 +328,16 @@ public class MoonBridge {
         }
     }
 
+    // NyxPlay protocol extension: host text input focus state
+    public static final int LI_TEXT_INPUT_FLAG_PASSWORD = 0x01;
+    public static final int LI_TEXT_INPUT_FLAG_MULTILINE = 0x02;
+
+    public static void bridgeClSetTextInputState(boolean active, byte flags) {
+        if (connectionListener != null) {
+            connectionListener.setTextInputState(active, flags & 0xFF);
+        }
+    }
+
     public static void setupBridge(VideoDecoderRenderer videoRenderer, AudioRenderer audioRenderer, NvConnectionListener connectionListener) {
         MoonBridge.videoRenderer = videoRenderer;
         MoonBridge.audioRenderer = audioRenderer;

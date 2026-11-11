@@ -175,6 +175,30 @@ public class KeyboardTranslator implements InputManager.InputDeviceListener {
     }
 
     /**
+     * Returns the QWERTY position of a device specific key code (Android 13+), or the key code
+     * itself if no mapping is known. Used by NyxPlay's smart text input.
+     */
+    public int getQwertyPositionKeyCode(int keycode, int deviceId) {
+        if (deviceId >= 0) {
+            KeyboardMapping mapping = keyboardMappings.get(deviceId);
+            if (mapping != null) {
+                int qwertyKeyCode = mapping.getQwertyKeyCodeForDeviceKeyCode(keycode);
+                if (qwertyKeyCode != KeyEvent.KEYCODE_UNKNOWN) {
+                    return qwertyKeyCode;
+                }
+            }
+        }
+        return keycode;
+    }
+
+    /**
+     * Returns the key code that {@link #translate(int, int, int)} converts into a virtual key.
+     */
+    public int getEffectiveKeyCode(int keycode, int deviceId) {
+        return prefConfig.forceQwerty ? getQwertyPositionKeyCode(keycode, deviceId) : keycode;
+    }
+
+    /**
      * Translates the given keycode and returns the GFE keycode
      * @param keycode the code to be translated
      * @param deviceId InputDevice.getId() or -1 if unknown

@@ -20,4 +20,13 @@ public interface NvConnectionListener {
     void setMotionEventState(short controllerNumber, byte motionType, short reportRateHz);
 
     void setControllerLED(short controllerNumber, byte r, byte g, byte b);
+
+    /**
+     * NyxPlay protocol extension: invoked when an editable text field on the host gains
+     * ({@code active == true}) or loses keyboard focus.
+     *
+     * @param active true while a text field is focused on the host
+     * @param flags  combination of MoonBridge.LI_TEXT_INPUT_FLAG_* values
+     */
+    default void setTextInputState(boolean active, int flags) {}
 }

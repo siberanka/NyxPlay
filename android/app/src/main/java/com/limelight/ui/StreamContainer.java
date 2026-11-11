@@ -8,7 +8,6 @@ import android.view.KeyEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.widget.FrameLayout;
@@ -25,7 +24,7 @@ import com.limelight.utils.Stereo3DRenderer;
  */
 public class StreamContainer extends FrameLayout implements SurfaceHolder.Callback, Stereo3DRenderer.OnSurfaceReadyListener {
 
-    public interface InputCallbacks {
+    public interface InputCallbacks extends StreamInputConnection.Sink {
         boolean handleKeyUp(KeyEvent event);
         boolean handleKeyDown(KeyEvent event);
         boolean handleCommitText(CharSequence text);
@@ -49,6 +48,7 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     private StreamMode renderMode = null;
     private InputCallbacks mInputCallbacks;
     private boolean commitTextEnabled = false;
+    private boolean imePredictions = false;
 
     private double desiredAspectRatio;
     private boolean fillDisplay = false;
@@ -155,6 +155,14 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
 
     public void setCommitTextEnabled(boolean enabled) {
         this.commitTextEnabled = enabled;
+        if (enabled) {
+            setFocusableInTouchMode(true);
+        }
+    }
+
+    /** Allow predictive text / gesture typing (composing text) on the soft keyboard. */
+    public void setImePredictions(boolean enabled) {
+        this.imePredictions = enabled;
     }
 
     @Override
@@ -187,18 +195,9 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
         if (!commitTextEnabled) {
             return super.onCreateInputConnection(outAttrs);
         }
-        outAttrs.inputType = android.text.InputType.TYPE_CLASS_TEXT;
-        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI;
-        return new BaseInputConnection(this, false) {
-            @Override
-            public boolean commitText(CharSequence text, int newCursorPosition) {
-                return mInputCallbacks != null && mInputCallbacks.handleCommitText(text) || super.commitText(text, newCursorPosition);
-            }
-            @Override
-            public boolean deleteSurroundingText(int beforeLength, int afterLength) {
-                return mInputCallbacks != null && mInputCallbacks.handleDeleteSurroundingText(beforeLength, afterLength) || super.deleteSurroundingText(beforeLength, afterLength);
-            }
-        };
+        // NyxPlay: exact Unicode text from soft keyboards, with live composing support
+        StreamInputConnection.configure(outAttrs, imePredictions);
+        return new StreamInputConnection(this, mInputCallbacks);
     }
 
     public void setOnSurfaceAvailable(Runnable callback) {

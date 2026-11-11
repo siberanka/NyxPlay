@@ -39,12 +39,12 @@
 
     <!-- Network test strings -->
     <string name="nettest_title_waiting">Testing Network Connection</string>
-    <string name="nettest_text_waiting">Artemis is testing your network connection to determine if any required ports are blocked.\n\nThis may take a few seconds…</string>
+    <string name="nettest_text_waiting">NyxPlay is testing your network connection to determine if any required ports are blocked.\n\nThis may take a few seconds…</string>
     <string name="nettest_title_done">Network Test Complete</string>
-    <string name="nettest_text_success">Your network does not appear to be blocking Artemis. If you still have trouble connecting, check your PC\'s firewall settings.\n\nIf you are trying to stream over the Internet, install the Artemis Internet Hosting Tool on your PC and run the included Internet Streaming Tester to check your PC\'s Internet connection.</string>
-    <string name="nettest_text_inconclusive">The network test could not be performed because none of Artemis\'s connection testing servers were reachable. Check your Internet connection or try again later.</string>
-    <string name="nettest_text_failure">Your device\'s current network connection seems to be blocking Artemis. Streaming over the Internet may not work while connected to this network.\n\nThe following network ports were blocked:\n</string>
-    <string name="nettest_text_blocked">Your device\'s current network connection is blocking Artemis. Streaming over the Internet may not work while connected to this network.</string>
+    <string name="nettest_text_success">Your network does not appear to be blocking NyxPlay. If you still have trouble connecting, check your PC\'s firewall settings.\n\nIf you are trying to stream over the Internet, install the Moonlight Internet Hosting Tool on your PC and run the included Internet Streaming Tester to check your PC\'s Internet connection.</string>
+    <string name="nettest_text_inconclusive">The network test could not be performed because none of NyxPlay\'s connection testing servers were reachable. Check your Internet connection or try again later.</string>
+    <string name="nettest_text_failure">Your device\'s current network connection seems to be blocking NyxPlay. Streaming over the Internet may not work while connected to this network.\n\nThe following network ports were blocked:\n</string>
+    <string name="nettest_text_blocked">Your device\'s current network connection is blocking NyxPlay. Streaming over the Internet may not work while connected to this network.</string>
 
     <!-- Pair messages -->
     <string name="pairing">Pairing…</string>
@@ -87,7 +87,7 @@
 	    Using remote desktop software can also cause this error. Try rebooting your machine or reinstalling GFE.
     </string>
     <string name="title_decoding_error">Video Decoder Crashed</string>
-    <string name="message_decoding_error">Artemis has crashed due to an incompatibility with this device\'s video decoder. Try adjusting the streaming settings if the crashes continue.</string>
+    <string name="message_decoding_error">NyxPlay has crashed due to an incompatibility with this device\'s video decoder. Try adjusting the streaming settings if the crashes continue.</string>
     <string name="title_decoding_reset">Video Settings Reset</string>
     <string name="message_decoding_reset">Your device\'s video decoder continues to crash at your selected streaming settings. Your streaming settings have been reset to default.</string>
     <string name="error_usb_prohibited">USB access is prohibited by your device administrator. Check your Knox or MDM settings.</string>
@@ -143,7 +143,7 @@
     </string>
 
     <string name="email_recipient">artemistics.logs@gmail.com</string>
-    <string name="email_subject">Artemistics - Performance Log</string>
+    <string name="email_subject">NyxPlay - Performance Log</string>
     <string name="email_chooser_title">Send performance log...</string>
     <string name="toast_no_email_clients">No email clients installed.</string>
     <string name="toast_no_logs">There is no performance data stored yet.</string>
@@ -233,7 +233,7 @@
     <string name="title_checkbox_xb1_driver">Xbox 360/One/NintendoPro USB gamepad driver</string>
     <string name="summary_checkbox_xb1_driver">Enables a built-in USB driver for devices without native Xbox/Nintendo Pro controller support</string>
     <string name="title_checkbox_usb_bind_all">Override native Xbox gamepad support</string>
-    <string name="summary_checkbox_usb_bind_all">Use Artemis\'s USB driver for all supported gamepads, even if native Xbox/Nintendo Pro controller support is present</string>
+    <string name="summary_checkbox_usb_bind_all">Use NyxPlay\'s USB driver for all supported gamepads, even if native Xbox/Nintendo Pro controller support is present</string>
     <string name="title_checkbox_mouse_emulation">Mouse emulation via gamepad</string>
     <string name="summary_checkbox_mouse_emulation">Long-press the Start button to toggle between gamepad and mouse mode</string>
     <string name="title_checkbox_remember_mouse_mode">Remember mouse mode</string>
@@ -283,7 +283,7 @@
     <string name="title_checkbox_enable_pip">Enable Picture-in-Picture observer mode</string>
     <string name="summary_checkbox_enable_pip">Allows the stream to be viewed (but not controlled) while multitasking</string>
     <string name="title_language_list">Language</string>
-    <string name="summary_language_list">Language to use for Artemis</string>
+    <string name="summary_language_list">Language to use for NyxPlay</string>
     <string name="title_checkbox_small_icon_mode">Use small box art</string>
     <string name="summary_checkbox_small_icon_mode">Smaller box art in the app grid allows more apps to be visible on screen</string>
 
@@ -321,10 +321,10 @@
     <string name="title_troubleshooting">Troubleshooting guide</string>
     <string name="summary_troubleshooting">View tips for diagnosing and fixing common streaming issues</string>
     <string name="title_privacy_policy">Privacy policy</string>
-    <string name="summary_privacy_policy">View Artemis\'s privacy policy</string>
+    <string name="summary_privacy_policy">View NyxPlay\'s privacy policy</string>
     <string name="title_special_key_help">Custom Keys help</string>
     <string name="summary_special_key_help">Instructions about how to setup custom special keys</string>
-    <string name="summary_performance_link">See performance of other devices.\nPlease note, these data are managed by the community, it is not managed by Artemis and does not represent Artemis officially.</string>
+    <string name="summary_performance_link">See performance of other devices.\nPlease note, these data are managed by the community, it is not managed by NyxPlay and does not represent NyxPlay officially.</string>
     <string name="title_performance_link">Performance Dashboard</string>
 
     <!-- Toasts -->
@@ -362,8 +362,8 @@
     <string name="pacing_smoothness">Prefer smoothest video (may significantly increase latency)</string>
 
 
-    <string name="keyboard_service_label">Artemis Physical keyboard</string>
-    <string name="accessibility_description_text">Only used when physical keyboard shortcut were intercepted by system. In some systems, several keyboard shortcut are defind and used by the Android system, causing them not being able to be passed through to the host PC. Artemis will not look through your input, nor collecting your password, credit card number or any other private information.</string>
+    <string name="keyboard_service_label">NyxPlay Physical keyboard</string>
+    <string name="accessibility_description_text">Only used when physical keyboard shortcut were intercepted by system. In some systems, several keyboard shortcut are defind and used by the Android system, causing them not being able to be passed through to the host PC. NyxPlay will not look through your input, nor collecting your password, credit card number or any other private information.</string>
 
 
     <!-- In Game menu -->
@@ -471,9 +471,9 @@
     <string name="summary_share_performance_logs">Share your performance with friends or the community</string>
     <string name="title_share_performance_logs_button">Share Performance Logs</string>
     <string name="title_software_update">Software Update</string>
-    <string name="summary_software_update">Artemis Nior Version by ClassicOldSong - Visit GitHub Releases to get latest version</string>
+    <string name="summary_software_update">NyxPlay, based on NyxPlay by ClassicOldSong. Visit GitHub Releases to get the latest version</string>
     <string name="title_follow_update">Follow Update</string>
-    <string name="summary_follow_update">Follow updates of Artemis with Obtainium</string>
+    <string name="summary_follow_update">Follow NyxPlay releases</string>
     <string name="title_special_key_layout">Special Key Layout</string>
     <string name="title_show_virtual_key">Display virtual keys on screen</string>
     <string name="summary_show_virtual_key">Display a layer of virtual special keys on the touchscreen.\nKey opacity is shared with the virtual gamepad above.</string>
@@ -522,7 +522,7 @@
     <string name="title_touchpad_sensitivity_y">Touchpad Sensitivity Y Axis</string>
     <string name="summary_touchpad_sensitivity_y">For mouse touchpad mode and virtual special button touchpad control;\nBoth share a sensitivity value, but the sensitivity performance may be different.\nDoes anyone use both together?</string>
     <string name="title_device_rumble">Force vibration on device</string>
-    <string name="summary_device_rumble">If you are not satisfied with the vibration of the connected gamepad, you can enable this option.\nInvalid for forced use of Artemis\'s built-in USB driver</string>
+    <string name="summary_device_rumble">If you are not satisfied with the vibration of the connected gamepad, you can enable this option.\nInvalid for forced use of NyxPlay\'s built-in USB driver</string>
     <string name="title_clear_default_special_button">Disable default Special Keys</string>
     <string name="summary_clear_default_special_button">If you feel the built-in commands in the Back Menu are useless, you can disable them and use your imported ones.</string>
     <string name="title_trackpad_sensitivity_x">Trackpad Sensitivity X</string>
@@ -694,8 +694,8 @@
     <string name="title_export_sunshine_launcher_file">Export Launcher File for Sunshine</string>
     <string name="message_export_sunshine_launcher_file">Exporting launcher file for Sunshine is unstable, and may break at any moment. You\'ll need to export again every time if you changed the app name or image.\nUse Apollo for a more stable experience.</string>
 
-    <string name="title_enable_commit_text">Enable commit-text input (swipe/voice)</string>
-    <string name="summary_enable_commit_text">Forward multi-character text from soft keyboards (gesture typing, predictions, voice dictation). May break games that rely on key-by-key input.</string>
+    <string name="title_enable_commit_text">Exact text from on-screen keyboard</string>
+    <string name="summary_enable_commit_text">Send what you type on the on-screen keyboard as exact characters (correct letters in every host keyboard layout, gesture typing and voice dictation). Disable only for games that need key-by-key input from the on-screen keyboard.</string>
     <string name="title_checkbox_remember_zoom_pan">Remember Zoom&amp;Pan</string>
     <string name="summary_checkbox_remember_zoom_pan">Save changes to zoom and pan position between sessions</string>
     <string name="title_checkbox_enable_perf_overlay_bottom">Move overlay to bottom</string>
@@ -743,4 +743,28 @@
 
     <string name="title_checkbox_full_screen">Enable Full Screen</string>
     <string name="summary_checkbox_full_screen">Hide system bars with immersive mode</string>
+    <!-- NyxPlay about -->
+    <string name="title_about_licenses">About NyxPlay &amp; licenses</string>
+    <string name="summary_about_licenses">NyxPlay is free software licensed under the GNU GPL v3. It is based on Artemis by ClassicOldSong and Moonlight by the Moonlight Game Streaming Project.</string>
+    <!-- NyxPlay text input -->
+    <string name="category_text_input">Text input</string>
+    <string name="title_auto_show_keyboard">Show keyboard for text fields</string>
+    <string name="summary_auto_show_keyboard">Open the on-screen keyboard automatically when you tap a text field on the host, and close it when the field loses focus. Requires NyxPlay Host.</string>
+    <string name="title_keyboard_text_mode">Keyboard text mode</string>
+    <string name="summary_keyboard_text_mode">How typed characters are sent. Smart mode sends letters such as ğ, ü, ş, ı, ö, ç as exact characters, so they are correct even if the host uses a different keyboard layout, while keeping normal keys for games and shortcuts.</string>
+    <string name="keyboard_text_mode_smart">Smart (recommended)</string>
+    <string name="keyboard_text_mode_unicode">Always send characters</string>
+    <string name="keyboard_text_mode_raw">Key positions only (legacy)</string>
+    <string name="title_physical_keyboard_layout">Physical keyboard layout</string>
+    <string name="summary_physical_keyboard_layout">Used when Android does not know the layout of a hardware keyboard. Automatic uses the keyboard language of the active input method, otherwise the system language.</string>
+    <string name="physical_keyboard_layout_auto">Automatic</string>
+    <string name="physical_keyboard_layout_tr_q">Turkish Q</string>
+    <string name="physical_keyboard_layout_tr_f">Turkish F</string>
+    <string name="physical_keyboard_layout_us">English (US)</string>
+    <string name="physical_keyboard_layout_de">German</string>
+    <string name="physical_keyboard_layout_fr">French (AZERTY)</string>
+    <string name="physical_keyboard_layout_es">Spanish</string>
+    <string name="physical_keyboard_layout_it">Italian</string>
+    <string name="title_ime_predictions">Keyboard predictions</string>
+    <string name="summary_ime_predictions">Allow suggestions, gesture typing and voice input on the on-screen keyboard. When disabled every key is sent immediately.</string>
 </resources>

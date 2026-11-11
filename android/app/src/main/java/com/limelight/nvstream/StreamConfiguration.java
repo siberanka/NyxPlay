@@ -15,6 +15,7 @@ public class StreamConfiguration {
     private float refreshRate;
     private float launchRefreshRate;
     private boolean virtualDisplay;
+    private boolean textInputEvents;
     private int resolutionScaleFactor;
     private int clientRefreshRateX100;
     private int bitrate;
@@ -58,6 +59,11 @@ public class StreamConfiguration {
 
         public StreamConfiguration.Builder setLaunchRefreshRate(float refreshRate) {
             config.launchRefreshRate = refreshRate;
+            return this;
+        }
+
+        public StreamConfiguration.Builder setTextInputEvents(boolean enable) {
+            config.textInputEvents = enable;
             return this;
         }
 
@@ -196,6 +202,8 @@ public class StreamConfiguration {
     }
 
     public boolean getVirtualDisplay() { return virtualDisplay; }
+
+    public boolean getTextInputEvents() { return textInputEvents; }
 
     public int getResolutionScaleFactor() { return resolutionScaleFactor; }
     

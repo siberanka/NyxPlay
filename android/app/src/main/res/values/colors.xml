@@ -1,4 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="profileAccent">#FF4081</color>
+
+    <!-- NyxPlay night palette -->
+    <color name="nyx_night">#0B0C21</color>
+    <color name="nyx_background">#0E0F24</color>
+    <color name="nyx_surface">#15163A</color>
+    <color name="nyx_surface_variant">#1D1E4A</color>
+    <color name="nyx_outline">#3A3B6E</color>
+    <color name="nyx_primary">#B6A6FF</color>
+    <color name="nyx_on_primary">#1E1257</color>
+    <color name="nyx_primary_container">#3A2E8C</color>
+    <color name="nyx_on_primary_container">#E6DEFF</color>
+    <color name="nyx_secondary">#C4B5FD</color>
+    <color name="nyx_on_secondary">#24184F</color>
+    <color name="nyx_on_surface">#ECE9FF</color>
+    <color name="nyx_on_surface_variant">#C3C0E0</color>
 </resources>

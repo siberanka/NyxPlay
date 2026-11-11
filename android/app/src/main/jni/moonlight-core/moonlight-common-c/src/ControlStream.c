@@ -82,6 +82,10 @@ typedef struct _QUEUED_ASYNC_CALLBACK {
             uint8_t left[DS_EFFECT_PAYLOAD_SIZE];
             uint8_t right[DS_EFFECT_PAYLOAD_SIZE];
         } dsAdaptiveTrigger;
+        struct {
+            uint8_t active;
+            uint8_t flags;
+        } textInputState; // NyxPlay extension
     } data;
     LINKED_BLOCKING_QUEUE_ENTRY entry;
 } QUEUED_ASYNC_CALLBACK, *PQUEUED_ASYNC_CALLBACK;
@@ -142,6 +146,7 @@ static PPLT_CRYPTO_CONTEXT decryptionCtx;
 #define IDX_SET_CLIPBOARD 13
 #define IDX_FILE_TRANSFER_NONCE_REQUEST 14
 #define IDX_DS_ADAPTIVE_TRIGGERS 15
+#define IDX_SET_TEXT_INPUT_STATE 16 // NyxPlay protocol extension
 
 #define CONTROL_STREAM_TIMEOUT_SEC 10
 #define CONTROL_STREAM_LINGER_TIMEOUT_SEC 2
@@ -163,6 +168,7 @@ static const short packetTypesGen3[] = {
     -1,     // Set Clipboard (unused)
     -1,     // File transfer nonce request (unused)
     -1,     // Set Adaptive Triggers (unused)
+    -1,     // Set text input state (unused)
 };
 static const short packetTypesGen4[] = {
     0x0606, // Request IDR frame
@@ -181,6 +187,7 @@ static const short packetTypesGen4[] = {
     -1,     // Set Clipboard (unused)
     -1,     // File transfer nonce request (unused)
     -1,     // Set Adaptive Triggers (unused)
+    -1,     // Set text input state (unused)
 };
 static const short packetTypesGen5[] = {
     0x0305, // Start A
@@ -199,6 +206,7 @@ static const short packetTypesGen5[] = {
     -1,     // Set Clipboard (unused)
     -1,     // File transfer nonce request (unused)
     -1,     // Set Adaptive Triggers (unused)
+    -1,     // Set text input state (unused)
 };
 static const short packetTypesGen7[] = {
     0x0305, // Start A
@@ -217,6 +225,7 @@ static const short packetTypesGen7[] = {
     -1,     // Set Clipboard (unused)
     -1,     // File transfer nonce request (unused)
     -1,     // Set Adaptive Triggers (unused)
+    -1,     // Set text input state (unused)
 };
 static const short packetTypesGen7Enc[] = {
     0x0302, // Request IDR frame
@@ -235,6 +244,7 @@ static const short packetTypesGen7Enc[] = {
     0x3001, // Set Clipboard (Apollo protocol extension)
     0x3002, // File transfer nonce request (Apollo protocol extension)
     0x5503, // Set Adaptive Triggers (Sunshine protocol extension)
+    0x4E01, // Set text input state (NyxPlay protocol extension)
 };
 
 static const char requestIdrFrameGen3[] = { 0, 0 };
@@ -1008,6 +1018,20 @@ static void asyncCallbackThreadFunc(void* context) {
                                                   queuedCb->data.dsAdaptiveTrigger.left,
                                                   queuedCb->data.dsAdaptiveTrigger.right);
             break;
+        case IDX_SET_TEXT_INPUT_STATE:
+            // Only the most recent text input state matters, so collapse queued updates
+            while (LbqPeekQueueElement(&asyncCallbackQueue, (void**)&nextCb) == LBQ_SUCCESS && nextCb->typeIndex == queuedCb->typeIndex) {
+                if (LbqPollQueueElement(&asyncCallbackQueue, (void**)&nextCb) != LBQ_SUCCESS) {
+                    break;
+                }
+
+                free(queuedCb);
+                queuedCb = nextCb;
+            }
+
+            ListenerCallbacks.setTextInputState(queuedCb->data.textInputState.active != 0,
+                                                queuedCb->data.textInputState.flags);
+            break;
         default:
             // Unhandled packet type from queueAsyncCallback()
             LC_ASSERT(false);
@@ -1026,7 +1050,8 @@ static bool needsAsyncCallback(unsigned short packetType) {
            packetType == packetTypes[IDX_HDR_INFO] ||
            packetType == packetTypes[IDX_SET_CLIPBOARD] ||
            packetType == packetTypes[IDX_FILE_TRANSFER_NONCE_REQUEST] ||
-           packetType == packetTypes[IDX_DS_ADAPTIVE_TRIGGERS];
+           packetType == packetTypes[IDX_DS_ADAPTIVE_TRIGGERS] ||
+           packetType == packetTypes[IDX_SET_TEXT_INPUT_STATE];
 }
 
 static void queueAsyncCallback(PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr, int packetLength) {
@@ -1086,6 +1111,25 @@ static void queueAsyncCallback(PNVCTL_ENET_PACKET_HEADER_V1 ctlHdr, int packetLe
         BbGetBytes(&bb, queuedCb->data.dsAdaptiveTrigger.left, DS_EFFECT_PAYLOAD_SIZE);
         BbGetBytes(&bb, queuedCb->data.dsAdaptiveTrigger.right, DS_EFFECT_PAYLOAD_SIZE);
         queuedCb->typeIndex = IDX_DS_ADAPTIVE_TRIGGERS;
+    }
+    else if (ctlHdr->type == packetTypes[IDX_SET_TEXT_INPUT_STATE]) {
+        // NyxPlay: host text input focus state (version, active, flags, reserved)
+        uint8_t version = 0;
+
+        queuedCb->data.textInputState.active = 0;
+        queuedCb->data.textInputState.flags = 0;
+
+        BbGet8(&bb, &version);
+        BbGet8(&bb, &queuedCb->data.textInputState.active);
+        BbGet8(&bb, &queuedCb->data.textInputState.flags);
+
+        if (version == 0) {
+            // Malformed message, treat it as "no text field focused"
+            queuedCb->data.textInputState.active = 0;
+            queuedCb->data.textInputState.flags = 0;
+        }
+
+        queuedCb->typeIndex = IDX_SET_TEXT_INPUT_STATE;
     }
     else {
         // Unhandled packet type from needsAsyncCallback()

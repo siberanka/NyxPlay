@@ -479,6 +479,14 @@ typedef void(*ConnListenerSetAdaptiveTriggers)(uint16_t controllerNumber, uint8_
 // This callback is invoked to set a controller's RGB LED (if present).
 typedef void(*ConnListenerSetControllerLED)(uint16_t controllerNumber, uint8_t r, uint8_t g, uint8_t b);
 
+// NyxPlay protocol extension: this callback is invoked when an editable text field on
+// the host gains (active = true) or loses (active = false) keyboard focus. It is only
+// sent by NyxPlay Host to clients that opted in with the "nyxTextInput=1" launch
+// parameter. Touch clients use it to show or hide their on-screen keyboard.
+#define LI_TEXT_INPUT_FLAG_PASSWORD  0x01
+#define LI_TEXT_INPUT_FLAG_MULTILINE 0x02
+typedef void(*ConnListenerSetTextInputState)(bool active, uint8_t flags);
+
 typedef struct _CONNECTION_LISTENER_CALLBACKS {
     ConnListenerStageStarting stageStarting;
     ConnListenerStageComplete stageComplete;
@@ -493,6 +501,7 @@ typedef struct _CONNECTION_LISTENER_CALLBACKS {
     ConnListenerSetMotionEventState setMotionEventState;
     ConnListenerSetControllerLED setControllerLED;
     ConnListenerSetAdaptiveTriggers setAdaptiveTriggers;
+    ConnListenerSetTextInputState setTextInputState; // NyxPlay extension
 } CONNECTION_LISTENER_CALLBACKS, *PCONNECTION_LISTENER_CALLBACKS;
 
 // Use this function to zero the connection callbacks when allocated on the stack or heap

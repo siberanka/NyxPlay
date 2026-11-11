@@ -19,10 +19,25 @@
         <!-- All customizations that are NOT specific to a particular API-level can go here. -->
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
-        <item name="android:statusBarColor">#1A1A1A</item>
-        <item name="android:navigationBarColor">#1A1A1A</item>
-        <item name="android:colorBackground">#1A1A1A</item>
-        <item name="android:windowBackground">#1A1A1A</item>
+        <item name="android:statusBarColor">@color/nyx_background</item>
+        <item name="android:navigationBarColor">@color/nyx_background</item>
+        <item name="android:colorBackground">@color/nyx_background</item>
+        <item name="android:windowBackground">@color/nyx_background</item>
+        <!-- NyxPlay palette -->
+        <item name="colorPrimary">@color/nyx_primary</item>
+        <item name="colorOnPrimary">@color/nyx_on_primary</item>
+        <item name="colorPrimaryVariant">@color/nyx_primary_container</item>
+        <item name="colorPrimaryContainer">@color/nyx_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/nyx_on_primary_container</item>
+        <item name="colorSecondary">@color/nyx_secondary</item>
+        <item name="colorOnSecondary">@color/nyx_on_secondary</item>
+        <item name="colorSurface">@color/nyx_surface</item>
+        <item name="colorOnSurface">@color/nyx_on_surface</item>
+        <item name="colorSurfaceVariant">@color/nyx_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/nyx_on_surface_variant</item>
+        <item name="colorOutline">@color/nyx_outline</item>
+        <item name="android:colorAccent">@color/nyx_primary</item>
+        <item name="colorAccent">@color/nyx_primary</item>
     </style>
 
     <style name="StreamBaseTheme" parent="AppBaseTheme">

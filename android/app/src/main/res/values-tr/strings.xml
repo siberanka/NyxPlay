@@ -272,6 +272,31 @@
 \nNot: Bu seçeneğin etkinleştirilmesi, oyun kumandanızın ana bilgisayarda PlayStation denetleyicisi olarak görünmesine neden olabilir.</string>
     <string name="title_enable_perf_overlay">Akış sırasında performans istatistiklerini göster</string>
     <string name="summary_enable_perf_overlay">Akış sırasında gerçek zamanlı akış performansı bilgilerini görüntüleyin</string>
-    <string name="title_enable_commit_text">Commit-text girişini etkinleştir (kaydırma/sesli)</string>
-    <string name="summary_enable_commit_text">Yazılım klavyelerinden çok karakterli metni iletir (sürükleyerek yazma, tahminler, sesli dikte). Tuş bazlı girişe ihtiyaç duyan oyunlarda sorun yaratabilir.</string>
+    <string name="title_enable_commit_text">Ekran klavyesinden birebir metin</string>
+    <string name="summary_enable_commit_text">Ekran klavyesinde yazdıklarınızı birebir karakter olarak gönderir (her sunucu klavye düzeninde doğru harfler, kaydırarak yazma ve sesli dikte). Yalnızca ekran klavyesinden tuş tuş giriş isteyen oyunlar için kapatın.</string>
+    <!-- NyxPlay hakkında -->
+    <string name="title_about_licenses">NyxPlay hakkında ve lisanslar</string>
+    <string name="summary_about_licenses">NyxPlay, GNU GPL v3 ile lisanslanmış özgür bir yazılımdır. ClassicOldSong tarafından geliştirilen Artemis ve Moonlight Game Streaming Project tarafından geliştirilen Moonlight temel alınmıştır.</string>
+    <string name="summary_follow_update">NyxPlay sürümlerini takip et</string>
+    <!-- NyxPlay metin girişi -->
+    <string name="category_text_input">Metin girişi</string>
+    <string name="title_auto_show_keyboard">Yazı alanlarında klavyeyi göster</string>
+    <string name="summary_auto_show_keyboard">Sunucudaki bir yazı alanına dokunduğunuzda ekran klavyesini otomatik açar, alan odağı kaybettiğinde kapatır. NyxPlay Host gerektirir.</string>
+    <string name="title_keyboard_text_mode">Klavye metin modu</string>
+    <string name="summary_keyboard_text_mode">Yazılan karakterlerin nasıl gönderileceği. Akıllı mod ğ, ü, ş, ı, ö, ç gibi harfleri birebir karakter olarak gönderir; böylece sunucu farklı bir klavye düzeni kullansa bile doğru yazılırlar. Oyunlar ve kısayollar için normal tuşlar korunur.</string>
+    <string name="keyboard_text_mode_smart">Akıllı (önerilen)</string>
+    <string name="keyboard_text_mode_unicode">Her zaman karakter gönder</string>
+    <string name="keyboard_text_mode_raw">Yalnızca tuş konumları (eski)</string>
+    <string name="title_physical_keyboard_layout">Fiziksel klavye düzeni</string>
+    <string name="summary_physical_keyboard_layout">Android bir donanım klavyesinin düzenini bilmediğinde kullanılır. Otomatik seçenek etkin giriş yönteminin klavye dilini, yoksa sistem dilini kullanır.</string>
+    <string name="physical_keyboard_layout_auto">Otomatik</string>
+    <string name="physical_keyboard_layout_tr_q">Türkçe Q</string>
+    <string name="physical_keyboard_layout_tr_f">Türkçe F</string>
+    <string name="physical_keyboard_layout_us">İngilizce (ABD)</string>
+    <string name="physical_keyboard_layout_de">Almanca</string>
+    <string name="physical_keyboard_layout_fr">Fransızca (AZERTY)</string>
+    <string name="physical_keyboard_layout_es">İspanyolca</string>
+    <string name="physical_keyboard_layout_it">İtalyanca</string>
+    <string name="title_ime_predictions">Klavye önerileri</string>
+    <string name="summary_ime_predictions">Ekran klavyesinde öneriler, kaydırarak yazma ve sesli girişe izin verir. Kapalıyken her tuş anında gönderilir.</string>
 </resources>

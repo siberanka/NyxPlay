@@ -1,5 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- NyxPlay text input -->
+    <string-array name="keyboard_text_mode_names">
+        <item>@string/keyboard_text_mode_smart</item>
+        <item>@string/keyboard_text_mode_unicode</item>
+        <item>@string/keyboard_text_mode_raw</item>
+    </string-array>
+    <string-array name="keyboard_text_mode_values" translatable="false">
+        <item>smart</item>
+        <item>unicode</item>
+        <item>raw</item>
+    </string-array>
+    <string-array name="physical_keyboard_layout_names">
+        <item>@string/physical_keyboard_layout_auto</item>
+        <item>@string/physical_keyboard_layout_tr_q</item>
+        <item>@string/physical_keyboard_layout_tr_f</item>
+        <item>@string/physical_keyboard_layout_us</item>
+        <item>@string/physical_keyboard_layout_de</item>
+        <item>@string/physical_keyboard_layout_fr</item>
+        <item>@string/physical_keyboard_layout_es</item>
+        <item>@string/physical_keyboard_layout_it</item>
+    </string-array>
+    <string-array name="physical_keyboard_layout_values" translatable="false">
+        <item>auto</item>
+        <item>tr_q</item>
+        <item>tr_f</item>
+        <item>us</item>
+        <item>de</item>
+        <item>fr</item>
+        <item>es</item>
+        <item>it</item>
+    </string-array>
+
     <string-array name="resolution_names">
         <item>@string/resolution_360p</item>
         <item>@string/resolution_480p</item>

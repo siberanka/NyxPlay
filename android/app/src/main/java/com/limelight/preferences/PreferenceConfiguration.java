@@ -138,6 +138,11 @@ public class PreferenceConfiguration {
     private static final String CHECKBOX_TRACKPAD_SWAP_AXIS = "checkbox_trackpad_swap_axis";
 
     private static final String CHECKBOX_ENABLE_COMMIT_TEXT = "checkbox_enable_commit_text";
+    // NyxPlay text input
+    public static final String CHECKBOX_AUTO_SHOW_KEYBOARD = "checkbox_auto_show_keyboard";
+    public static final String LIST_KEYBOARD_TEXT_MODE = "list_keyboard_text_mode";
+    public static final String LIST_PHYSICAL_KEYBOARD_LAYOUT = "list_physical_keyboard_layout";
+    public static final String CHECKBOX_IME_PREDICTIONS = "checkbox_ime_predictions";
 
     static final String DEFAULT_RESOLUTION = "1280x720";
     static final String DEFAULT_FPS = "60";
@@ -207,7 +212,11 @@ public class PreferenceConfiguration {
     private static final boolean DEFAULT_TRACKPAD_DRAG_DROP_VIBRATION = false;
     private static final int DEFAULT_TRACKPAD_DRAG_DROP_THRESHOLD = 250;
     private static final boolean DEFAULT_TRACKPAD_SWAP_AXIS = false;
-    private static final boolean DEFAULT_ENABLE_COMMIT_TEXT = false;
+    private static final boolean DEFAULT_ENABLE_COMMIT_TEXT = true;
+    private static final boolean DEFAULT_AUTO_SHOW_KEYBOARD = true;
+    private static final String DEFAULT_KEYBOARD_TEXT_MODE = "smart";
+    private static final String DEFAULT_PHYSICAL_KEYBOARD_LAYOUT = "auto";
+    private static final boolean DEFAULT_IME_PREDICTIONS = false;
     private static final String DEFAULT_ONSCREEN_KEYBOARD_ALIGN_MODE = "center";
     private static final boolean DEFAULT_SHOW_OVERLAY_TOGGLE_BUTTON = false;
 
@@ -338,6 +347,15 @@ public class PreferenceConfiguration {
 
     // Enable forwarding of commitText from soft keyboard
     public boolean enableCommitText;
+
+    // NyxPlay: open the soft keyboard when a host text field is tapped
+    public boolean autoShowKeyboard;
+    // NyxPlay: smart / unicode / raw keyboard text mode
+    public String keyboardTextMode;
+    // NyxPlay: physical keyboard layout (auto or a KeyboardLayouts id)
+    public String physicalKeyboardLayout;
+    // NyxPlay: allow predictions / gesture typing on the soft keyboard
+    public boolean imePredictions;
 
     public boolean enableKeyboardVibrate;
 
@@ -992,6 +1010,10 @@ private static int getFramePacingValue(Context context) {
         config.enableDeviceRumble=prefs.getBoolean("checkbox_enable_device_rumble", false);
 
         config.enableCommitText = prefs.getBoolean(CHECKBOX_ENABLE_COMMIT_TEXT, DEFAULT_ENABLE_COMMIT_TEXT);
+        config.autoShowKeyboard = prefs.getBoolean(CHECKBOX_AUTO_SHOW_KEYBOARD, DEFAULT_AUTO_SHOW_KEYBOARD);
+        config.keyboardTextMode = prefs.getString(LIST_KEYBOARD_TEXT_MODE, DEFAULT_KEYBOARD_TEXT_MODE);
+        config.physicalKeyboardLayout = prefs.getString(LIST_PHYSICAL_KEYBOARD_LAYOUT, DEFAULT_PHYSICAL_KEYBOARD_LAYOUT);
+        config.imePredictions = prefs.getBoolean(CHECKBOX_IME_PREDICTIONS, DEFAULT_IME_PREDICTIONS);
 
         config.enableKeyboardSquare=prefs.getBoolean("checkbox_enable_keyboard_square",false);
 

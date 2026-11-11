@@ -13,6 +13,10 @@ import com.limelight.binding.audio.AndroidAudioRenderer;
 import com.limelight.binding.input.ControllerHandler;
 import com.limelight.binding.input.GameInputDevice;
 import com.limelight.binding.input.KeyboardTranslator;
+import com.limelight.binding.input.text.AutoKeyboardController;
+import com.limelight.binding.input.text.ImeTextComposer;
+import com.limelight.binding.input.text.SmartKeyboard;
+import com.limelight.binding.input.text.SmartKeyboardTranslator;
 import com.limelight.binding.input.capture.InputCaptureManager;
 import com.limelight.binding.input.capture.InputCaptureProvider;
 import com.limelight.binding.input.touch.AbsoluteTouchContext;
@@ -309,6 +313,15 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private boolean isZoomButtonMoving = false;
     private float zoomButtonStartX, zoomButtonStartY;
 
+    // NyxPlay: smart text input and automatic on-screen keyboard
+    private SmartKeyboard smartKeyboard;
+    private AutoKeyboardController autoKeyboard;
+    private boolean softKeyboardShown;
+    private boolean tapCandidate;
+    private long tapDownTime;
+    private float tapDownX, tapDownY;
+    private float tapSlopPx;
+
     // Queue for batching commitText payloads
     private static final int UTF8_CHUNK_SIZE = 512;
     private final Queue<String> commitTextQueue = new ArrayDeque<>();
@@ -462,6 +475,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         streamContainer.setOnKeyListener(this);
         streamContainer.setInputCallbacks(this);
         streamContainer.setCommitTextEnabled(prefConfig.enableCommitText);
+        streamContainer.setImePredictions(prefConfig.imePredictions);
 
         rootView = streamContainer.getParent();
 
@@ -784,6 +798,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 .setLaunchRefreshRate(prefConfig.fps)
                 .setRefreshRate(chosenFrameRate)
                 .setVirtualDisplay(vDisplay)
+                .setTextInputEvents(prefConfig.autoShowKeyboard ||
+                        SmartKeyboardTranslator.Mode.fromPreference(prefConfig.keyboardTextMode) == SmartKeyboardTranslator.Mode.SMART)
                 .setResolutionScaleFactor(prefConfig.resolutionScaleFactor)
                 .setApp(app)
                 .setEnableUltraLowLatency(prefConfig.enableUltraLowLatency)
@@ -811,6 +827,68 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
         inputManager.registerInputDeviceListener(keyboardTranslator, null);
+
+        // NyxPlay: layout aware text input and host driven on-screen keyboard
+        smartKeyboard = new SmartKeyboard(this, keyboardTranslator, prefConfig.keyboardTextMode,
+                prefConfig.physicalKeyboardLayout, prefConfig.rightAltAsMeta);
+        inputManager.registerInputDeviceListener(new InputManager.InputDeviceListener() {
+            @Override
+            public void onInputDeviceAdded(int deviceId) {
+            }
+
+            @Override
+            public void onInputDeviceRemoved(int deviceId) {
+                if (smartKeyboard != null) {
+                    smartKeyboard.onInputDeviceChanged(deviceId);
+                }
+            }
+
+            @Override
+            public void onInputDeviceChanged(int deviceId) {
+                if (smartKeyboard != null) {
+                    smartKeyboard.onInputDeviceChanged(deviceId);
+                }
+            }
+        }, null);
+        tapSlopPx = android.view.ViewConfiguration.get(this).getScaledTouchSlop() * 2f;
+        autoKeyboard = new AutoKeyboardController(new AutoKeyboardController.Host() {
+            @Override
+            public long uptimeMillis() {
+                return android.os.SystemClock.uptimeMillis();
+            }
+
+            @Override
+            public void showKeyboard() {
+                showSoftKeyboard();
+            }
+
+            @Override
+            public void hideKeyboard() {
+                hideSoftKeyboard();
+            }
+
+            @Override
+            public boolean isKeyboardVisible() {
+                return isSoftKeyboardVisible();
+            }
+
+            @Override
+            public boolean hasHardwareKeyboard() {
+                android.content.res.Configuration cfg = getResources().getConfiguration();
+                return cfg.keyboard == android.content.res.Configuration.KEYBOARD_QWERTY &&
+                        cfg.hardKeyboardHidden == android.content.res.Configuration.HARDKEYBOARDHIDDEN_NO;
+            }
+
+            @Override
+            public void postDelayed(Runnable runnable, long delayMs) {
+                timerHandler.postDelayed(runnable, delayMs);
+            }
+
+            @Override
+            public void removeCallbacks(Runnable runnable) {
+                timerHandler.removeCallbacks(runnable);
+            }
+        }, prefConfig.autoShowKeyboard);
 
         // Initialize trackpad contexts
         for (int i = 0; i < trackpadContextMap.length; i++) {
@@ -2093,6 +2171,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 return false;
             }
 
+            // NyxPlay: characters that the host keyboard layout would type differently (e.g. the
+            // Turkish ğ ü ş ı ö ç) are sent as text instead of positional key codes.
+            if (smartKeyboard != null && conn != null) {
+                String text = smartKeyboard.onKeyDown(event, autoKeyboard != null ?
+                        autoKeyboard.getHostFocus() : SmartKeyboardTranslator.HostFocus.UNKNOWN);
+                if (text != null) {
+                    sendSmartText(text, event.getMetaState());
+                    return true;
+                }
+            }
+
             // We'll send it as a raw key event if we have a key mapping, otherwise we'll send it
             // as UTF-8 text (if it's a printable character).
             short translated = keyboardTranslator.translate(event.getKeyCode(), event.getScanCode(), deviceId);
@@ -2179,6 +2268,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             // Pass through keyboard input if we're not grabbing
             if (!grabbedInput) {
                 return false;
+            }
+
+            // NyxPlay: the key down was sent as text, nothing to release on the host
+            if (smartKeyboard != null && smartKeyboard.onKeyUp(event)) {
+                return true;
             }
 
             short translated = keyboardTranslator.translate(event.getKeyCode(), event.getScanCode(), deviceId);
@@ -2419,8 +2513,17 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             ExternalDisplayControlActivity.toggleKeyboard();
         } else {
             LimeLog.info("Toggling keyboard overlay");
+            if (autoKeyboard != null) {
+                autoKeyboard.onManualToggle();
+            }
+            if (prefConfig.enableCommitText && streamContainer != null) {
+                // Make sure the stream is the IME target so typed text reaches the host
+                streamContainer.setFocusableInTouchMode(true);
+                streamContainer.requestFocus();
+            }
             InputMethodManager inputManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
             inputManager.toggleSoftInput(0, 0);
+            softKeyboardShown = !softKeyboardShown;
         }
     }
 
@@ -2778,6 +2881,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         if (prefConfig.ignoreSynthEvents && deviceId <= 0) {
             return false;
         }
+
+        trackTapForAutoKeyboard(event);
 
         int eventSource = event.getSource();
         int deviceSources = event.getDevice() != null ? event.getDevice().getSources() : 0;
@@ -3452,6 +3557,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     }
 
     private void stopConnection() {
+        if (autoKeyboard != null) {
+            autoKeyboard.reset();
+        }
         if (connecting || connected) {
             connecting = connected = false;
             updatePipAutoEnter();
@@ -3788,6 +3896,109 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     public void setControllerLED(short controllerNumber, byte r, byte g, byte b) {
         controllerHandler.handleSetControllerLED(controllerNumber, r, g, b);
+    }
+
+    @Override
+    public void setTextInputState(final boolean active, final int flags) {
+        // NyxPlay Host reports text field focus changes (called on a native thread)
+        runOnUiThread(() -> {
+            if (autoKeyboard != null) {
+                autoKeyboard.onHostTextInputState(active, flags);
+            }
+        });
+    }
+
+    /**
+     * Sends text produced by the smart keyboard. A held AltGr is released around the text so the
+     * host does not interpret the characters as Alt shortcuts.
+     */
+    private void sendSmartText(String text, int metaState) {
+        boolean altGr = !prefConfig.rightAltAsMeta && (metaState & KeyEvent.META_ALT_RIGHT_ON) != 0;
+        short rightAlt = keyboardTranslator.translate(KeyEvent.KEYCODE_ALT_RIGHT, 0, -1);
+        if (altGr && rightAlt != 0) {
+            conn.sendKeyboardInput(rightAlt, KeyboardPacket.KEY_UP, (byte) 0, (byte) 0);
+        }
+        conn.sendUtf8Text(text);
+        if (altGr && rightAlt != 0) {
+            conn.sendKeyboardInput(rightAlt, KeyboardPacket.KEY_DOWN, KeyboardPacket.MODIFIER_ALT, (byte) 0);
+        }
+    }
+
+    private void trackTapForAutoKeyboard(MotionEvent event) {
+        if (autoKeyboard == null || !autoKeyboard.isEnabled()) {
+            return;
+        }
+        if ((event.getSource() & InputDevice.SOURCE_CLASS_POINTER) == 0) {
+            return;
+        }
+
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                tapCandidate = true;
+                tapDownTime = event.getEventTime();
+                tapDownX = event.getX();
+                tapDownY = event.getY();
+                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+                // Multi-finger gestures (scrolling, zooming, right clicks) are not text field taps
+                tapCandidate = false;
+                break;
+            case MotionEvent.ACTION_MOVE:
+                if (tapCandidate && Math.hypot(event.getX() - tapDownX, event.getY() - tapDownY) > tapSlopPx) {
+                    tapCandidate = false;
+                }
+                break;
+            case MotionEvent.ACTION_UP:
+                if (tapCandidate && event.getEventTime() - tapDownTime <= 700) {
+                    autoKeyboard.onUserTap();
+                }
+                tapCandidate = false;
+                break;
+            case MotionEvent.ACTION_CANCEL:
+                tapCandidate = false;
+                break;
+            default:
+                break;
+        }
+    }
+
+    private boolean isSoftKeyboardVisible() {
+        if (streamContainer != null) {
+            androidx.core.view.WindowInsetsCompat insets = androidx.core.view.ViewCompat.getRootWindowInsets(streamContainer);
+            if (insets != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                return insets.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime());
+            }
+        }
+        return softKeyboardShown;
+    }
+
+    private void showSoftKeyboard() {
+        if (isOnExternalDisplay() || streamContainer == null) {
+            return;
+        }
+        LimeLog.info("Host text field focused, showing the on-screen keyboard");
+        streamContainer.setFocusableInTouchMode(true);
+        streamContainer.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm == null) {
+            return;
+        }
+        if (!prefConfig.enableCommitText || !imm.showSoftInput(streamContainer, InputMethodManager.SHOW_IMPLICIT)) {
+            imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0);
+        }
+        softKeyboardShown = true;
+    }
+
+    private void hideSoftKeyboard() {
+        if (streamContainer == null) {
+            return;
+        }
+        LimeLog.info("Host text field lost focus, hiding the on-screen keyboard");
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(streamContainer.getWindowToken(), 0);
+        }
+        softKeyboardShown = false;
     }
 
     @Override
@@ -4308,6 +4519,40 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
         enqueueCommitText(text.toString());
         return true;
+    }
+
+    @Override
+    public boolean handleImeEdit(ImeTextComposer.Edit edit) {
+        if (!prefConfig.enableCommitText || conn == null) {
+            return false;
+        }
+        if (edit.isEmpty()) {
+            return true;
+        }
+        // Flush pending text first so the edit is applied in order
+        while (!commitTextQueue.isEmpty()) {
+            conn.sendUtf8Text(commitTextQueue.poll());
+        }
+        sendKeyRepeated(KeyEvent.KEYCODE_DEL, edit.backspaces);
+        sendKeyRepeated(KeyEvent.KEYCODE_FORWARD_DEL, edit.forwardDeletes);
+        if (!edit.insert.isEmpty()) {
+            enqueueCommitText(edit.insert);
+        }
+        return true;
+    }
+
+    private void sendKeyRepeated(int androidKeyCode, int count) {
+        if (count <= 0) {
+            return;
+        }
+        short code = keyboardTranslator.translate(androidKeyCode, 0, -1);
+        if (code == 0) {
+            return;
+        }
+        for (int i = 0; i < count; i++) {
+            conn.sendKeyboardInput(code, KeyboardPacket.KEY_DOWN, (byte) 0, (byte) 0);
+            conn.sendKeyboardInput(code, KeyboardPacket.KEY_UP, (byte) 0, (byte) 0);
+        }
     }
 
     @Override

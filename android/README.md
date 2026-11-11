@@ -1,19 +1,35 @@
-# Artemis Android
+<p align="center"><img src="../branding/logo/nyxplay-app-icon.png" width="120" alt="NyxPlay"></p>
 
-Previously named Moonlight Noir
+# NyxPlay for Android
 
-An open source client for [Apollo](https://github.com/ClassicOldSong/Apollo)/[Sunshine](https://github.com/LizardByte/Sunshine).
+Android client of [NyxPlay](../README.md). It streams games and desktops from
+[NyxPlay Host](../host), [Apollo](https://github.com/ClassicOldSong/Apollo) or
+[Sunshine](https://github.com/LizardByte/Sunshine) to phones, tablets, TVs and Chromebooks.
 
-Artemis Android will allow you to stream your collection of games from your Windows PC to your Android device,
-whether in your own home or over the internet.
+NyxPlay for Android is based on [Artemis (Moonlight Noir)](https://github.com/ClassicOldSong/moonlight-android)
+by ClassicOldSong, which itself is a fork of [Moonlight for Android](https://github.com/moonlight-stream/moonlight-android).
 
-Artemis is currently the best fork of Moonlight with loads of optimizations for office usage.
+| | |
+|---|---|
+| Package | `com.siberanka.nyxplay` (debug: `com.siberanka.nyxplay.debug`) |
+| Version | `2026.11.11.1` (versionCode `2026111101`) |
+| Minimum Android | 5.0 (API 21) |
 
-A more seamless experience with virtual display will be Artemis paired with [Apollo](https://github.com/ClassicOldSong/Apollo).
+## NyxPlay features
 
-# Features
+1. **Automatic on-screen keyboard:** tapping a text field on the host opens the keyboard, it closes when
+   the field loses focus (requires NyxPlay Host).
+2. **Layout aware typing:** Turkish `ğ ü ş ı ö ç İ` and other characters that the host keyboard layout
+   would type differently are sent as exact characters; hardware keyboard layouts are detected from
+   Android, the input method language or the system language.
+3. **Live soft keyboard text** with optional predictions, gesture typing and voice input.
+4. Side by side installation with Moonlight and Artemis, NyxPlay night theme and new icons.
 
-If you switch back to the main stream version, you'll be missing the following awesome features which are very unlikely to be added there:
+See [docs/TEXT_INPUT.md](../docs/TEXT_INPUT.md) for details.
+
+## Inherited from Artemis
+
+All Artemis features are preserved:
 
 1. Custom virtual buttons with import and export support.
 2. [Custom resolutions](https://github.com/moonlight-stream/moonlight-android/pull/1349).
@@ -47,38 +63,22 @@ If you switch back to the main stream version, you'll be missing the following a
 30. Clipboard sync (requires Apollo)
 31. SBS 3D for external Displays (Using AI MiDaS v2 Lite)
 
-# Disclaimer
-
-This is the `go away` version of Moonlight Android.
-
-I got kicked from Moonlight and Sunshine's Discord server literally for helping people out.
-
-This is what I got for finding a bug, opened an issue, getting no response, troubleshoot myself, fixed the issue myself, shared it by PR to the main repo hoping my efforts can help someone else during the maintainance gap.
-
-Yes, I'm going away. Fixes and improvements on this fork are not necessarily be merged to the main repo either. I have also started [a fork of Sunshine called Apollo](https://github.com/ClassicOldSong/Apollo) and will add useful features that will never get merged by the main repo shortly. [Apollo](https://github.com/ClassicOldSong/Apollo) and [Moonlight Noir](https://github.com/ClassicOldSong/moonlight-android) will no longer be compatible with OG Sunshine and OG Moonlight eventually, but they'll work even better with much more carefully designed features.
-
-The main repo had stayed silent for 5 months, with nobody actually responding to issues, and people are getting totally no help besides the limited FAQ in their Discord server. I tried to answer issues and questions, solve problems within my ablilty but I got kicked out just for helping others.
-
-**PRs for feature improvements are welcomed here unlike the main repo, your ideas are more likely to be appreciated and your efforts are actually being respected. We welcome people who can and willing to share their efforts, helping yourselves and other people in need.**
-
-**Update**: They have contacted me and apologized for this incident, but the fact it **happened** still motivated me to start my own fork.
-
-## Downloads
-* [Download APK directly](https://github.com/ClassicOldSong/moonlight-android/releases)
-* [Use Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.limelight.noir%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FClassicOldSong%2Fmoonlight-android%22%2C%22author%22%3A%22ClassicOldSong%22%2C%22name%22%3A%22Artemis%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22nonRoot%5C%22%2C%5C%22matchGroutToUse%5C%22%3A%5C%22%241%5C%22%2C%5C%22versionExtractionRegEx%5C%22%3A%5C%22v(.%2B)%5C%22%7D%22%7D) (recommended)
-
 ## Building
-* Install Android Studio and the Android NDK
-* Run ‘git submodule update --init --recursive’ from within moonlight-android/
-* In moonlight-android/, create a file called ‘local.properties’. Add an ‘ndk.dir=’ property to the local.properties file and set it equal to your NDK directory.
-* Build the APK using Android Studio or gradle
 
-## Authors
+```bash
+git submodule update --init --recursive
+echo "sdk.dir=/path/to/Android/Sdk" > local.properties
+./gradlew assembleNonRoot_gameRelease
+./gradlew testNonRoot_gameDebugUnitTest
+```
 
-* [Cameron Gutman](https://github.com/cgutman)  
-* [Diego Waxemberg](https://github.com/dwaxemberg)  
-* [Aaron Neyer](https://github.com/Aaronneyer)  
-* [Andrew Hennessy](https://github.com/yetanothername)
+Requires JDK 17+, Android SDK 36 and NDK `28.2.13676358`. More in [docs/BUILDING.md](../docs/BUILDING.md).
 
-Moonlight is the work of students at [Case Western](http://case.edu) and was
-started as a project at [MHacks](http://mhacks.org).
+## Credits
+
+* Artemis / Moonlight Noir: [ClassicOldSong](https://github.com/ClassicOldSong) and contributors
+* Moonlight for Android: [Cameron Gutman](https://github.com/cgutman), [Diego Waxemberg](https://github.com/dwaxemberg),
+  [Aaron Neyer](https://github.com/Aaronneyer), [Andrew Hennessy](https://github.com/yetanothername) and contributors.
+  Moonlight is the work of students at [Case Western](http://case.edu) and was started as a project at [MHacks](http://mhacks.org).
+
+Licensed under the GNU GPL v3 ([LICENSE.txt](LICENSE.txt)). See [CREDITS.md](../CREDITS.md).

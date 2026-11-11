@@ -11,4 +11,11 @@ protocol extensions (for example the host driven text input state message)
 can be maintained next to the Android client. Nested dependencies (`enet`)
 remain git submodules and are declared in the repository root `.gitmodules`.
 
-All NyxPlay changes are marked with `NyxPlay:` comments.
+## Local changes
+
+- Cherry-picked from upstream moonlight-common-c:
+  `4a95eb3` (send UTF-8 events on the keyboard channel) and
+  `0405384` (pack UTF-8 text densely, no artificial delay for Sunshine based hosts).
+- NyxPlay text input state extension (packet type `0x4E01`, `setTextInputState` callback).
+
+NyxPlay changes are marked with `NyxPlay` comments.

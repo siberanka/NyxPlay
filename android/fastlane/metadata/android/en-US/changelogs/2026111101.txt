@@ -1,0 +1,6 @@
+First NyxPlay release (2026.11.11.1):
+- New name, package (com.siberanka.nyxplay), icons and night theme
+- Automatic on-screen keyboard for host text fields (NyxPlay Host)
+- Smart typing: correct ğ ü ş ı ö ç İ and other characters on every host keyboard layout
+- Live typing with predictions, gesture typing and voice input
+- Keyboard layout detection for hardware keyboards (Android layout, input language, system language)
