@@ -60,7 +60,8 @@ CONNECTION_LISTENER_CALLBACKS Session::k_ConnCallbacks = {
     Session::clRumbleTriggers,
     Session::clSetMotionEventState,
     Session::clSetControllerLED,
-    Session::clSetAdaptiveTriggers
+    Session::clSetAdaptiveTriggers,
+    Session::clSetTextInputState
 };
 
 Session* Session::s_ActiveSession;
@@ -196,6 +197,15 @@ void Session::clConnectionStatusUpdate(int connectionStatus)
         s_ActiveSession->m_OverlayManager.setOverlayState(Overlay::OverlayStatusUpdate, false);
         break;
     }
+}
+
+void Session::clSetTextInputState(bool active, uint8_t flags)
+{
+    // NyxPlay protocol extension: the host reports text field focus changes. Desktop clients
+    // have a physical keyboard, so the state is only logged for diagnostics for now.
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Host text field focus: %s (flags: 0x%x)",
+                active ? "active" : "inactive", flags);
 }
 
 void Session::clSetHdrMode(bool enabled)

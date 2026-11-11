@@ -89,6 +89,24 @@ Things to verify:
 - the web UI serves the NyxPlay title, theme, favicon and logo;
 - the PIN is accepted and the client appears in `/api/clients/list`.
 
+### Streaming and the text input extension
+
+```bash
+set NYXPLAY_TEXT_INPUT_EVENTS=1      # PC client: opt in to text input notifications (diagnostics)
+NyxPlay.exe stream 127.0.0.1:57989 Desktop --resolution 1280x720 --fps 30 --display-mode windowed --absolute-mouse --quit-after
+```
+
+Focus a text box on the host (for example with a small test window that moves the focus between a
+text box and a button) and compare the logs:
+
+| Host log (`min_log_level = debug`) | Client log |
+|------------------------------------|------------|
+| `Client [...] requested text input focus notifications` | |
+| `Text input monitor started (UI Automation)` | |
+| `Sent text input state to [...]: inactive` | `Host text field focus: inactive` |
+| `Sent text input state to [...]: active` | `Host text field focus: active` |
+| `Text input monitor stopped` (after the session ends) | |
+
 > HTTPS inspection by security software (for example an antivirus "web shield") re-signs the host
 > certificate. GameStream clients pin the host certificate, so the final pairing step and streaming
 > fail until the client executable is excluded from HTTPS scanning.

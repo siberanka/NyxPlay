@@ -234,6 +234,8 @@ NvHTTP::startApp(QString verb,
                                    "&remoteControllersBitmap="+QString::number(gamepadMask)+
                                    "&gcmap="+QString::number(gamepadMask)+
                                    "&gcpersist="+QString::number(persistGameControllersOnDisconnect ? 1 : 0)+
+                                   // NyxPlay: opt in to host text input focus notifications (diagnostics)
+                                   (qEnvironmentVariableIntValue("NYXPLAY_TEXT_INPUT_EVENTS") ? "&nyxTextInput=1" : "")+
                                    LiGetLaunchUrlQueryParameters(),
                                    LAUNCH_TIMEOUT_MS);
 
