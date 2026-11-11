@@ -80,7 +80,7 @@
   import Navbar from './Navbar.vue'
   import ClientCard from './ClientCard.vue'
   import ResourceCard from './ResourceCard.vue'
-  import NyxPlayVersion, { RELEASES_API } from './nyxplay_version'
+  import NyxPlayVersion, { RELEASES_API, normalizeRelease } from './nyxplay_version'
 
   console.log("Hello, NyxPlay Host!")
   let app = createApp({
@@ -106,7 +106,7 @@
         this.version = new NyxPlayVersion(null, config.version);
         console.log("Version: ", this.version.version)
         const releases = await fetch(RELEASES_API).then((r) => r.ok ? r.json() : []);
-        const hostReleases = Array.isArray(releases) ? releases.filter(NyxPlayVersion.isHostRelease) : [];
+        const hostReleases = Array.isArray(releases) ? releases.map(normalizeRelease).filter(NyxPlayVersion.isHostRelease) : [];
         const stable = hostReleases.find(release => !release.prerelease && !release.draft);
         if (stable) {
           this.githubVersion = new NyxPlayVersion(stable, null);

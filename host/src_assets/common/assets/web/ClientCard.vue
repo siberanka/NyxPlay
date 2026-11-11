@@ -24,13 +24,13 @@
             platform: 'Android',
             icon: 'fa-brands fa-android',
             name: 'NyxPlay',
-            link: 'https://github.com/siberanka/NyxPlay/tree/main/android'
+            link: 'https://gitlab.com/siberanka/NyxPlay/-/tree/main/android'
         },
         {
             platform: 'Windows / Linux / macOS',
             icon: 'fa-solid fa-desktop',
             name: 'NyxPlay',
-            link: 'https://github.com/siberanka/NyxPlay/tree/main/pc'
+            link: 'https://gitlab.com/siberanka/NyxPlay/-/tree/main/pc'
         },
         {
             platform: 'Android',

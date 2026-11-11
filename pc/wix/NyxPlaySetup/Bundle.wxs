@@ -15,8 +15,8 @@
           Version="!(bind.PackageVersion.NyxPlay_x64)"
           Manufacturer="NyxPlay"
           UpgradeCode="79ced850-ec68-5673-bab6-6d915ddb9423"
-          HelpUrl="https://github.com/siberanka/NyxPlay#readme"
-          UpdateUrl="https://github.com/siberanka/NyxPlay/releases"
+          HelpUrl="https://gitlab.com/siberanka/NyxPlay#readme"
+          UpdateUrl="https://gitlab.com/siberanka/NyxPlay/-/releases"
           DisableModify="yes"
           IconSourceFile="..\..\app\nyxplay.ico">
 

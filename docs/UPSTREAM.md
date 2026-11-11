@@ -11,6 +11,9 @@ upstream fixes can be merged while NyxPlay specific changes are preserved.
 
 ## One-time setup
 
+The canonical repository is `https://gitlab.com/siberanka/NyxPlay` (`origin`); `https://github.com/siberanka/NyxPlay`
+is a mirror that keeps the GitHub fork network of Artemis intact.
+
 ```bash
 git remote add artemis      https://github.com/ClassicOldSong/moonlight-android.git
 git remote add apollo       https://github.com/ClassicOldSong/Apollo.git

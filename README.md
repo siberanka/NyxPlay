@@ -67,7 +67,7 @@ Third party sources that are not modified are referenced as git submodules (decl
 ## Getting started
 
 ```bash
-git clone --recurse-submodules <repository-url> NyxPlay
+git clone --recurse-submodules https://gitlab.com/siberanka/NyxPlay.git
 cd NyxPlay
 ```
 

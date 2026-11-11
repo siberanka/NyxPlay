@@ -24,7 +24,7 @@ BEGIN
             VALUE "InternalName",     TOSTRING(PROJECT_NAME)
             VALUE "ProductName",      TOSTRING(PROJECT_NAME)
             VALUE "ProductVersion",   TOSTRING(PROJECT_VERSION)
-            VALUE "LegalCopyright",   "GPL-3.0-only. Based on Apollo and Sunshine. https://github.com/siberanka/NyxPlay"
+            VALUE "LegalCopyright",   "GPL-3.0-only. Based on Apollo and Sunshine. https://gitlab.com/siberanka/NyxPlay"
             VALUE "OriginalFilename", "nyxplay-host.exe"
         END
     END

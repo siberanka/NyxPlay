@@ -45,7 +45,7 @@ void AutoUpdateChecker::start()
 
     // We'll get a callback when this is finished
     // NyxPlay publishes its own update manifest (same format as moonlight-stream.org/updates/qt.json)
-    QUrl url("https://raw.githubusercontent.com/siberanka/NyxPlay/main/pc/deploy/updates/qt.json");
+    QUrl url("https://gitlab.com/siberanka/NyxPlay/-/raw/main/pc/deploy/updates/qt.json");
     QNetworkRequest request(url);
 #if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
     request.setAttribute(QNetworkRequest::Http2AllowedAttribute, true);

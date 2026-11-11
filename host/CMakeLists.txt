@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(NyxPlayHost VERSION 2026.11.11.1
         DESCRIPTION "Self-hosted game stream host for NyxPlay"
-        HOMEPAGE_URL "https://github.com/siberanka/NyxPlay")
+        HOMEPAGE_URL "https://gitlab.com/siberanka/NyxPlay")
 
 # User facing product name (the CMake project name cannot contain spaces safely)
 set(PROJECT_DISPLAY_NAME "NyxPlay Host")
