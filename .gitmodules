@@ -1,3 +1,83 @@
-[submodule "app/src/main/jni/moonlight-core/moonlight-common-c"]
-	path = android/app/src/main/jni/moonlight-core/moonlight-common-c
+[submodule "android/app/src/main/jni/moonlight-core/moonlight-common-c/enet"]
+	path = android/app/src/main/jni/moonlight-core/moonlight-common-c/enet
+	url = https://github.com/cgutman/enet.git
+[submodule "host/packaging/linux/flatpak/deps/flatpak-builder-tools"]
+	path = host/packaging/linux/flatpak/deps/flatpak-builder-tools
+	url = https://github.com/flatpak/flatpak-builder-tools.git
+	branch = master
+[submodule "host/packaging/linux/flatpak/deps/shared-modules"]
+	path = host/packaging/linux/flatpak/deps/shared-modules
+	url = https://github.com/flathub/shared-modules.git
+	branch = master
+[submodule "host/third-party/build-deps"]
+	path = host/third-party/build-deps
+	url = https://github.com/LizardByte/build-deps.git
+	branch = dist
+[submodule "host/third-party/doxyconfig"]
+	path = host/third-party/doxyconfig
+	url = https://github.com/LizardByte/doxyconfig.git
+	branch = master
+[submodule "host/third-party/googletest"]
+	path = host/third-party/googletest
+	url = https://github.com/google/googletest.git
+	branch = main
+[submodule "host/third-party/inputtino"]
+	path = host/third-party/inputtino
+	url = https://github.com/games-on-whales/inputtino.git
+	branch = stable
+[submodule "host/third-party/libdisplaydevice"]
+	path = host/third-party/libdisplaydevice
+	url = https://github.com/LizardByte/libdisplaydevice.git
+	branch = master
+[submodule "host/third-party/moonlight-common-c"]
+	path = host/third-party/moonlight-common-c
 	url = https://github.com/ClassicOldSong/moonlight-common-c
+	branch = master
+[submodule "host/third-party/nanors"]
+	path = host/third-party/nanors
+	url = https://github.com/sleepybishop/nanors.git
+	branch = master
+[submodule "host/third-party/nv-codec-headers"]
+	path = host/third-party/nv-codec-headers
+	url = https://github.com/FFmpeg/nv-codec-headers.git
+	branch = sdk/12.0
+[submodule "host/third-party/nvapi-open-source-sdk"]
+	path = host/third-party/nvapi-open-source-sdk
+	url = https://github.com/LizardByte/nvapi-open-source-sdk.git
+	branch = sdk
+[submodule "host/third-party/Simple-Web-Server"]
+	path = host/third-party/Simple-Web-Server
+	url = https://github.com/ClassicOldSong/Simple-Web-Server
+	branch = master
+[submodule "host/third-party/TPCircularBuffer"]
+	path = host/third-party/TPCircularBuffer
+	url = https://github.com/michaeltyson/TPCircularBuffer.git
+	branch = master
+[submodule "host/third-party/tray"]
+	path = host/third-party/tray
+	url = https://github.com/LizardByte/tray.git
+	branch = master
+[submodule "host/third-party/ViGEmClient"]
+	path = host/third-party/ViGEmClient
+	url = https://github.com/LizardByte/Virtual-Gamepad-Emulation-Client.git
+	branch = master
+[submodule "host/third-party/wayland-protocols"]
+	path = host/third-party/wayland-protocols
+	url = https://gitlab.freedesktop.org/wayland/wayland-protocols.git
+	branch = main
+[submodule "host/third-party/wlr-protocols"]
+	path = host/third-party/wlr-protocols
+	url = https://gitlab.freedesktop.org/wlroots/wlr-protocols.git
+	branch = master
+[submodule "pc/app/SDL_GameControllerDB"]
+	path = pc/app/SDL_GameControllerDB
+	url = https://github.com/gabomdq/SDL_GameControllerDB.git
+[submodule "pc/moonlight-common-c/moonlight-common-c/enet"]
+	path = pc/moonlight-common-c/moonlight-common-c/enet
+	url = https://github.com/cgutman/enet.git
+[submodule "pc/moonlight-common-c/moonlight-common-c/nanors"]
+	path = pc/moonlight-common-c/moonlight-common-c/nanors
+	url = https://github.com/sleepybishop/nanors.git
+[submodule "pc/qmdnsengine/qmdnsengine"]
+	path = pc/qmdnsengine/qmdnsengine
+	url = https://github.com/cgutman/qmdnsengine.git
