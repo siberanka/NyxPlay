@@ -54,6 +54,18 @@ namespace args {
    */
   int version();
 
+  /**
+   * @brief Import settings, applications and paired clients of an installed Apollo or Sunshine host.
+   * @param name The name of the program.
+   * @param argc The number of arguments.
+   * @param argv The arguments: `auto`, `detect` or a config directory, followed by options.
+   * @return 0 on success, 1 when no other host was found, 2 for invalid arguments, 3 when the import failed.
+   * @examples
+   * import_config("nyxplay-host", 1, {"auto"});
+   * @examples_end
+   */
+  int import_config(const char *name, int argc, char *argv[]);
+
 #ifdef _WIN32
   /**
    * @brief Restore global NVIDIA control panel settings.

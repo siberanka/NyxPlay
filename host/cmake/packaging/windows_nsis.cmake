@@ -9,12 +9,21 @@ set(CPACK_NSIS_INSTALLED_ICON_NAME "${PROJECT__DIR}\\\\${PROJECT_EXE}")
 # Install service
 SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
         "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}
-        IfSilent +2 0
-        # ExecShell 'open' 'https://docs.lizardbyte.dev/projects/sunshine'
         nsExec::ExecToLog 'icacls \\\"$INSTDIR\\\" /reset'
         nsExec::ExecToLog '\\\"$INSTDIR\\\\scripts\\\\update-path.bat\\\" add'
         nsExec::ExecToLog '\\\"$INSTDIR\\\\drivers\\\\sudovda\\\\install.bat\\\"'
         nsExec::ExecToLog '\\\"$INSTDIR\\\\scripts\\\\migrate-config.bat\\\"'
+        ; First installation only: offer to import the configuration of an installed Apollo or
+        ; Sunshine host (runs before the service starts; the other installation is not modified)
+        IfFileExists '$INSTDIR\\\\config\\\\sunshine.conf' NoImport 0
+        nsExec::Exec '\\\"$INSTDIR\\\\nyxplay-host.exe\\\" --import-config detect'
+        Pop $0
+        StrCmp $0 '0' 0 NoImport
+        MessageBox MB_YESNO|MB_ICONQUESTION \
+            'An Apollo or Sunshine installation was found. Import its settings, applications and paired devices into ${PROJECT_DISPLAY_NAME}?$\\r$\\n$\\r$\\nBoth hosts cannot use the same ports: stop or uninstall the other host afterwards, or change the port in the settings.' \
+            /SD IDNO IDNO NoImport
+            nsExec::ExecToLog '\\\"$INSTDIR\\\\nyxplay-host.exe\\\" --import-config auto'
+        NoImport:
         nsExec::ExecToLog '\\\"$INSTDIR\\\\scripts\\\\add-firewall-rule.bat\\\"'
         nsExec::ExecToLog \
           'powershell.exe -NoProfile -ExecutionPolicy Bypass -File \\\"$INSTDIR\\\\scripts\\\\install-gamepad.ps1\\\"'
@@ -30,6 +39,8 @@ set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
         nsExec::ExecToLog '\\\"$INSTDIR\\\\scripts\\\\delete-firewall-rule.bat\\\"'
         nsExec::ExecToLog '\\\"$INSTDIR\\\\scripts\\\\uninstall-service.bat\\\"'
         nsExec::ExecToLog '\\\"$INSTDIR\\\\nyxplay-host.exe\\\" --restore-nvprefs-undo'
+        ; Must run before $INSTDIR can be deleted below and regardless of the keep-config answer
+        nsExec::ExecToLog '\\\"$INSTDIR\\\\scripts\\\\update-path.bat\\\" remove'
         MessageBox MB_YESNO|MB_ICONQUESTION \
             'Do you want to remove Virtual Gamepad?' \
             /SD IDNO IDNO NoGamepad
@@ -47,7 +58,6 @@ set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
             'Do you want to remove $INSTDIR (this includes the configuration, cover images, and settings)?' \
             /SD IDNO IDNO NoDelete
             RMDir /r \\\"$INSTDIR\\\"; skipped if no
-        nsExec::ExecToLog '\\\"$INSTDIR\\\\scripts\\\\update-path.bat\\\" remove'
         NoDelete:
         ")
 

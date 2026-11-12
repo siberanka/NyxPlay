@@ -15,6 +15,7 @@
 #include <boost/log/common.hpp>
 #include <boost/log/expressions.hpp>
 #include <boost/log/sinks.hpp>
+#include <boost/log/utility/exception_handler.hpp>
 #include <boost/log/sources/severity_logger.hpp>
 
 // local includes
@@ -184,6 +185,9 @@ namespace logging {
     sink->set_filter(severity >= min_log_level);
     sink->set_formatter(&formatter);
 
+    // A backend I/O error (disk full, locked file) must not kill the sink and silence all later logs.
+    sink->set_exception_handler(boost::log::make_exception_suppressor());
+
     // Flush after each log record to ensure log file contents on disk isn't stale.
     // This is particularly important when running from a Windows service.
     sink->locked_backend()->auto_flush(true);
@@ -273,6 +277,8 @@ namespace logging {
       << "    --help                    | print help"sv << std::endl
       << "    --creds username password | set user credentials for the Web manager"sv << std::endl
       << "    --version                 | print the version of sunshine"sv << std::endl
+      << "    --import-config [auto|detect|dir] | import settings, apps and paired clients of an installed"sv << std::endl
+      << "                              | Apollo or Sunshine host (see --import-config help)"sv << std::endl
       << std::endl
       << "    flags"sv << std::endl
       << "        -0 | Read PIN from stdin"sv << std::endl

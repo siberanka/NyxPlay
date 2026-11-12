@@ -94,6 +94,47 @@
         </div>
       </div>
     </div>
+    <!-- Import the configuration of an installed Apollo / Sunshine host -->
+    <div class="card p-2 my-4">
+      <div class="card-body">
+        <h2 id="import">{{ $t('troubleshooting.import') }}</h2>
+        <br>
+        <p style="white-space: pre-line">{{ $t('troubleshooting.import_desc') }}</p>
+        <div class="mb-3">
+          <label for="import_source" class="form-label">{{ $t('troubleshooting.import_source') }}</label>
+          <select id="import_source" class="form-select" v-model="importPath" v-if="importSources.length">
+            <option v-for="source in importSources" :key="source.path" :value="source.path">{{ source.product }} — {{ source.path }}</option>
+            <option value="">{{ $t('troubleshooting.import_source_custom') }}</option>
+          </select>
+          <input type="text" class="form-control mt-2" v-model="importCustomPath" v-if="!importPath"
+                 :placeholder="$t('troubleshooting.import_source_placeholder')" />
+          <div class="form-text" v-if="!importSources.length">{{ $t('troubleshooting.import_none') }}</div>
+        </div>
+        <div class="form-check" v-for="option in importOptionNames" :key="option">
+          <input class="form-check-input" type="checkbox" :id="`import_${option}`" v-model="importOptions[option]" />
+          <label class="form-check-label" :for="`import_${option}`">{{ $t(`troubleshooting.import_opt_${option}`) }}</label>
+        </div>
+        <div class="alert alert-success mt-3" v-if="importResult && importResult.status">
+          <b>{{ $t('troubleshooting.import_success') }}</b>
+          <ul class="mb-0">
+            <li v-for="item in importResult.imported" :key="item">{{ item }}</li>
+          </ul>
+        </div>
+        <div class="alert alert-danger mt-3" v-if="importResult && !importResult.status">
+          <b>{{ $t('troubleshooting.import_error') }}</b> {{ importResult.error }}
+        </div>
+        <div class="alert alert-warning mt-3" v-if="importResult && importResult.warnings && importResult.warnings.length">
+          <ul class="mb-0">
+            <li v-for="warning in importResult.warnings" :key="warning">{{ warning }}</li>
+          </ul>
+        </div>
+        <div class="mt-3">
+          <button class="btn btn-warning" :disabled="importPressed || serverRestarting || !(importPath || importCustomPath)" @click="importConfig">
+            {{ $t('troubleshooting.import') }}
+          </button>
+        </div>
+      </div>
+    </div>
     <!-- Reset persistent display device settings -->
     <div class="card p-2 my-4" v-if="platform === 'windows'">
       <div class="card-body">
@@ -148,6 +189,13 @@
           closeAppStatus: null,
           ddResetPressed: false,
           ddResetStatus: null,
+          importSources: [],
+          importPath: "",
+          importCustomPath: "",
+          importOptionNames: ['settings', 'apps', 'clients', 'web_credentials', 'keep_port'],
+          importOptions: { settings: true, apps: true, clients: true, web_credentials: false, keep_port: true },
+          importPressed: false,
+          importResult: null,
           logs: 'Loading...',
           logFilter: null,
           logInterval: null,
@@ -171,6 +219,16 @@
           .then((r) => {
             this.platform = r.platform;
           });
+
+        fetch("./api/import", { credentials: 'include' })
+          .then((r) => r.json())
+          .then((r) => {
+            this.importSources = Array.isArray(r.sources) ? r.sources : [];
+            if (this.importSources.length) {
+              this.importPath = this.importSources[0].path;
+            }
+          })
+          .catch(() => {});
 
         this.logInterval = setInterval(() => {
           this.refreshLogs();
@@ -223,6 +281,35 @@
         },
         copyLogs() {
           navigator.clipboard.writeText(this.actualLogs);
+        },
+        importConfig() {
+          if (!window.confirm(this.i18n.t('troubleshooting.import_confirm'))) return;
+          this.importPressed = true;
+          this.importResult = null;
+          fetch("./api/import", {
+            credentials: 'include',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(Object.assign({ path: this.importPath || this.importCustomPath }, this.importOptions))
+          })
+            .then((r) => r.json())
+            .then((r) => {
+              this.importPressed = false;
+              this.importResult = r;
+              if (r.status && r.restarting) {
+                // The host restarts to load the imported configuration
+                this.serverRestarting = true;
+                setTimeout(() => {
+                  this.serverRestarting = false;
+                }, 8000);
+              }
+            })
+            .catch((e) => {
+              this.importPressed = false;
+              this.importResult = { status: false, error: String(e) };
+            });
         },
         restart() {
           this.serverRestarting = true;

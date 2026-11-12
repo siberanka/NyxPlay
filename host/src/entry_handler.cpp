@@ -4,12 +4,14 @@
  */
 // standard includes
 #include <csignal>
+#include <filesystem>
 #include <format>
 #include <iostream>
 #include <thread>
 
 // local includes
 #include "config.h"
+#include "config_import.h"
 #include "confighttp.h"
 #include "entry_handler.h"
 #include "globals.h"
@@ -52,6 +54,82 @@ namespace args {
 
   int version() {
     // version was already logged at startup
+    return 0;
+  }
+
+  int import_config(const char *name, int argc, char *argv[]) {
+    const auto target_dir = std::filesystem::path(config::sunshine.config_file).parent_path();
+
+    std::string source_arg = "auto";
+    config_import::options_t options;
+    for (int i = 0; i < argc; ++i) {
+      std::string_view arg {argv[i]};
+      if (arg == "--no-settings"sv) {
+        options.settings = false;
+      } else if (arg == "--no-apps"sv) {
+        options.apps = false;
+      } else if (arg == "--no-clients"sv) {
+        options.clients = false;
+      } else if (arg == "--web-credentials"sv) {
+        options.web_credentials = true;
+      } else if (arg == "--default-port"sv) {
+        options.keep_port = false;
+      } else if (arg == "help"sv || arg == "--help"sv) {
+        std::cout
+          << "Usage: "sv << name << " --import-config [auto|detect|<config directory>] [options]"sv << std::endl
+          << "  auto                 import from the first detected Apollo or Sunshine installation (default)"sv << std::endl
+          << "  detect               only list the detected installations (exit code 0 if one exists)"sv << std::endl
+          << "  <config directory>   import from this directory (contains sunshine.conf)"sv << std::endl
+          << "Options:"sv << std::endl
+          << "  --no-settings        do not import sunshine.conf"sv << std::endl
+          << "  --no-apps            do not import the application list and covers"sv << std::endl
+          << "  --no-clients         do not import paired clients and the host identity"sv << std::endl
+          << "  --web-credentials    also import the Web UI user name and password"sv << std::endl
+          << "  --default-port       do not import the port setting"sv << std::endl
+          << "Stop the host before importing; existing files are backed up."sv << std::endl;
+        return 0;
+      } else if (!arg.starts_with("--"sv)) {
+        source_arg = arg;
+      } else {
+        std::cout << "Unknown option: "sv << arg << std::endl;
+        return 2;
+      }
+    }
+
+    std::filesystem::path source_dir;
+    if (source_arg == "auto"sv || source_arg == "detect"sv) {
+      const auto sources = config_import::detect_sources(target_dir);
+      if (sources.empty()) {
+        std::cout << "No Apollo or Sunshine configuration was found."sv << std::endl;
+        return 1;
+      }
+      for (const auto &source : sources) {
+        std::cout << "Found "sv << source.product << " configuration: "sv << source.config_dir.string() << std::endl;
+      }
+      if (source_arg == "detect"sv) {
+        return 0;
+      }
+      source_dir = sources.front().config_dir;
+    } else {
+      source_dir = std::filesystem::path(source_arg);
+    }
+
+    const auto result = config_import::import_from(source_dir, target_dir, options);
+    for (const auto &note : result.warnings) {
+      BOOST_LOG(warning) << "Import: "sv << note;
+    }
+    if (!result.ok) {
+      BOOST_LOG(error) << "Import from ["sv << source_dir.string() << "] failed: "sv << result.error;
+      return 3;
+    }
+
+    for (const auto &item : result.imported) {
+      BOOST_LOG(info) << "Imported "sv << item;
+    }
+    if (!result.backup_dir.empty()) {
+      BOOST_LOG(info) << "Previous files were saved to ["sv << result.backup_dir.string() << ']';
+    }
+    BOOST_LOG(info) << "Import from ["sv << source_dir.string() << "] finished"sv;
     return 0;
   }
 

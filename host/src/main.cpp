@@ -59,6 +59,9 @@ std::map<std::string_view, std::function<int(const char *name, int argc, char **
   {"version"sv, [](const char *name, int argc, char **argv) {
      return args::version();
    }},
+  {"import-config"sv, [](const char *name, int argc, char **argv) {
+     return args::import_config(name, argc, argv);
+   }},
 #ifdef _WIN32
   {"restore-nvprefs-undo"sv, [](const char *name, int argc, char **argv) {
      return args::restore_nvprefs_undo();

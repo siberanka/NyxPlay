@@ -82,6 +82,7 @@ Further reading:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) – how the pieces fit together
 - [docs/TEXT_INPUT.md](docs/TEXT_INPUT.md) – automatic keyboard and layout aware typing
 - [docs/protocol/text-input-state.md](docs/protocol/text-input-state.md) – protocol extension
+- [docs/MIGRATION.md](docs/MIGRATION.md) – importing settings, apps and paired devices from Apollo or Sunshine
 - [docs/TESTING.md](docs/TESTING.md) – unit tests and isolated end-to-end tests
 - [docs/UPSTREAM.md](docs/UPSTREAM.md) – keeping the components in sync with their upstream projects
 
