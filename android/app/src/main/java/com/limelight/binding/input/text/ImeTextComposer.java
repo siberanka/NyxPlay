@@ -35,7 +35,14 @@ public final class ImeTextComposer {
 
     private static final Edit NONE = new Edit(0, 0, "");
 
+    /** Upper bound for a single IME delete request (each unit becomes a key press on the host). */
+    public static final int MAX_DELETE = 256;
+
     private String composing = "";
+
+    private static int clamp(int length) {
+        return Math.max(0, Math.min(length, MAX_DELETE));
+    }
 
     /** Text currently shown as composing text on the host. */
     public String getComposingText() {
@@ -62,9 +69,35 @@ public final class ImeTextComposer {
         return NONE;
     }
 
+    /**
+     * {@link android.view.inputmethod.InputConnection#deleteSurroundingText} variant: the lengths are
+     * UTF-16 code units. Units inside the composing text are converted to code points (an emoji is
+     * one host backspace); units before it are unknown host text and count as one character each.
+     */
+    public Edit deleteSurroundingTextUtf16(int beforeLength, int afterLength) {
+        int before = clamp(beforeLength);
+        if (before > 0 && !composing.isEmpty()) {
+            int inComposing = Math.min(before, composing.length());
+            int start = composing.length() - inComposing;
+            if (start > 0 && start < composing.length() && Character.isLowSurrogate(composing.charAt(start))
+                    && Character.isHighSurrogate(composing.charAt(start - 1))) {
+                // Never split a surrogate pair: include the whole character
+                start--;
+                inComposing++;
+            }
+            int codePoints = composing.codePointCount(start, composing.length());
+            before = codePoints + Math.max(0, before - inComposing);
+        }
+        return deleteSurroundingText(before, afterLength);
+    }
+
+    /**
+     * {@link android.view.inputmethod.InputConnection#deleteSurroundingTextInCodePoints} variant.
+     * Lengths are clamped to {@link #MAX_DELETE} (some keyboards ask to delete everything).
+     */
     public Edit deleteSurroundingText(int beforeLength, int afterLength) {
-        int before = Math.max(0, beforeLength);
-        int after = Math.max(0, afterLength);
+        int before = clamp(beforeLength);
+        int after = clamp(afterLength);
         if (!composing.isEmpty()) {
             // Deleting inside the composing region shortens it locally as well
             int composingCodePoints = composing.codePointCount(0, composing.length());

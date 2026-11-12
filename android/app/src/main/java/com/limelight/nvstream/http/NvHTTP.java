@@ -326,7 +326,14 @@ public class NvHTTP {
         // 0xFFFFFFFF, which will cause Integer.parseInt() to throw a NumberFormatException due
         // to exceeding Integer.MAX_VALUE. We'll get the desired error code of -1 by just casting
         // the resulting long into an int.
-        int statusCode = (int)Long.parseLong(xpp.getAttributeValue(XmlPullParser.NO_NAMESPACE, "status_code"));
+        String statusCodeAttr = xpp.getAttributeValue(XmlPullParser.NO_NAMESPACE, "status_code");
+        int statusCode;
+        try {
+            statusCode = (int)Long.parseLong(statusCodeAttr);
+        } catch (NumberFormatException e) {
+            // Missing or malformed status code (the reply may come from any device on the network)
+            throw new HostHttpResponseException(-1, "Malformed status_code: " + statusCodeAttr);
+        }
         if (statusCode != 200) {
             String statusMsg = xpp.getAttributeValue(XmlPullParser.NO_NAMESPACE, "status_message");
             if (statusCode == -1 && "Invalid".equals(statusMsg)) {

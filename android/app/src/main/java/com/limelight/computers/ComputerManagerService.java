@@ -575,6 +575,11 @@ public class ComputerManagerService extends Service {
             return null;
         } catch (IOException e) {
             return null;
+        } catch (RuntimeException e) {
+            // /serverinfo is unauthenticated: a malformed (or malicious) reply must not crash the poller
+            // (NumberFormatException, IllegalArgumentException, ...)
+            LimeLog.warning("Rejecting malformed serverinfo from " + address + ": " + e);
+            return null;
         }
     }
 

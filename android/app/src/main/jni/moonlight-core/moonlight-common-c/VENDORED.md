@@ -16,6 +16,8 @@ remain git submodules and are declared in the repository root `.gitmodules`.
 - Cherry-picked from upstream moonlight-common-c:
   `4a95eb3` (send UTF-8 events on the keyboard channel) and
   `0405384` (pack UTF-8 text densely, no artificial delay for Sunshine based hosts).
+- Ported from upstream moonlight-common-c: the rewritten RTSP message parser (`RtspParser.c`), the
+  1 MiB RTSP response size limit and the session attribute check in `RtspConnection.c`.
 - NyxPlay text input state extension (packet type `0x4E01`, `setTextInputState` callback).
 
 NyxPlay changes are marked with `NyxPlay` comments.

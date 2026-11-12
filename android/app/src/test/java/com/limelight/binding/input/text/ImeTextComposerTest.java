@@ -77,6 +77,44 @@ public class ImeTextComposerTest {
     }
 
     @Test
+    public void utf16DeleteCountsAnEmojiAsOneHostCharacter() {
+        ImeTextComposer c = new ImeTextComposer();
+        c.setComposingText("a😀"); // "a" + grinning face (surrogate pair)
+        ImeTextComposer.Edit edit = c.deleteSurroundingTextUtf16(2, 0);
+        assertEquals(1, edit.backspaces);
+        assertEquals("a", c.getComposingText());
+    }
+
+    @Test
+    public void utf16DeleteNeverSplitsASurrogatePair() {
+        ImeTextComposer c = new ImeTextComposer();
+        c.setComposingText("😀");
+        // One code unit requested: the whole character goes
+        ImeTextComposer.Edit edit = c.deleteSurroundingTextUtf16(1, 0);
+        assertEquals(1, edit.backspaces);
+        assertEquals("", c.getComposingText());
+    }
+
+    @Test
+    public void utf16DeleteBeyondComposingCountsUnknownHostText() {
+        ImeTextComposer c = new ImeTextComposer();
+        c.setComposingText("ab");
+        // 2 units inside the composing text + 3 units of committed host text
+        assertEquals(5, c.deleteSurroundingTextUtf16(5, 0).backspaces);
+        assertEquals("", c.getComposingText());
+    }
+
+    @Test
+    public void hugeDeleteRequestsAreClamped() {
+        ImeTextComposer c = new ImeTextComposer();
+        ImeTextComposer.Edit edit = c.deleteSurroundingText(Integer.MAX_VALUE, Integer.MAX_VALUE);
+        assertEquals(ImeTextComposer.MAX_DELETE, edit.backspaces);
+        assertEquals(ImeTextComposer.MAX_DELETE, edit.forwardDeletes);
+        assertEquals(ImeTextComposer.MAX_DELETE, c.deleteSurroundingTextUtf16(Integer.MAX_VALUE, 0).backspaces);
+        assertTrue(c.deleteSurroundingText(-5, -1).isEmpty());
+    }
+
+    @Test
     public void plainCommitWithoutComposition() {
         ImeTextComposer c = new ImeTextComposer();
         assertEdit(c.commitText("ş"), 0, "ş");

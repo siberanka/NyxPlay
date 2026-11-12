@@ -4,6 +4,8 @@
 #include <android/log.h>
 
 #include <arpa/inet.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "minisdl.h"
@@ -125,9 +127,61 @@ Java_com_limelight_nvstream_jni_MoonBridge_sendMouseHighResHScroll(JNIEnv *env, 
 
 JNIEXPORT void JNICALL
 Java_com_limelight_nvstream_jni_MoonBridge_sendUtf8Text(JNIEnv *env, jclass clazz, jstring text) {
-    const char* utf8Text = (*env)->GetStringUTFChars(env, text, NULL);
-    LiSendUtf8TextEvent(utf8Text, strlen(utf8Text));
-    (*env)->ReleaseStringUTFChars(env, text, utf8Text);
+    // NyxPlay: GetStringUTFChars() returns *modified* UTF-8 (supplementary characters such as emoji
+    // become two 3-byte surrogates), which hosts reject. Encode standard UTF-8 from UTF-16 instead.
+    if (text == NULL) {
+        return;
+    }
+
+    jsize length = (*env)->GetStringLength(env, text);
+    if (length <= 0) {
+        return;
+    }
+
+    const jchar* utf16 = (*env)->GetStringChars(env, text, NULL);
+    if (utf16 == NULL) {
+        return;
+    }
+
+    // At most 3 bytes per UTF-16 code unit (a surrogate pair needs 4 bytes for 2 units)
+    char* utf8 = malloc((size_t)length * 3);
+    if (utf8 != NULL) {
+        size_t out = 0;
+        for (jsize i = 0; i < length; i++) {
+            uint32_t cp = utf16[i];
+            if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < length && utf16[i + 1] >= 0xDC00 && utf16[i + 1] <= 0xDFFF) {
+                cp = 0x10000 + ((cp - 0xD800) << 10) + (utf16[i + 1] - 0xDC00);
+                i++;
+            }
+            else if (cp >= 0xD800 && cp <= 0xDFFF) {
+                cp = 0xFFFD; // Unpaired surrogate
+            }
+
+            if (cp < 0x80) {
+                utf8[out++] = (char)cp;
+            }
+            else if (cp < 0x800) {
+                utf8[out++] = (char)(0xC0 | (cp >> 6));
+                utf8[out++] = (char)(0x80 | (cp & 0x3F));
+            }
+            else if (cp < 0x10000) {
+                utf8[out++] = (char)(0xE0 | (cp >> 12));
+                utf8[out++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+                utf8[out++] = (char)(0x80 | (cp & 0x3F));
+            }
+            else {
+                utf8[out++] = (char)(0xF0 | (cp >> 18));
+                utf8[out++] = (char)(0x80 | ((cp >> 12) & 0x3F));
+                utf8[out++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+                utf8[out++] = (char)(0x80 | (cp & 0x3F));
+            }
+        }
+
+        LiSendUtf8TextEvent(utf8, (unsigned int)out);
+        free(utf8);
+    }
+
+    (*env)->ReleaseStringChars(env, text, utf16);
 }
 
 JNIEXPORT void JNICALL

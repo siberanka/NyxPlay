@@ -10,6 +10,7 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 
 import com.limelight.Game;
@@ -49,6 +50,7 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
     private InputCallbacks mInputCallbacks;
     private boolean commitTextEnabled = false;
     private boolean imePredictions = false;
+    private boolean hostPasswordField = false;
 
     private double desiredAspectRatio;
     private boolean fillDisplay = false;
@@ -165,6 +167,23 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
         this.imePredictions = enabled;
     }
 
+    /**
+     * The host reported that the focused text field is a password field: the on-screen keyboard
+     * must not show suggestions or learn what is typed.
+     */
+    public void setHostPasswordField(boolean password) {
+        if (this.hostPasswordField == password) {
+            return;
+        }
+        this.hostPasswordField = password;
+        if (commitTextEnabled) {
+            InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.restartInput(this);
+            }
+        }
+    }
+
     @Override
     public boolean onKeyPreIme(int keyCode, KeyEvent event) {
         if (mInputCallbacks != null) {
@@ -196,7 +215,7 @@ public class StreamContainer extends FrameLayout implements SurfaceHolder.Callba
             return super.onCreateInputConnection(outAttrs);
         }
         // NyxPlay: exact Unicode text from soft keyboards, with live composing support
-        StreamInputConnection.configure(outAttrs, imePredictions);
+        StreamInputConnection.configure(outAttrs, imePredictions, hostPasswordField);
         return new StreamInputConnection(this, mInputCallbacks);
     }
 

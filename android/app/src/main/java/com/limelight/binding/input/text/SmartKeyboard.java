@@ -91,6 +91,10 @@ public final class SmartKeyboard {
         String text = SmartKeyboardTranslator.translate(in, mode, layout, forceLayout, hostFocus);
         if (text != null) {
             keysSentAsText.put(keyCode, true);
+        } else if (event.getRepeatCount() == 0) {
+            // This press is sent as a positional key: drop a stale flag left by a lost key-up so
+            // that the matching key-up reaches the host (otherwise the key would stay pressed)
+            keysSentAsText.delete(keyCode);
         }
         return text;
     }

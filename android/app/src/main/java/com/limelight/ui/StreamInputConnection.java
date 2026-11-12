@@ -35,9 +35,15 @@ public class StreamInputConnection extends BaseInputConnection {
      *
      * @param predictions allow suggestions, gesture typing and voice input (composing text);
      *                    when false every key press is committed immediately
+     * @param password    the focused host text field is a password field
      */
-    public static void configure(EditorInfo outAttrs, boolean predictions) {
-        if (predictions) {
+    public static void configure(EditorInfo outAttrs, boolean predictions, boolean password) {
+        if (password) {
+            // No suggestions, no learning and no composing text for host password fields
+            outAttrs.inputType = InputType.TYPE_CLASS_TEXT
+                    | InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+        } else if (predictions) {
             outAttrs.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_AUTO_CORRECT;
         } else {
             // Visible-password style input disables composing and auto-correction on most
@@ -46,9 +52,11 @@ public class StreamInputConnection extends BaseInputConnection {
                     | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
                     | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
         }
+        // Text typed into the remote desktop must not end up in the keyboard's personal dictionary
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
                 | EditorInfo.IME_FLAG_NO_FULLSCREEN
                 | EditorInfo.IME_FLAG_NO_ENTER_ACTION
+                | EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
                 | EditorInfo.IME_ACTION_NONE;
         outAttrs.initialSelStart = 0;
         outAttrs.initialSelEnd = 0;
@@ -81,13 +89,15 @@ public class StreamInputConnection extends BaseInputConnection {
 
     @Override
     public boolean deleteSurroundingText(int beforeLength, int afterLength) {
-        return apply(composer.deleteSurroundingText(beforeLength, afterLength))
+        // Lengths are UTF-16 code units
+        return apply(composer.deleteSurroundingTextUtf16(beforeLength, afterLength))
                 || super.deleteSurroundingText(beforeLength, afterLength);
     }
 
     @Override
     public boolean deleteSurroundingTextInCodePoints(int beforeLength, int afterLength) {
-        return deleteSurroundingText(beforeLength, afterLength);
+        return apply(composer.deleteSurroundingText(beforeLength, afterLength))
+                || super.deleteSurroundingText(beforeLength, afterLength);
     }
 
     @Override

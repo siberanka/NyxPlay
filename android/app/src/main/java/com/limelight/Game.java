@@ -327,9 +327,14 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     private final Queue<String> commitTextQueue = new ArrayDeque<>();
     private final Handler commitTextHandler = new Handler(Looper.getMainLooper());
 
+    // Upper bound for IME driven delete repeats (some keyboards ask to delete Integer.MAX_VALUE characters)
+    private static final int MAX_IME_DELETE_REPEAT = 256;
+    private boolean commitTextFlushScheduled;
+
     private final Runnable flushCommitTextQueue = new Runnable() {
         @Override
         public void run() {
+            commitTextFlushScheduled = false;
             if (commitTextQueue.isEmpty()) {
                 return;
             }
@@ -338,10 +343,26 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 conn.sendUtf8Text(chunk);
             }
             if (!commitTextQueue.isEmpty()) {
+                commitTextFlushScheduled = true;
                 commitTextHandler.postDelayed(this, 15);
             }
         }
     };
+
+    /** Sends queued IME text immediately so that following key events reach the host in order. */
+    private void flushPendingCommitText() {
+        if (commitTextQueue.isEmpty()) {
+            return;
+        }
+        commitTextHandler.removeCallbacks(flushCommitTextQueue);
+        commitTextFlushScheduled = false;
+        while (!commitTextQueue.isEmpty()) {
+            String chunk = commitTextQueue.poll();
+            if (conn != null) {
+                conn.sendUtf8Text(chunk);
+            }
+        }
+    }
 
     private final Runnable backgroundPing = () -> {
         if (connected) {
@@ -2171,6 +2192,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                 return false;
             }
 
+            // Text committed by the on-screen keyboard is sent asynchronously; deliver it before
+            // this key (for example Enter after a typed word) so the host sees the right order
+            flushPendingCommitText();
+
             // NyxPlay: characters that the host keyboard layout would type differently (e.g. the
             // Turkish ğ ü ş ı ö ç) are sent as text instead of positional key codes.
             if (smartKeyboard != null && conn != null) {
@@ -3905,6 +3930,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             if (autoKeyboard != null) {
                 autoKeyboard.onHostTextInputState(active, flags);
             }
+            if (streamContainer != null) {
+                streamContainer.setHostPasswordField(active && (flags & MoonBridge.LI_TEXT_INPUT_FLAG_PASSWORD) != 0);
+            }
         });
     }
 
@@ -4530,9 +4558,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             return true;
         }
         // Flush pending text first so the edit is applied in order
-        while (!commitTextQueue.isEmpty()) {
-            conn.sendUtf8Text(commitTextQueue.poll());
-        }
+        flushPendingCommitText();
         sendKeyRepeated(KeyEvent.KEYCODE_DEL, edit.backspaces);
         sendKeyRepeated(KeyEvent.KEYCODE_FORWARD_DEL, edit.forwardDeletes);
         if (!edit.insert.isEmpty()) {
@@ -4549,6 +4575,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         if (code == 0) {
             return;
         }
+        count = Math.min(count, MAX_IME_DELETE_REPEAT);
         for (int i = 0; i < count; i++) {
             conn.sendKeyboardInput(code, KeyboardPacket.KEY_DOWN, (byte) 0, (byte) 0);
             conn.sendKeyboardInput(code, KeyboardPacket.KEY_UP, (byte) 0, (byte) 0);
@@ -4562,6 +4589,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         }
         // Send backspace events for deleted preceding characters
         if (beforeLength > 0) {
+            flushPendingCommitText();
+            beforeLength = Math.min(beforeLength, MAX_IME_DELETE_REPEAT);
             short backspaceCode = keyboardTranslator.translate(KeyEvent.KEYCODE_DEL, 0, -1);
             for (int i = 0; i < beforeLength; i++) {
                 conn.sendKeyboardInput(backspaceCode, com.limelight.nvstream.input.KeyboardPacket.KEY_DOWN, (byte)0, (byte)0);
@@ -4587,8 +4616,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             commitTextQueue.add(chunk);
             offset = end;
         }
-        // Kick off flushing if not already scheduled
-        if (commitTextQueue.size() == 1) {
+        // Kick off flushing if not already scheduled (text longer than one chunk queues several
+        // entries at once, so the queue size alone does not tell whether a flush is pending)
+        if (!commitTextFlushScheduled) {
+            commitTextFlushScheduled = true;
             commitTextHandler.post(flushCommitTextQueue);
         }
     }
