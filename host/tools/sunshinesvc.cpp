@@ -6,6 +6,7 @@
 #include <format>
 #include <string>
 #include <Windows.h>
+#include <sddl.h>
 #include <WtsApi32.h>
 
 // PROC_THREAD_ATTRIBUTE_JOB_LIST is currently missing from MinGW headers
@@ -123,11 +124,32 @@ HANDLE OpenLogFileHandle() {
   GetTempPathW(_countof(log_file_name), log_file_name);
   wcscat_s(log_file_name, L"nyxplay-host.log");
 
-  // The file handle must be inheritable for our child process to use it
+  // The file handle must be inheritable for our child process to use it.
+  // %SystemRoot%\Temp is writable by every local user, so the log gets an explicit DACL
+  // (SYSTEM and Administrators only) instead of the inherited one.
   SECURITY_ATTRIBUTES security_attributes = {sizeof(security_attributes), nullptr, TRUE};
+  if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;;FA;;;SY)(A;;FA;;;BA)", SDDL_REVISION_1, &security_attributes.lpSecurityDescriptor, nullptr)) {
+    return INVALID_HANDLE_VALUE;
+  }
 
-  // Overwrite the old sunshine.log
-  return CreateFileW(log_file_name, GENERIC_WRITE, FILE_SHARE_READ, &security_attributes, CREATE_ALWAYS, 0, nullptr);
+  // Never reuse a file that already exists: a local user could have pre-created it with a DACL
+  // that keeps them able to read what we log. Delete it and create a fresh one exclusively
+  // (CREATE_NEW), without following a reparse point. A few attempts cover a user re-creating
+  // the file between the delete and the create.
+  HANDLE log_file = INVALID_HANDLE_VALUE;
+  for (int attempt = 0; attempt < 5 && log_file == INVALID_HANDLE_VALUE; attempt++) {
+    DeleteFileW(log_file_name);
+    log_file = CreateFileW(log_file_name, GENERIC_WRITE, FILE_SHARE_READ, &security_attributes, CREATE_NEW, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+  }
+
+  if (log_file == INVALID_HANDLE_VALUE) {
+    // The path is being held by someone else. Keep the service available but discard the log
+    // rather than writing into a file we do not control.
+    log_file = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &security_attributes, OPEN_EXISTING, 0, nullptr);
+  }
+
+  LocalFree(security_attributes.lpSecurityDescriptor);
+  return log_file;
 }
 
 bool RunTerminationHelper(HANDLE console_token, DWORD pid) {

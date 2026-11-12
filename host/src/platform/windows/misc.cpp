@@ -3,10 +3,12 @@
  * @brief Miscellaneous definitions for Windows.
  */
 // standard includes
+#include <chrono>
 #include <csignal>
 #include <filesystem>
 #include <iomanip>
 #include <iterator>
+#include <mutex>
 #include <set>
 #include <sstream>
 
@@ -439,39 +441,34 @@ namespace platf {
     return ret;
   }
 
-  // Note: This does NOT append a null terminator
-  void append_string_to_environment_block(wchar_t *env_block, int &offset, const std::wstring &wstr) {
-    std::memcpy(&env_block[offset], wstr.data(), wstr.length() * sizeof(wchar_t));
-    offset += wstr.length();
-  }
-
   std::wstring create_environment_block(bp::environment &env) {
-    int size = 0;
-    for (const auto &entry : env) {
-      auto name = entry.get_name();
-      auto value = entry.to_string();
-      size += from_utf8(name).length() + 1 /* L'=' */ + from_utf8(value).length() + 1 /* L'\0' */;
-    }
+    // Heap-backed so that large client-controlled values cannot exhaust the thread stack
+    std::wstring env_block;
 
-    size += 1 /* L'\0' */;
-
-    wchar_t env_block[size];
-    int offset = 0;
     for (const auto &entry : env) {
-      auto name = entry.get_name();
-      auto value = entry.to_string();
+      auto name = from_utf8(entry.get_name());
+      auto value = from_utf8(entry.to_string());
+
+      // An embedded NUL would end the entry early and Windows would parse the remainder as a
+      // new variable, so a value must never be able to carry one. A name containing '=' would
+      // likewise be split into a different name and value.
+      std::erase(name, L'\0');
+      std::erase(value, L'\0');
+      if (name.empty() || name.find(L'=') != std::wstring::npos) {
+        continue;
+      }
 
       // Construct the NAME=VAL\0 string
-      append_string_to_environment_block(env_block, offset, from_utf8(name));
-      env_block[offset++] = L'=';
-      append_string_to_environment_block(env_block, offset, from_utf8(value));
-      env_block[offset++] = L'\0';
+      env_block += name;
+      env_block += L'=';
+      env_block += value;
+      env_block += L'\0';
     }
 
     // Append a final null terminator
-    env_block[offset++] = L'\0';
+    env_block += L'\0';
 
-    return std::wstring(env_block, offset);
+    return env_block;
   }
 
   LPPROC_THREAD_ATTRIBUTE_LIST allocate_proc_thread_attr_list(DWORD attribute_count) {
@@ -1191,13 +1188,38 @@ namespace platf {
       }
     }
 
+    enable_mouse_keys();
+  }
+
+  void enable_mouse_keys() {
+    // Called at stream start and periodically while streaming (e.g. a KVM switch can remove the mouse mid-stream).
+    // The video thread calls this repeatedly, so serialize access and rate-limit the system queries.
+    static std::mutex mouse_keys_mutex;
+    static std::chrono::steady_clock::time_point last_check {};
+    std::lock_guard lg {mouse_keys_mutex};
+
+    auto now = std::chrono::steady_clock::now();
+    if (enabled_mouse_keys && now - last_check < 1s) {
+      return;
+    }
+    last_check = now;
+
     // If there is no mouse connected, enable Mouse Keys to force the cursor to appear
     if (!GetSystemMetrics(SM_MOUSEPRESENT)) {
-      BOOST_LOG(info) << "A mouse was not detected. Sunshine will enable Mouse Keys while streaming to force the mouse cursor to appear.";
+      // Get the current state of Mouse Keys so we can restore it when streaming is over.
+      // Never overwrite the saved state once we have turned Mouse Keys on ourselves.
+      MOUSEKEYS current_state = {};
+      current_state.cbSize = sizeof(current_state);
+      if (SystemParametersInfoW(SPI_GETMOUSEKEYS, 0, &current_state, 0)) {
+        if (enabled_mouse_keys && (current_state.dwFlags & MKF_MOUSEKEYSON)) {
+          return;
+        }
 
-      // Get the current state of Mouse Keys so we can restore it when streaming is over
-      previous_mouse_keys_state.cbSize = sizeof(previous_mouse_keys_state);
-      if (SystemParametersInfoW(SPI_GETMOUSEKEYS, 0, &previous_mouse_keys_state, 0)) {
+        if (!enabled_mouse_keys) {
+          BOOST_LOG(info) << "A mouse was not detected. NyxPlay Host will enable Mouse Keys while streaming to force the mouse cursor to appear."sv;
+          previous_mouse_keys_state = current_state;
+        }
+
         MOUSEKEYS new_mouse_keys_state = {};
 
         // Enable Mouse Keys

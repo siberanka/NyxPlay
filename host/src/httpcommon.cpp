@@ -206,6 +206,11 @@ namespace http {
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
     curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+    // Never follow other schemes (file://, ftp:// ...) and bound the transfer time and size
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
+    curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, (curl_off_t) 64 * 1024 * 1024);
 #ifdef _WIN32
     curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
 #endif
@@ -215,6 +220,11 @@ namespace http {
     }
     curl_easy_cleanup(curl);
     fclose(fp);
+    if (result != CURLE_OK) {
+      // Do not leave a truncated file behind
+      std::error_code ec;
+      std::filesystem::remove(file, ec);
+    }
     return result == CURLE_OK;
   }
 

@@ -290,9 +290,14 @@ namespace text_input {
           CloseHandle(_wake);
         }
 
-        // Nobody is listening anymore, forget the last focus target.
-        publish(false, FLAG_NONE);
+        // Nobody is listening anymore, forget the last focus target (unless a newer monitor
+        // already took over: its state must not be overwritten).
+        if (publish_on_exit) {
+          publish(false, FLAG_NONE);
+        }
       }
+
+      bool publish_on_exit = true;
 
       monitor_t(const monitor_t &) = delete;
       monitor_t &operator=(const monitor_t &) = delete;
@@ -517,7 +522,13 @@ namespace text_input {
       return existing;
     }
 
-    auto monitor = std::make_shared<monitor_t>();
+    // The last owner may release the monitor while another session acquires one. Destroy it under
+    // the same lock, and skip its final "inactive" if a newer monitor was started in the meantime.
+    std::shared_ptr<monitor_t> monitor {new monitor_t(), [](monitor_t *old_monitor) {
+                                          std::lock_guard lg {monitor_mutex};
+                                          old_monitor->publish_on_exit = monitor_guard.expired();
+                                          delete old_monitor;
+                                        }};
     monitor_guard = monitor;
     return monitor;
   }

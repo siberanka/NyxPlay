@@ -41,6 +41,10 @@ audio devices; run them only on a dedicated test machine.
 | `TextInputPublishTests` (1) | De-duplication and generation counter |
 | `TextInputPacketTests` (1) | Packet type does not collide with Sunshine/Apollo extensions |
 | `TextInputWindowsTests` (5) | Real UI Automation classification of Win32 EDIT, password EDIT, read-only EDIT and BUTTON controls in an off-screen window, monitor start/stop |
+| `InputPacketValidationTest` (5) | Size validation of every client input message before it is interpreted or batched |
+| `PairingValidatorTest` / `PairingSessionTest` (13) | Pairing request store: identifiers, limits, expiry, replacement, cancellation, PIN delivery rules |
+| `ClientCertVerifyTest` (5) | Only the exact paired client certificate is accepted (not certificates issued by it) |
+| `ConfigImport*` (16) | Import of Apollo / Sunshine settings, applications, paired clients and host identity |
 
 Known upstream failures: `DisplayDeviceConfigTest/DisplayModeRemapping` and
 `DisplayDeviceConfigTest/ParseRefreshRateOption` expect Sunshine's refresh rate representation, while
@@ -79,8 +83,14 @@ curl -k -c cookies -X POST -H "Content-Type: application/json" \
 curl -k -b cookies https://127.0.0.1:57990/api/config
 # Pair the PC client (portable mode: create portable.dat next to NyxPlay.exe)
 NyxPlay.exe pair 127.0.0.1:57989 --pin 4729
-curl -k -b cookies -X POST -H "Content-Type: application/json" -d '{"pin":"4729","name":"pc-test"}' https://127.0.0.1:57990/api/pin
+curl -k -b cookies https://127.0.0.1:57990/api/pin        # devices waiting for a PIN: {"pairings":[{"id":"...","name":"...","address":"..."}]}
+curl -k -b cookies -X POST -H "Content-Type: application/json" \
+     -d '{"pairing_id":"<id from the list>","pin":"4729","name":"pc-test"}' https://127.0.0.1:57990/api/pin
 ```
+
+`pairing_id` may be omitted while exactly one device is waiting. With several waiting devices the
+host refuses to guess and returns the list, so a PIN can never reach a device the operator did not
+select. `DELETE /api/pin` with `{"pairing_id":"..."}` cancels a request.
 
 Things to verify:
 

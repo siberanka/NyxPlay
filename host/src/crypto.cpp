@@ -70,8 +70,16 @@ namespace crypto {
       auto err = X509_verify_cert(_cert_ctx.get());
 
       if (err == 1) {
-        named_cert_out = named_cert_p;
-        return nullptr;
+        // A partial chain is accepted above, so a certificate merely *issued by* a paired client
+        // certificate would verify as well. Only the exact paired certificate identifies a client.
+        auto trusted_cert = x509(named_cert_p->cert);
+        if (trusted_cert && X509_cmp(trusted_cert.get(), cert) == 0) {
+          named_cert_out = named_cert_p;
+          return nullptr;
+        }
+
+        err_code = X509_V_ERR_CERT_REJECTED;
+        continue;
       }
 
       err_code = X509_STORE_CTX_get_error(_cert_ctx.get());
@@ -81,7 +89,7 @@ namespace crypto {
       }
     }
 
-    return X509_verify_cert_error_string(err_code);
+    return err_code == 0 ? "Client certificate identity is not paired" : X509_verify_cert_error_string(err_code);
   }
 
   namespace cipher {
@@ -392,7 +400,10 @@ namespace crypto {
     std::string r;
     r.resize(bytes);
 
-    RAND_bytes((uint8_t *) r.data(), r.size());
+    // Keys, session tokens and pairing secrets come from here: never continue with predictable bytes
+    if (RAND_bytes((uint8_t *) r.data(), r.size()) != 1) {
+      throw std::runtime_error("The cryptographic random number generator failed");
+    }
 
     return r;
   }

@@ -1145,10 +1145,16 @@ namespace platf {
   }
 
   void unicode(input_t &input, char *utf8, int size) {
-    // We can do no worse than one UTF-16 character per byte of UTF-8
-    WCHAR wide[size];
+    // Text messages carry at most UTF8_TEXT_EVENT_MAX_COUNT (32) bytes; never size a stack array from the network
+    constexpr int max_size = 256;
+    if (size <= 0 || size > max_size) {
+      return;
+    }
 
-    int chars = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, size, wide, size);
+    // We can do no worse than one UTF-16 character per byte of UTF-8
+    WCHAR wide[max_size];
+
+    int chars = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, size, wide, max_size);
     if (chars <= 0) {
       return;
     }

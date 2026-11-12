@@ -29,7 +29,20 @@
     </ul>
     <form v-if="currentTab === '#PIN'" class="form d-flex flex-column align-items-center" id="form" @submit.prevent="registerDevice">
       <div class="card flex-column d-flex p-4 mb-4">
-        <input type="text" pattern="\d*" :placeholder="`${$t('navbar.pin')}`" autofocus id="pin-input" class="form-control mt-2" required />
+        <!-- Devices that are waiting for their PIN: the PIN is only sent to the selected one -->
+        <div v-if="pendingPairings.length" class="pending-pairings mb-2">
+          <div class="fw-bold mb-2">{{ $t('pin.pending_title') }}</div>
+          <div v-for="pairing in pendingPairings" :key="pairing.id" class="form-check d-flex align-items-center mb-1">
+            <input class="form-check-input me-2" type="radio" name="pairing-request" :id="`pairing-${pairing.id}`" :value="pairing.id" v-model="selectedPairing" />
+            <label class="form-check-label flex-grow-1 text-break" :for="`pairing-${pairing.id}`">
+              {{ pairing.name || $t('pin.unpair_single_unknown') }} <span class="opacity-75">({{ pairing.address }})</span>
+            </label>
+            <button type="button" class="btn btn-sm btn-outline-danger ms-3" @click="cancelPairing(pairing.id)">{{ $t('_common.cancel') }}</button>
+          </div>
+          <div v-if="pendingPairings.length > 1" class="form-text">{{ $t('pin.pending_multiple') }}</div>
+        </div>
+        <div v-else class="form-text">{{ $t('pin.pending_none') }}</div>
+        <input type="text" inputmode="numeric" pattern="\d{4}" maxlength="4" :placeholder="`${$t('navbar.pin')}`" autofocus id="pin-input" class="form-control mt-2" required />
         <input type="text" :placeholder="`${$t('pin.device_name')}`" id="name-input" class="form-control my-4" />
         <button class="btn btn-primary">{{ $t('pin.send') }}</button>
       </div>
@@ -368,6 +381,8 @@
       hostName: '',
       permissionGroups,
       clients: [],
+      pendingPairings: [],
+      selectedPairing: '',
       showApplyMessage: false,
       unpairAllPressed: false,
       unpairAllStatus: null
@@ -396,14 +411,44 @@
     },
     created() {
       this.refreshClients();
+      this.refreshPendingPairings();
+      this.pendingPairingsTimer = setInterval(() => this.refreshPendingPairings(), 2000);
+    },
+    unmounted() {
+      clearInterval(this.pendingPairingsTimer);
     },
     methods: {
+      refreshPendingPairings() {
+        if (this.currentTab !== '#PIN' || document.hidden) return;
+        fetch("./api/pin", { credentials: 'include' })
+          .then((response) => response.ok ? response.json() : null)
+          .then((response) => {
+            if (!response || !Array.isArray(response.pairings)) return;
+            this.pendingPairings = response.pairings;
+            if (!response.pairings.some((pairing) => pairing.id === this.selectedPairing)) {
+              // Never preselect when several devices wait: the user must choose
+              this.selectedPairing = response.pairings.length === 1 ? response.pairings[0].id : '';
+            }
+          })
+          .catch(() => {});
+      },
+      cancelPairing(id) {
+        fetch("./api/pin", {
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          method: 'DELETE',
+          body: JSON.stringify({pairing_id: id})
+        }).finally(() => this.refreshPendingPairings());
+      },
       switchTab(currentTab) {
         location.hash = currentTab;
         const clients = this.clients;
         Object.assign(this, data(), { clients });
         hostInfoCache = null;
         clearTimeout(resetOTPTimeout);
+        this.refreshPendingPairings();
       },
       editHost() {
         this.editingHost = !this.editingHost;
@@ -419,7 +464,13 @@
         let pin = document.querySelector("#pin-input").value;
         let name = document.querySelector("#name-input").value;
         document.querySelector("#status").innerHTML = "";
-        let b = JSON.stringify({pin: pin, name: name});
+        if (this.pendingPairings.length > 1 && !this.selectedPairing) {
+          document.querySelector(
+            "#status"
+          ).innerHTML = `<div class="alert alert-warning" role="alert">${this.i18n.t('pin.pending_multiple')}</div>`;
+          return;
+        }
+        let b = JSON.stringify({pin: pin, name: name, pairing_id: this.selectedPairing || undefined});
         fetch("./api/pin", {
           credentials: 'include',
           headers: {
@@ -441,10 +492,12 @@
 
               alert(this.i18n.t('pin.pair_success_check_perm'));
             } else {
+              const several = Array.isArray(response.pairings) && response.pairings.length > 1;
               document.querySelector(
                 "#status"
-              ).innerHTML = `<div class="alert alert-danger" role="alert">${this.i18n.t('pin.pair_failure')}</div>`;
+              ).innerHTML = `<div class="alert alert-danger" role="alert">${this.i18n.t(several ? 'pin.pending_multiple' : 'pin.pair_failure')}</div>`;
             }
+            this.refreshPendingPairings();
           });
       },
       requestOTP() {

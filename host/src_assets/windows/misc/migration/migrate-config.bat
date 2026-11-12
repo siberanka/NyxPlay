@@ -38,12 +38,6 @@ if exist "%OLD_DIR%\credentials\" (
 rem Create the credentials directory if it wasn't migrated or already existing
 if not exist "%NEW_DIR%\credentials\" mkdir "%NEW_DIR%\credentials"
 
-rem Disallow read access to the credentials directory contents for normal users
-rem Note: We must use the SIDs directly because "Users" and "Administrators" are localized
-icacls "%NEW_DIR%\credentials" /inheritance:r
-icacls "%NEW_DIR%\credentials" /grant:r *S-1-5-32-544:(OI)(CI)(F)
-icacls "%NEW_DIR%\credentials" /grant:r *S-1-5-32-545:(R)
-
 rem Migrate the covers directory
 if exist "%OLD_DIR%\covers\" (
     if not exist "%NEW_DIR%\covers\" (
@@ -53,6 +47,16 @@ if exist "%OLD_DIR%\covers\" (
         powershell -NoProfile -c "(Get-Content '%NEW_DIR%\apps.json').replace('.\/covers\/', '.\/config\/covers\/') | Set-Content '%NEW_DIR%\apps.json'"
     )
 )
+
+rem Restrict the whole config directory (Web UI password hash, paired clients, credentials)
+rem to SYSTEM and Administrators. Run after all moves above, because moved files keep the
+rem ACL entries inherited from the old location. /reset /T first so every child inherits again,
+rem then drop inheritance from the config directory itself and grant only the two principals;
+rem the grants propagate to the existing children. Safe to re-run.
+rem Note: We must use the SIDs directly because "SYSTEM" and "Administrators" are localized
+icacls "%NEW_DIR%" /reset /T /C /Q
+icacls "%NEW_DIR%" /inheritance:r /C /Q
+icacls "%NEW_DIR%" /grant:r *S-1-5-18:(OI)(CI)(F) *S-1-5-32-544:(OI)(CI)(F) /C /Q
 
 rem Remove log files
 del "%OLD_DIR%\*.txt"

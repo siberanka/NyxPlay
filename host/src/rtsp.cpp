@@ -842,7 +842,7 @@ namespace rtsp_stream {
        */
       if (x == audio::SURROUND51 || x == audio::SURROUND71) {
         std::copy_n(mapping_p, stream_config.channelCount, mapping);
-        std::rotate(mapping + 3, mapping + 4, mapping + audio::MAX_STREAM_CONFIG);
+        std::rotate(mapping + 3, mapping + 4, mapping + stream_config.channelCount);
 
         mapping_p = mapping;
       }
@@ -1065,6 +1065,18 @@ namespace rtsp_stream {
       }
 
     } catch (std::out_of_range &) {
+      respond(sock, session, &option, 400, "BAD REQUEST", req->sequenceNumber, {});
+      return;
+    }
+
+    // Client supplied values size buffers and are used as divisors by the video and audio threads
+    if (config.packetsize < 200 || config.packetsize > 65535 ||
+        config.audio.channels < 1 || config.audio.channels > 8 ||
+        config.audio.packetDuration < 1 || config.audio.packetDuration > 100 ||
+        config.minRequiredFecPackets < 0 || config.minRequiredFecPackets > 255) {
+      BOOST_LOG(warning) << "Rejecting ANNOUNCE with out of range stream parameters: packetSize ["sv << config.packetsize
+                         << "] channels ["sv << config.audio.channels << "] packetDuration ["sv << config.audio.packetDuration
+                         << "] minRequiredFecPackets ["sv << config.minRequiredFecPackets << ']';
       respond(sock, session, &option, 400, "BAD REQUEST", req->sequenceNumber, {});
       return;
     }

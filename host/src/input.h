@@ -5,7 +5,9 @@
 #pragma once
 
 // standard includes
+#include <cstdint>
 #include <functional>
+#include <span>
 
 // local includes
 #include "platform/common.h"
@@ -18,6 +20,13 @@ namespace input {
   void print(void *input);
   void reset(std::shared_ptr<input_t> &input);
   void passthrough(std::shared_ptr<input_t> &input, std::vector<std::uint8_t> &&input_data, const crypto::PERM& permission);
+
+  /**
+   * @brief Check that a raw input message is large enough for its declared and protocol specific fields.
+   * @param packet The decrypted input message.
+   * @return `true` when the message can be safely interpreted.
+   */
+  bool validate_input_packet(std::span<const std::uint8_t> packet);
 
   [[nodiscard]] std::unique_ptr<platf::deinit_t> init();
 

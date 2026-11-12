@@ -9,9 +9,11 @@ extern "C" {
 }
 
 // standard includes
+#include <algorithm>
 #include <bitset>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <list>
 #include <thread>
 #include <unordered_map>
@@ -271,7 +273,10 @@ namespace input {
   }
 
   void print(PNV_UNICODE_PACKET packet) {
-    std::string text(packet->text, util::endian::big(packet->header.size) - sizeof(packet->header.magic));
+    // The packet was validated when it was queued; clamp anyway so logging can never over-read
+    std::size_t size = util::endian::big(packet->header.size);
+    size = size < sizeof(packet->header.magic) ? 0 : std::min<std::size_t>(size - sizeof(packet->header.magic), UTF8_TEXT_EVENT_MAX_COUNT);
+    std::string text(packet->text, size);
     BOOST_LOG(debug)
       << "--begin unicode packet--"sv << std::endl
       << "text ["sv << text << ']' << std::endl
@@ -825,8 +830,15 @@ namespace input {
       return;
     }
 
-    auto size = util::endian::big(packet->header.size) - sizeof(packet->header.magic);
-    platf::unicode(platf_input, packet->text, size);
+    std::size_t size = util::endian::big(packet->header.size);
+    if (size <= sizeof(packet->header.magic)) {
+      return;
+    }
+    size -= sizeof(packet->header.magic);
+    if (size > UTF8_TEXT_EVENT_MAX_COUNT) {
+      return;
+    }
+    platf::unicode(platf_input, packet->text, (int) size);
   }
 
   /**
@@ -1193,6 +1205,82 @@ namespace input {
     gamepad.gamepad_state = gamepad_state;
   }
 
+  /**
+   * @brief Validate a fixed-size input packet.
+   * @param packet Raw packet bytes.
+   * @param declared_size Packet size declared after the size field.
+   * @return `true` when both sizes safely contain the fixed packet structure.
+   */
+  template<typename Packet>
+  bool validate_fixed_input_packet(std::span<const std::uint8_t> packet, std::uint32_t declared_size) {
+    if (constexpr auto expected_size = static_cast<std::uint32_t>(sizeof(Packet) - sizeof(std::uint32_t)); declared_size != expected_size) {
+      return false;
+    }
+    return packet.size() >= sizeof(Packet);
+  }
+
+  /**
+   * @brief Validate an input packet before any typed access, permission check or batching.
+   * @param packet Raw packet bytes.
+   * @param parsed_header Optional destination for the safely copied packet header.
+   * @return `true` when the packet is large enough for its declared and protocol specific fields.
+   */
+  bool validate_input_packet(std::span<const std::uint8_t> packet, NV_INPUT_HEADER *parsed_header) {
+    if (packet.size() < sizeof(NV_INPUT_HEADER)) {
+      return false;
+    }
+
+    NV_INPUT_HEADER header {};
+    std::memcpy(&header, packet.data(), sizeof(header));
+    if (parsed_header) {
+      *parsed_header = header;
+    }
+
+    const auto declared_size = util::endian::big(header.size);
+    if (declared_size < sizeof(header.magic) || declared_size > packet.size() - sizeof(header.size)) {
+      return false;
+    }
+
+    switch (util::endian::little(header.magic)) {
+      case MOUSE_MOVE_REL_MAGIC_GEN5:
+        return validate_fixed_input_packet<NV_REL_MOUSE_MOVE_PACKET>(packet, declared_size);
+      case MOUSE_MOVE_ABS_MAGIC:
+        return validate_fixed_input_packet<NV_ABS_MOUSE_MOVE_PACKET>(packet, declared_size);
+      case MOUSE_BUTTON_DOWN_EVENT_MAGIC_GEN5:
+      case MOUSE_BUTTON_UP_EVENT_MAGIC_GEN5:
+        return validate_fixed_input_packet<NV_MOUSE_BUTTON_PACKET>(packet, declared_size);
+      case SCROLL_MAGIC_GEN5:
+        return validate_fixed_input_packet<NV_SCROLL_PACKET>(packet, declared_size);
+      case SS_HSCROLL_MAGIC:
+        return validate_fixed_input_packet<SS_HSCROLL_PACKET>(packet, declared_size);
+      case KEY_DOWN_EVENT_MAGIC:
+      case KEY_UP_EVENT_MAGIC:
+        return validate_fixed_input_packet<NV_KEYBOARD_PACKET>(packet, declared_size);
+      case UTF8_TEXT_EVENT_MAGIC:
+        return declared_size - sizeof(header.magic) <= UTF8_TEXT_EVENT_MAX_COUNT;
+      case MULTI_CONTROLLER_MAGIC_GEN5:
+        return validate_fixed_input_packet<NV_MULTI_CONTROLLER_PACKET>(packet, declared_size);
+      case SS_TOUCH_MAGIC:
+        return validate_fixed_input_packet<SS_TOUCH_PACKET>(packet, declared_size);
+      case SS_PEN_MAGIC:
+        return validate_fixed_input_packet<SS_PEN_PACKET>(packet, declared_size);
+      case SS_CONTROLLER_ARRIVAL_MAGIC:
+        return validate_fixed_input_packet<SS_CONTROLLER_ARRIVAL_PACKET>(packet, declared_size);
+      case SS_CONTROLLER_TOUCH_MAGIC:
+        return validate_fixed_input_packet<SS_CONTROLLER_TOUCH_PACKET>(packet, declared_size);
+      case SS_CONTROLLER_MOTION_MAGIC:
+        return validate_fixed_input_packet<SS_CONTROLLER_MOTION_PACKET>(packet, declared_size);
+      case SS_CONTROLLER_BATTERY_MAGIC:
+        return validate_fixed_input_packet<SS_CONTROLLER_BATTERY_PACKET>(packet, declared_size);
+      default:
+        return true;
+    }
+  }
+
+  bool validate_input_packet(std::span<const std::uint8_t> packet) {
+    return validate_input_packet(packet, nullptr);
+  }
+
   enum class batch_result_e {
     batched,  ///< This entry was batched with the source entry
     not_batchable,  ///< Not eligible to batch but continue attempts to batch
@@ -1209,10 +1297,11 @@ namespace input {
     short deltaX, deltaY;
 
     // Batching is safe as long as the result doesn't overflow a 16-bit integer
-    if (!__builtin_add_overflow(util::endian::big(dest->deltaX), util::endian::big(src->deltaX), &deltaX)) {
+    // (__builtin_add_overflow() returns true when the addition overflowed)
+    if (__builtin_add_overflow(util::endian::big(dest->deltaX), util::endian::big(src->deltaX), &deltaX)) {
       return batch_result_e::terminate_batch;
     }
-    if (!__builtin_add_overflow(util::endian::big(dest->deltaY), util::endian::big(src->deltaY), &deltaY)) {
+    if (__builtin_add_overflow(util::endian::big(dest->deltaY), util::endian::big(src->deltaY), &deltaY)) {
       return batch_result_e::terminate_batch;
     }
 
@@ -1249,7 +1338,7 @@ namespace input {
     short scrollAmt;
 
     // Batching is safe as long as the result doesn't overflow a 16-bit integer
-    if (!__builtin_add_overflow(util::endian::big(dest->scrollAmt1), util::endian::big(src->scrollAmt1), &scrollAmt)) {
+    if (__builtin_add_overflow(util::endian::big(dest->scrollAmt1), util::endian::big(src->scrollAmt1), &scrollAmt)) {
       return batch_result_e::terminate_batch;
     }
 
@@ -1269,7 +1358,7 @@ namespace input {
     short scrollAmt;
 
     // Batching is safe as long as the result doesn't overflow a 16-bit integer
-    if (!__builtin_add_overflow(util::endian::big(dest->scrollAmount), util::endian::big(src->scrollAmount), &scrollAmt)) {
+    if (__builtin_add_overflow(util::endian::big(dest->scrollAmount), util::endian::big(src->scrollAmount), &scrollAmt)) {
       return batch_result_e::terminate_batch;
     }
 
@@ -1495,14 +1584,14 @@ namespace input {
       }
 
       // Pop off the first entry, which we will send
-      entry = input->input_queue.front();
+      entry = std::move(input->input_queue.front());
       payload = (PNV_INPUT_HEADER) entry.data();
       input->input_queue.pop_front();
 
       // Try to batch with remaining items on the queue
       auto i = input->input_queue.begin();
       while (i != input->input_queue.end()) {
-        auto batchable_entry = *i;
+        auto &batchable_entry = *i;
         auto batchable_payload = (PNV_INPUT_HEADER) batchable_entry.data();
 
         auto batch_result = batch(payload, batchable_payload);
@@ -1577,6 +1666,21 @@ namespace input {
    * @param input_data The input message.
    */
   void passthrough(std::shared_ptr<input_t> &input, std::vector<std::uint8_t> &&input_data, const crypto::PERM& permission) {
+    // Validate the message before it is interpreted, permission checked or batched with other messages
+    NV_INPUT_HEADER header {};
+    if (!validate_input_packet(input_data, &header)) {
+      if (input_data.size() >= sizeof(header)) {
+        BOOST_LOG(warning)
+          << "Dropping malformed input packet type ["sv
+          << util::hex(util::endian::little(header.magic)).to_string_view()
+          << "] with declared payload size ["sv << util::endian::big(header.size)
+          << "] and actual size ["sv << input_data.size() << ']';
+      } else {
+        BOOST_LOG(warning) << "Dropping malformed input packet with actual size ["sv << input_data.size() << ']';
+      }
+      return;
+    }
+
     // No input permissions at all
     if (!(permission & crypto::PERM::_all_inputs)) {
       return;
@@ -1585,10 +1689,8 @@ namespace input {
     // Have some input permission
     // Otherwise have all input permission
     if ((permission & crypto::PERM::_all_inputs) != crypto::PERM::_all_inputs) {
-      PNV_INPUT_HEADER payload = (PNV_INPUT_HEADER)input_data.data();
-
       // Check permission
-      switch (util::endian::little(payload->magic)) {
+      switch (util::endian::little(header.magic)) {
         case MULTI_CONTROLLER_MAGIC_GEN5:
         case SS_CONTROLLER_ARRIVAL_MAGIC:
         case SS_CONTROLLER_TOUCH_MAGIC:

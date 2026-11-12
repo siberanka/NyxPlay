@@ -4,8 +4,10 @@
  */
 
 // standard includes
+#include <cstring>
 #include <fstream>
 #include <future>
+#include <optional>
 #include <queue>
 
 // lib includes
@@ -415,7 +417,11 @@ namespace stream {
       std::string expected_peer_address;  // Only used for legacy clients without ML_FF_SESSION_ID_V1
 
       net::peer_t peer;
-      std::uint32_t seq;
+      std::uint32_t seq;  // Only used by the control stream thread (encode_control())
+
+      // Set by graceful_stop(): the control stream thread sends the termination message before
+      // disconnecting. ENet and the control stream cipher state must only be used by that thread.
+      std::atomic_bool terminate_gracefully {false};
 
       platf::feedback_queue_t feedback_queue;
       safe::mail_raw_t::event_t<video::hdr_info_t> hdr_queue;
@@ -590,6 +596,28 @@ namespace stream {
     }
   }
 
+  /**
+   * @brief Parse a control message from an ENet packet.
+   * @param packet ENet packet containing the control message type and payload.
+   * @return The message type and payload view, or `std::nullopt` when the packet lacks a complete type.
+   */
+  std::optional<std::pair<std::uint16_t, std::string_view>> parse_control_packet(const ENetPacket &packet) {
+    if (packet.data == nullptr || packet.dataLength < sizeof(std::uint16_t)) {
+      return std::nullopt;
+    }
+
+    std::uint16_t type;
+    std::memcpy(&type, packet.data, sizeof(type));
+
+    return std::pair {
+      type,
+      std::string_view {
+        reinterpret_cast<const char *>(packet.data) + sizeof(type),
+        packet.dataLength - sizeof(type),
+      },
+    };
+  }
+
   void control_server_t::iterate(std::chrono::milliseconds timeout) {
     ENetEvent event;
     auto res = enet_host_service(_host.get(), &event, timeout.count());
@@ -610,10 +638,17 @@ namespace stream {
           {
             net::packet_t packet {event.packet};
 
-            auto type = *(std::uint16_t *) packet->data;
-            std::string_view payload {(char *) packet->data + sizeof(type), packet->dataLength - sizeof(type)};
+            auto message = parse_control_packet(*packet);
+            if (!message) {
+              BOOST_LOG(warning) << "Dropping control stream packet without a message type"sv;
+              break;
+            }
 
-            call(type, session, payload, false);
+            try {
+              call(message->first, session, message->second, false);
+            } catch (const std::exception &e) {
+              BOOST_LOG(error) << "Dropping malformed control stream message ["sv << util::hex(message->first).to_string_view() << "]: "sv << e.what();
+            }
           }
           break;
         case ENET_EVENT_TYPE_CONNECT:
@@ -973,6 +1008,29 @@ namespace stream {
     return 0;
   }
 
+  /**
+   * @brief Tell the client that the host ended the stream (graceful termination).
+   * @note Must only be called on the control stream thread.
+   */
+  void send_termination(control_server_t *server, session_t *session) {
+    // reason: graceful termination
+    std::uint32_t reason = 0x80030023;
+
+    control_terminate_t plaintext;
+    plaintext.header.type = packetTypes[IDX_TERMINATION];
+    plaintext.header.payloadLength = sizeof(plaintext.ec);
+    plaintext.ec = util::endian::big<uint32_t>(reason);
+
+    std::array<std::uint8_t, sizeof(control_encrypted_t) + crypto::cipher::round_to_pkcs7_padded(sizeof(plaintext)) + crypto::cipher::tag_size>
+      encrypted_payload;
+
+    auto payload = encode_control(session, util::view(plaintext), encrypted_payload);
+    if (server->send(payload, session->control.peer)) {
+      TUPLE_2D(port, addr, platf::from_sockaddr_ex((sockaddr *) &session->control.peer->address.address));
+      BOOST_LOG(warning) << "Couldn't send termination code to ["sv << addr << ':' << port << ']';
+    }
+  }
+
   void controlBroadcastThread(control_server_t *server) {
     server->map(packetTypes[IDX_PERIODIC_PING], [](session_t *session, const std::string_view &payload) {
       BOOST_LOG(verbose) << "type [IDX_PERIODIC_PING]"sv;
@@ -987,7 +1045,12 @@ namespace stream {
     });
 
     server->map(packetTypes[IDX_LOSS_STATS], [&](session_t *session, const std::string_view &payload) {
-      int32_t *stats = (int32_t *) payload.data();
+      std::int32_t stats[4];
+      if (payload.size() < sizeof(stats)) {
+        BOOST_LOG(warning) << "Control: Runt loss stats packet"sv;
+        return;
+      }
+      std::memcpy(stats, payload.data(), sizeof(stats));
       auto count = stats[0];
       std::chrono::milliseconds t {stats[1]};
 
@@ -1009,7 +1072,12 @@ namespace stream {
     });
 
     server->map(packetTypes[IDX_INVALIDATE_REF_FRAMES], [&](session_t *session, const std::string_view &payload) {
-      auto frames = (std::int64_t *) payload.data();
+      std::int64_t frames[2];
+      if (payload.size() < sizeof(frames)) {
+        BOOST_LOG(warning) << "Control: Runt reference frame invalidation packet"sv;
+        return;
+      }
+      std::memcpy(frames, payload.data(), sizeof(frames));
       auto firstFrame = frames[0];
       auto lastFrame = frames[1];
 
@@ -1024,7 +1092,20 @@ namespace stream {
     server->map(packetTypes[IDX_INPUT_DATA], [&](session_t *session, const std::string_view &payload) {
       BOOST_LOG(debug) << "type [IDX_INPUT_DATA]"sv;
 
-      auto tagged_cipher_length = util::endian::big(*(int32_t *) payload.data());
+      std::int32_t tagged_cipher_length;
+      if (payload.size() < sizeof(tagged_cipher_length)) {
+        BOOST_LOG(warning) << "Control: Runt input packet"sv;
+        return;
+      }
+      std::memcpy(&tagged_cipher_length, payload.data(), sizeof(tagged_cipher_length));
+      tagged_cipher_length = util::endian::big(tagged_cipher_length);
+
+      // The length is client supplied: it must cover the GCM tag and fit in the received packet
+      if (tagged_cipher_length < (std::int32_t) crypto::cipher::tag_size ||
+          (std::size_t) tagged_cipher_length > payload.size() - sizeof(tagged_cipher_length)) {
+        BOOST_LOG(warning) << "Control: Invalid input packet length"sv;
+        return;
+      }
       std::string_view tagged_cipher {payload.data() + sizeof(tagged_cipher_length), (size_t) tagged_cipher_length};
 
       std::vector<uint8_t> plaintext;
@@ -1055,13 +1136,19 @@ namespace stream {
         return;
       }
 
+      if (payload.empty()) {
+        BOOST_LOG(warning) << "Control: Runt server command packet"sv;
+        return;
+      }
+
       uint8_t cmdIndex = *(uint8_t*)payload.data();
 
       if (cmdIndex < config::sunshine.server_cmds.size()) {
-        const auto& cmd = config::sunshine.server_cmds[cmdIndex];
+        // Copy the entry: the configuration may be reloaded while the command thread runs
+        auto cmd = config::sunshine.server_cmds[cmdIndex];
         BOOST_LOG(info) << "Executing server command: " << cmd.cmd_name;
 
-        auto exec_thread = std::thread([&cmd]{
+        auto exec_thread = std::thread([cmd = std::move(cmd)]{
           std::error_code ec;
           auto env = proc::proc.get_env();
           boost::filesystem::path working_dir = proc::find_working_directory(cmd.cmd_val, env);
@@ -1101,6 +1188,12 @@ namespace stream {
     server->map(packetTypes[IDX_ENCRYPTED], [server](session_t *session, const std::string_view &payload) {
       BOOST_LOG(verbose) << "type [IDX_ENCRYPTED]"sv;
 
+      // The payload follows the 16-bit message type, which is the first field of control_encrypted_t
+      if (payload.size() + sizeof(control_encrypted_t::encryptedHeaderType) < sizeof(control_encrypted_t)) {
+        BOOST_LOG(warning) << "Control: Runt packet"sv;
+        return;
+      }
+
       auto header = (control_encrypted_p) (payload.data() - 2);
 
       auto length = util::endian::little(header->length);
@@ -1108,6 +1201,13 @@ namespace stream {
 
       if (length < (16 + 4 + 4)) {
         BOOST_LOG(warning) << "Control: Runt packet"sv;
+        return;
+      }
+
+      // 'length' covers the sequence number, the GCM tag and the ciphertext; it is client supplied
+      // and must fit in what was actually received (payload = length field + 'length' bytes)
+      if ((std::size_t) length + sizeof(control_encrypted_t::length) > payload.size()) {
+        BOOST_LOG(warning) << "Control: Truncated encrypted packet"sv;
         return;
       }
 
@@ -1146,7 +1246,13 @@ namespace stream {
         return;
       }
 
-      auto type = *(std::uint16_t *) plaintext.data();
+      if (plaintext.size() < 4) {
+        BOOST_LOG(warning) << "Control: Runt decrypted packet"sv;
+        return;
+      }
+
+      std::uint16_t type;
+      std::memcpy(&type, plaintext.data(), sizeof(type));
       std::string_view next_payload {(char *) plaintext.data() + 4, plaintext.size() - 4};
 
       if (type == packetTypes[IDX_ENCRYPTED]) {
@@ -1203,6 +1309,13 @@ namespace stream {
                 server->_peer_to_session->erase(session->control.peer);
               }
 
+              // graceful_stop() only flags the session; the termination message is encrypted and
+              // sent here because ENet and the control stream cipher state are not thread safe
+              if (session->control.terminate_gracefully.load(std::memory_order_acquire)) {
+                send_termination(server, session);
+                server->flush();
+              }
+
               enet_peer_disconnect_now(session->control.peer, 0);
             }
 
@@ -1255,29 +1368,13 @@ namespace stream {
     }
 
     // Let all remaining connections know the server is shutting down
-    // reason: graceful termination
-    std::uint32_t reason = 0x80030023;
-
-    control_terminate_t plaintext;
-    plaintext.header.type = packetTypes[IDX_TERMINATION];
-    plaintext.header.payloadLength = sizeof(plaintext.ec);
-    plaintext.ec = util::endian::big<uint32_t>(reason);
-
-    std::array<std::uint8_t, sizeof(control_encrypted_t) + crypto::cipher::round_to_pkcs7_padded(sizeof(plaintext)) + crypto::cipher::tag_size>
-      encrypted_payload;
-
     auto lg = server->_sessions.lock();
     for (auto pos = std::begin(*server->_sessions); pos != std::end(*server->_sessions); ++pos) {
       auto session = *pos;
 
       // We may not have gotten far enough to have an ENet connection yet
       if (session->control.peer) {
-        auto payload = encode_control(session, util::view(plaintext), encrypted_payload);
-
-        if (server->send(payload, session->control.peer)) {
-          TUPLE_2D(port, addr, platf::from_sockaddr_ex((sockaddr *) &session->control.peer->address.address));
-          BOOST_LOG(warning) << "Couldn't send termination code to ["sv << addr << ':' << port << ']';
-        }
+        send_termination(server, session);
       }
 
       session->shutdown_event->raise(true);
@@ -1299,7 +1396,8 @@ namespace stream {
 
     auto &io = ctx.io_context;
 
-    udp::endpoint peer;
+    // Pending audio and video receives must not write into the same endpoint.
+    std::array<udp::endpoint, 2> peers;
 
     std::array<char, 2048> buf[2];
     std::function<void(const boost::system::error_code, size_t)> recv_func[2];
@@ -1330,6 +1428,7 @@ namespace stream {
 
     auto recv_func_init = [&](udp::socket &sock, int buf_elem, std::map<av_session_id_t, message_queue_t> &peer_to_session) {
       recv_func[buf_elem] = [&, buf_elem](const boost::system::error_code &ec, size_t bytes) {
+        auto &peer = peers[buf_elem];
         auto fg = util::fail_guard([&]() {
           sock.async_receive_from(asio::buffer(buf[buf_elem]), peer, 0, recv_func[buf_elem]);
         });
@@ -1372,8 +1471,8 @@ namespace stream {
     recv_func_init(video_sock, 0, peer_to_video_session);
     recv_func_init(audio_sock, 1, peer_to_audio_session);
 
-    video_sock.async_receive_from(asio::buffer(buf[0]), peer, 0, recv_func[0]);
-    audio_sock.async_receive_from(asio::buffer(buf[1]), peer, 0, recv_func[1]);
+    video_sock.async_receive_from(asio::buffer(buf[0]), peers[0], 0, recv_func[0]);
+    audio_sock.async_receive_from(asio::buffer(buf[1]), peers[1], 0, recv_func[1]);
 
     while (!broadcast_shutdown_event->peek()) {
       io.run();
@@ -2004,10 +2103,6 @@ namespace stream {
       return session.state.load(std::memory_order_relaxed);
     }
 
-    inline bool send(session_t& session, const std::string_view &payload) {
-      return session.broadcast_ref->control_server.send(payload, session.control.peer);
-    }
-
     std::string uuid(const session_t& session) {
       return session.device_uuid;
     }
@@ -2046,36 +2141,11 @@ namespace stream {
     }
 
     void graceful_stop(session_t& session) {
-      while_starting_do_nothing(session.state);
-      auto expected = state_e::RUNNING;
-      auto already_stopping = !session.state.compare_exchange_strong(expected, state_e::STOPPING);
-      if (already_stopping) {
-        return;
-      }
-
-      // reason: graceful termination
-      std::uint32_t reason = 0x80030023;
-
-      control_terminate_t plaintext;
-      plaintext.header.type = packetTypes[IDX_TERMINATION];
-      plaintext.header.payloadLength = sizeof(plaintext.ec);
-      plaintext.ec = util::endian::big<uint32_t>(reason);
-
-      // We may not have gotten far enough to have an ENet connection yet
-      if (session.control.peer) {
-        std::array<std::uint8_t,
-          sizeof(control_encrypted_t) + crypto::cipher::round_to_pkcs7_padded(sizeof(plaintext)) + crypto::cipher::tag_size>
-          encrypted_payload;
-        auto payload = stream::encode_control(&session, util::view(plaintext), encrypted_payload);
-
-        if (send(session, payload)) {
-          TUPLE_2D(port, addr, platf::from_sockaddr_ex((sockaddr *) &session.control.peer->address.address));
-          BOOST_LOG(warning) << "Couldn't send termination code to ["sv << addr << ':' << port << ']';
-        }
-      }
-
-      session.shutdown_event->raise(true);
-      session.controlEnd.raise(true);
+      // This runs on a web UI / HTTP thread. The control stream thread sends the termination message
+      // when it removes the stopping session, and it also raises controlEnd once it no longer
+      // references the session (raising it here allowed join() to free a session still in use).
+      session.control.terminate_gracefully.store(true, std::memory_order_release);
+      stop(session);
     }
 
     void join(session_t &session) {

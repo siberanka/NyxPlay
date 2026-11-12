@@ -7,16 +7,18 @@
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
 // standard includes
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <map>
+#include <numeric>
 #include <set>
 #include <sstream>
 #include <thread>
-#include <numeric>
-#include <algorithm>
 
 // lib includes
+#include <openssl/crypto.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/asio/ssl/context.hpp>
 #include <boost/filesystem.hpp>
@@ -26,6 +28,7 @@
 
 // local includes
 #include "config.h"
+#include "config_import.h"
 #include "confighttp.h"
 #include "crypto.h"
 #include "display_device.h"
@@ -72,7 +75,9 @@ namespace confighttp {
     BOOST_LOG(debug) << "METHOD :: "sv << request->method;
     BOOST_LOG(debug) << "DESTINATION :: "sv << request->path;
     for (auto &[name, val] : request->header) {
-      BOOST_LOG(debug) << name << " -- " << (name == "Authorization" ? "CREDENTIALS REDACTED" : val);
+      // The session cookie is as sensitive as the credentials
+      const bool secret = boost::iequals(name, "Authorization") || boost::iequals(name, "Cookie");
+      BOOST_LOG(debug) << name << " -- " << (secret ? "CREDENTIALS REDACTED"sv : std::string_view {val});
     }
     BOOST_LOG(debug) << " [--] "sv;
     for (auto &[name, val] : request->parse_query_string()) {
@@ -139,15 +144,27 @@ namespace confighttp {
    * @return The value if found, empty string otherwise.
    */
   std::string getCookieValue(const std::string& cookieString, const std::string& key) {
-    std::string keyWithEqual = key + "=";
-    std::size_t startPos = cookieString.find(keyWithEqual);
-    if (startPos == std::string::npos)
-      return "";
-    startPos += keyWithEqual.length();
-    std::size_t endPos = cookieString.find(";", startPos);
-    if (endPos == std::string::npos)
-      return cookieString.substr(startPos);
-    return cookieString.substr(startPos, endPos - startPos);
+    // Match whole cookie names only ("xauth=" must not match "auth=")
+    std::string_view cookies {cookieString};
+    while (!cookies.empty()) {
+      auto end = cookies.find(';');
+      auto pair = cookies.substr(0, end);
+      while (!pair.empty() && pair.front() == ' ') {
+        pair.remove_prefix(1);
+      }
+      if (pair.size() > key.size() && pair.starts_with(key) && pair[key.size()] == '=') {
+        auto value = pair.substr(key.size() + 1);
+        while (!value.empty() && value.back() == ' ') {
+          value.remove_suffix(1);
+        }
+        return std::string {value};
+      }
+      if (end == std::string_view::npos) {
+        break;
+      }
+      cookies.remove_prefix(end + 1);
+    }
+    return "";
   }
 
   /**
@@ -205,9 +222,13 @@ namespace confighttp {
     if (cookies == request->header.end())
       return false;
     auto authCookie = getCookieValue(cookies->second, "auth");
-    if (authCookie.empty() ||
-        util::hex(crypto::hash(authCookie + config::sunshine.salt)).to_string() != sessionCookie)
+    if (authCookie.empty()) {
       return false;
+    }
+    const auto cookieHash = util::hex(crypto::hash(authCookie + config::sunshine.salt)).to_string();
+    if (cookieHash.size() != sessionCookie.size() || CRYPTO_memcmp(cookieHash.data(), sessionCookie.data(), cookieHash.size()) != 0) {
+      return false;
+    }
     fg.disable();
     return true;
   }
@@ -439,6 +460,11 @@ namespace confighttp {
    * @param request The HTTP request object.
    */
   void getWelcomePage(resp_https_t response, req_https_t request) {
+    // The first credentials can be created here: apply the Web UI origin allow-list
+    if (!checkIPOrigin(response, request)) {
+      return;
+    }
+
     print_req(request);
 
     if (!config::sunshine.username.empty()) {
@@ -517,7 +543,8 @@ namespace confighttp {
    */
   bool isChildPath(fs::path const &base, fs::path const &query) {
     auto relPath = fs::relative(base, query);
-    return *(relPath.begin()) != fs::path("..");
+    // An empty result means the paths are unrelated (for example another drive)
+    return !relPath.empty() && *(relPath.begin()) != fs::path("..");
   }
 
   /**
@@ -526,6 +553,10 @@ namespace confighttp {
    * @param request The HTTP request object.
    */
   void getNodeModules(resp_https_t response, req_https_t request) {
+    if (!checkIPOrigin(response, request)) {
+      return;
+    }
+
     print_req(request);
 
     fs::path webDirPath(WEB_DIR);
@@ -541,15 +572,17 @@ namespace confighttp {
       return;
     }
 
-    if (!fs::exists(filePath)) {
+    std::error_code ec;
+    if (!fs::is_regular_file(filePath, ec)) {
       not_found(response, request);
       return;
     }
 
     auto relPath = fs::relative(filePath, webDirPath);
     // get the mime type from the file extension mime_types map
-    // remove the leading period from the extension
-    auto mimeType = mime_types.find(relPath.extension().string().substr(1));
+    // remove the leading period from the extension (directories and extension-less files have none)
+    auto extension = relPath.extension().string();
+    auto mimeType = extension.size() > 1 ? mime_types.find(extension.substr(1)) : mime_types.end();
     if (mimeType == mime_types.end()) {
       bad_request(response, request);
       return;
@@ -1067,7 +1100,17 @@ namespace confighttp {
 
         // v.dump() will dump valid json, which we do not want for strings in the config right now
         // we should migrate the config file to straight json and get rid of all this nonsense
-        config_stream << k << " = " << (v.is_string() ? v.get<std::string>() : v.dump()) << std::endl;
+        const std::string value = v.is_string() ? v.get<std::string>() : v.dump();
+        // One option per line: a key or a plain value with a line break would smuggle in further
+        // options (only JSON array values may span lines, the parser reads them up to the closing bracket)
+        const auto first_char = value.find_first_not_of(" \t");
+        const bool is_array = first_char != std::string::npos && value[first_char] == '[';
+        if (k.empty() || k.find_first_of("\r\n=#") != std::string::npos ||
+            (!is_array && value.find_first_of("\r\n") != std::string::npos)) {
+          bad_request(response, request, "Invalid configuration option: " + k.substr(0, 64));
+          return;
+        }
+        config_stream << k << " = " << value << std::endl;
       }
       file_handler::write_file(config::sunshine.config_file.c_str(), config_stream.str());
       output_tree["status"] = true;
@@ -1106,7 +1149,7 @@ namespace confighttp {
       file_handler::make_directory(coverdir);
       std::string path = coverdir + http::url_escape(key) + ".png";
       if (!url.empty()) {
-        if (http::url_get_host(url) != "images.igdb.com") {
+        if (!boost::istarts_with(url, "https://") || http::url_get_host(url) != "images.igdb.com") {
           bad_request(response, request, "Only images.igdb.com is allowed");
           return;
         }
@@ -1116,8 +1159,15 @@ namespace confighttp {
         }
       } else {
         auto data = SimpleWeb::Crypto::Base64::decode(input_tree.value("data", ""));
-        std::ofstream imgfile(path);
-        imgfile.write(data.data(), static_cast<int>(data.size()));
+        // Covers are served to clients as PNG: only store PNG data of a sane size
+        constexpr std::string_view png_magic {"\x89PNG\r\n\x1a\n", 8};
+        if (data.size() < png_magic.size() || data.size() > 16u * 1024 * 1024 || std::string_view {data}.substr(0, png_magic.size()) != png_magic) {
+          bad_request(response, request, "Cover must be a PNG image (max. 16 MB)");
+          return;
+        }
+        // Binary mode: text mode corrupts the image on Windows
+        std::ofstream imgfile(path, std::ios::binary);
+        imgfile.write(data.data(), static_cast<std::streamsize>(data.size()));
       }
       output_tree["status"] = true;
       output_tree["path"] = path;
@@ -1173,6 +1223,10 @@ namespace confighttp {
    * @api_examples{/api/password| POST| {"currentUsername":"admin","currentPassword":"admin","newUsername":"admin","newPassword":"admin","confirmNewPassword":"admin"}}
    */
   void savePassword(resp_https_t response, req_https_t request) {
+    // While no credentials exist this endpoint is unauthenticated: the origin allow-list still applies
+    if (config::sunshine.username.empty() && !checkIPOrigin(response, request)) {
+      return;
+    }
     if ((!config::sunshine.username.empty() && !authenticate(response, request)) || !validateContentType(response, request, "application/json"))
       return;
     print_req(request);
@@ -1262,19 +1316,98 @@ namespace confighttp {
   }
 
   /**
-   * @brief Send a PIN code to the host.
+   * @brief Pending pairing requests as JSON.
+   */
+  nlohmann::json pending_pairings_json(const std::vector<nvhttp::pending_pairing_t> &pairings) {
+    nlohmann::json list = nlohmann::json::array();
+    for (const auto &pairing : pairings) {
+      list.push_back({
+        {"id", pairing.id},
+        {"name", pairing.name},
+        {"address", pairing.address},
+      });
+    }
+    return list;
+  }
+
+  /**
+   * @brief List client pairing requests that are waiting for PIN approval.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/pin| GET| null}
+   */
+  void getPendingPairings(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json output_tree;
+    output_tree["pairings"] = pending_pairings_json(nvhttp::get_pending_pairings());
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Cancel a client pairing request that is waiting for PIN approval.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * The body for the DELETE request should be JSON serialized in the following format:
+   * @code{.json}
+   * {
+   *   "pairing_id": "<pairing_id>"
+   * }
+   * @endcode
+   *
+   * @api_examples{/api/pin| DELETE| {"pairing_id":"0123456789abcdef0123456789abcdef"}}
+   */
+  void cancelPairing(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    try {
+      std::stringstream ss;
+      ss << request->content.rdbuf();
+      const nlohmann::json input_tree = nlohmann::json::parse(ss.str());
+      const std::string pairing_id = input_tree.value("pairing_id", "");
+      if (!nvhttp::is_valid_pairing_id(pairing_id)) {
+        bad_request(response, request, "pairing_id must contain exactly 32 hexadecimal characters");
+        return;
+      }
+
+      nlohmann::json output_tree;
+      output_tree["status"] = nvhttp::cancel_pairing(pairing_id);
+      send_response(response, output_tree);
+    } catch (std::exception &e) {
+      BOOST_LOG(warning) << "CancelPairing: "sv << e.what();
+      bad_request(response, request, e.what());
+    }
+  }
+
+  /**
+   * @brief Send a PIN code to a pairing request.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
    *
    * The body for the POST request should be JSON serialized in the following format:
    * @code{.json}
    * {
+   *   "pairing_id": "<pairing_id>",
    *   "pin": "<pin>",
    *   "name": "Friendly Client Name"
    * }
    * @endcode
    *
-   * @api_examples{/api/pin| POST| {"pin":"1234","name":"My PC"}}
+   * `pairing_id` (from `GET /api/pin`) selects the request. It may be omitted while exactly one
+   * request is waiting; with several waiting requests the response lists them and nothing is paired,
+   * so a PIN can never be handed to a request the operator did not choose.
+   *
+   * @api_examples{/api/pin| POST| {"pairing_id":"0123456789abcdef0123456789abcdef","pin":"1234","name":"My PC"}}
    */
   void savePin(resp_https_t response, req_https_t request) {
     if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
@@ -1290,7 +1423,33 @@ namespace confighttp {
       nlohmann::json output_tree;
       std::string pin = input_tree.value("pin", "");
       std::string name = input_tree.value("name", "");
-      output_tree["status"] = nvhttp::pin(pin, name);
+      std::string pairing_id = input_tree.value("pairing_id", "");
+
+      if (!nvhttp::is_valid_pairing_pin(pin)) {
+        bad_request(response, request, "PIN must contain exactly 4 numeric digits");
+        return;
+      }
+      if (!nvhttp::is_valid_pairing_name(name)) {
+        bad_request(response, request, "Client name must not be longer than 128 bytes");
+        return;
+      }
+
+      if (pairing_id.empty()) {
+        auto pending = nvhttp::get_pending_pairings();
+        if (pending.size() != 1) {
+          output_tree["status"] = false;
+          output_tree["error"] = pending.empty() ? "No device is waiting for a PIN" : "Several devices are waiting for a PIN: select one";
+          output_tree["pairings"] = pending_pairings_json(pending);
+          send_response(response, output_tree);
+          return;
+        }
+        pairing_id = pending.front().id;
+      } else if (!nvhttp::is_valid_pairing_id(pairing_id)) {
+        bad_request(response, request, "pairing_id must contain exactly 32 hexadecimal characters");
+        return;
+      }
+
+      output_tree["status"] = nvhttp::pin(pairing_id, pin, name);
       send_response(response, output_tree);
     } catch (std::exception &e) {
       BOOST_LOG(warning) << "SavePin: "sv << e.what();
@@ -1335,6 +1494,133 @@ namespace confighttp {
 
     // We may not return from this call
     platf::restart();
+  }
+
+  /**
+   * @brief UTF-8 text of a path (JSON requires UTF-8 regardless of the system code page).
+   */
+  std::string path_to_utf8(const fs::path &path) {
+    const auto text = path.u8string();
+    return {text.begin(), text.end()};
+  }
+
+  /**
+   * @brief Describe an import source as JSON.
+   */
+  nlohmann::json import_source_json(const config_import::source_t &source) {
+    return {
+      {"product", source.product},
+      {"path", path_to_utf8(source.config_dir)},
+      {"has_settings", source.has_settings},
+      {"has_apps", source.has_apps},
+      {"has_state", source.has_state},
+      {"has_identity", source.has_identity},
+    };
+  }
+
+  /**
+   * @brief List installed Apollo / Sunshine hosts whose configuration can be imported.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/import| GET| null}
+   */
+  void getImportSources(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    const auto target_dir = fs::path(config::sunshine.config_file).parent_path();
+    nlohmann::json output_tree;
+    output_tree["sources"] = nlohmann::json::array();
+    for (const auto &source : config_import::detect_sources(target_dir)) {
+      output_tree["sources"].push_back(import_source_json(source));
+    }
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Import the configuration of another host and restart.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * The body for the POST request should be JSON serialized in the following format:
+   * @code{.json}
+   * {
+   *   "path": "C:/Program Files/Apollo/config",
+   *   "settings": true,
+   *   "apps": true,
+   *   "clients": true,
+   *   "web_credentials": false,
+   *   "keep_port": true
+   * }
+   * @endcode
+   *
+   * @api_examples{/api/import| POST| {"path":"C:/Program Files/Apollo/config","settings":true,"apps":true,"clients":true}}
+   */
+  void importConfig(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    try {
+      std::stringstream ss;
+      ss << request->content.rdbuf();
+      const nlohmann::json input_tree = nlohmann::json::parse(ss.str());
+
+      const std::string path = input_tree.value("path", "");
+      if (path.empty() || path.size() > 1024) {
+        bad_request(response, request, "path is required");
+        return;
+      }
+      // Probing a network path makes the host authenticate against a remote server
+      if (path.starts_with("\\\\") || path.starts_with("//")) {
+        bad_request(response, request, "Network paths are not supported");
+        return;
+      }
+
+      config_import::options_t options;
+      options.settings = input_tree.value("settings", true);
+      options.apps = input_tree.value("apps", true);
+      options.clients = input_tree.value("clients", true);
+      options.web_credentials = input_tree.value("web_credentials", false);
+      options.keep_port = input_tree.value("keep_port", true);
+
+      const auto target_dir = fs::path(config::sunshine.config_file).parent_path();
+      const auto result = config_import::import_from(fs::path(std::u8string(path.begin(), path.end())), target_dir, options);
+
+      nlohmann::json output_tree;
+      output_tree["status"] = result.ok;
+      output_tree["imported"] = result.imported;
+      output_tree["warnings"] = result.warnings;
+      if (!result.ok) {
+        output_tree["error"] = result.error;
+        BOOST_LOG(warning) << "Import from ["sv << path << "] failed: "sv << result.error;
+      } else {
+        output_tree["backup"] = path_to_utf8(result.backup_dir);
+        output_tree["restarting"] = true;
+        BOOST_LOG(info) << "Imported the configuration from ["sv << path << "], restarting"sv;
+      }
+      send_response(response, output_tree);
+
+      if (result.ok) {
+        // The running host still holds the old settings and client list in memory (and would write
+        // them back): restart right after the response was delivered.
+        std::thread([]() {
+          std::this_thread::sleep_for(1s);
+          proc::proc.terminate();
+          platf::restart();
+        }).detach();
+      }
+    } catch (std::exception &e) {
+      BOOST_LOG(warning) << "ImportConfig: "sv << e.what();
+      bad_request(response, request, e.what());
+    }
   }
 
   /**
@@ -1471,7 +1757,31 @@ namespace confighttp {
       return;
     }
 
+    // Slow down password guessing: after a failed login further attempts from the same address are
+    // refused for an exponentially growing delay (1 s, 2 s, 4 s ... capped at 60 s)
+    struct login_throttle_t {
+      int failures = 0;
+      std::chrono::steady_clock::time_point next_allowed {};
+    };
+    static std::map<std::string, login_throttle_t> login_throttle;
+
+    const auto now = std::chrono::steady_clock::now();
+    const auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    std::erase_if(login_throttle, [&](const auto &entry) {
+      return now - entry.second.next_allowed > 10min;
+    });
+    if (auto throttle = login_throttle.find(address); throttle != login_throttle.end() && now < throttle->second.next_allowed) {
+      BOOST_LOG(warning) << "Web UI: ["sv << address << "] -- login throttled"sv;
+      response->write(SimpleWeb::StatusCode::client_error_too_many_requests);
+      return;
+    }
+
     auto fg = util::fail_guard([&]{
+      if (login_throttle.size() < 1024 || login_throttle.contains(address)) {
+        auto &throttle = login_throttle[address];
+        ++throttle.failures;
+        throttle.next_allowed = std::chrono::steady_clock::now() + std::chrono::seconds(std::min(60, 1 << std::min(throttle.failures - 1, 6)));
+      }
       response->write(SimpleWeb::StatusCode::client_error_unauthorized);
     });
 
@@ -1482,13 +1792,20 @@ namespace confighttp {
       std::string username = input_tree.value("username", "");
       std::string password = input_tree.value("password", "");
       std::string hash = util::hex(crypto::hash(password + config::sunshine.salt)).to_string();
-      if (!boost::iequals(username, config::sunshine.username) || hash != config::sunshine.password)
+      const bool password_ok = hash.size() == config::sunshine.password.size() &&
+                               CRYPTO_memcmp(hash.data(), config::sunshine.password.data(), hash.size()) == 0;
+      if (!boost::iequals(username, config::sunshine.username) || !password_ok) {
+        BOOST_LOG(warning) << "Web UI: ["sv << address << "] -- login failed"sv;
         return;
+      }
+      login_throttle.erase(address);
       std::string sessionCookieRaw = crypto::rand_alphabet(64);
       sessionCookie = util::hex(crypto::hash(sessionCookieRaw + config::sunshine.salt)).to_string();
       cookie_creation_time = std::chrono::steady_clock::now();
+      // HttpOnly: scripts never need the session token. Max-Age matches SESSION_EXPIRE_DURATION.
       const SimpleWeb::CaseInsensitiveMultimap headers {
-        { "Set-Cookie", "auth=" + sessionCookieRaw + "; Secure; SameSite=Strict; Max-Age=2592000; Path=/" }
+        { "Set-Cookie", "auth=" + sessionCookieRaw + "; Secure; HttpOnly; SameSite=Strict; Max-Age=" +
+                          std::to_string(std::chrono::duration_cast<std::chrono::seconds>(SESSION_EXPIRE_DURATION).count()) + "; Path=/" }
       };
       response->write(headers);
       fg.disable();
@@ -1531,7 +1848,9 @@ namespace confighttp {
     server.resource["^/login/?$"]["GET"] = getLoginPage;
     server.resource["^/troubleshooting/?$"]["GET"] = getTroubleshootingPage;
     server.resource["^/api/login"]["POST"] = login;
+    server.resource["^/api/pin$"]["GET"] = getPendingPairings;
     server.resource["^/api/pin$"]["POST"] = savePin;
+    server.resource["^/api/pin$"]["DELETE"] = cancelPairing;
     server.resource["^/api/otp$"]["POST"] = getOTP;
     server.resource["^/api/apps$"]["GET"] = getApps;
     server.resource["^/api/apps$"]["POST"] = saveApp;
@@ -1544,6 +1863,8 @@ namespace confighttp {
     server.resource["^/api/config$"]["POST"] = saveConfig;
     server.resource["^/api/configLocale$"]["GET"] = getLocale;
     server.resource["^/api/restart$"]["POST"] = restart;
+    server.resource["^/api/import$"]["GET"] = getImportSources;
+    server.resource["^/api/import$"]["POST"] = importConfig;
     server.resource["^/api/quit$"]["POST"] = quit;
     server.resource["^/api/reset-display-device-persistence$"]["POST"] = resetDisplayDevicePersistence;
     server.resource["^/api/password$"]["POST"] = savePassword;
@@ -1559,6 +1880,9 @@ namespace confighttp {
     server.config.reuse_address = true;
     server.config.address = net::af_to_any_address_string(address_family);
     server.config.port = port_https;
+    // Requests are buffered before authentication: bound their size (cover images are uploaded as base64)
+    server.config.max_request_streambuf_size = 32 * 1024 * 1024;
+    server.config.timeout_content = 120;
 
     auto accept_and_run = [&](auto *server) {
       try {

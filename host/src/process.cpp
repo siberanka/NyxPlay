@@ -485,6 +485,11 @@ namespace proc {
         if (!(_app.cmd.empty() && ec == std::errc::permission_denied)) {
           return -1;
         }
+
+        // The child never started, so there is nothing to wait on; clear the launch error so it
+        // doesn't leak into the next prep command.
+        ec.clear();
+        continue;
       }
 
       child.wait();
@@ -982,9 +987,17 @@ namespace proc {
       return DEFAULT_APP_IMAGE_PATH;
     }
 
+    // Never touch network (UNC) or device paths: merely probing them makes the host
+    // authenticate against a remote server
+    if (app_image_path.starts_with("\\\\") || app_image_path.starts_with("//")) {
+      BOOST_LOG(warning) << "Ignoring app image on a network path ["sv << app_image_path << ']';
+      return DEFAULT_APP_IMAGE_PATH;
+    }
+
     // check if image is in assets directory
+    std::error_code assets_code;
     auto full_image_path = std::filesystem::path(SUNSHINE_ASSETS_DIR) / app_image_path;
-    if (std::filesystem::exists(full_image_path)) {
+    if (std::filesystem::exists(full_image_path, assets_code)) {
       return full_image_path.string();
     } else if (app_image_path == "./assets/steam.png") {
       // handle old default steam image definition
