@@ -856,7 +856,8 @@ namespace config {
   }
 
   bool to_bool(std::string &boolean) {
-    std::for_each(std::begin(boolean), std::end(boolean), [](char ch) {
+    // Lowercase in place; std::for_each would discard the lambda's result.
+    std::transform(std::begin(boolean), std::end(boolean), std::begin(boolean), [](unsigned char ch) {
       return (char) std::tolower(ch);
     });
 
@@ -1246,7 +1247,7 @@ namespace config {
     int_between_f(vars, "wan_encryption_mode", stream.wan_encryption_mode, {0, 2});
 
     path_f(vars, "file_apps", stream.file_apps);
-    int_between_f(vars, "fec_percentage", stream.fec_percentage, {1, 255});
+    int_between_f(vars, "fec_percentage", stream.fec_percentage, {1, 100});
 
     map_int_int_f(vars, "keybindings"s, input.keybindings);
 
