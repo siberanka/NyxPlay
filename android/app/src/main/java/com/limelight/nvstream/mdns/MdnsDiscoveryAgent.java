@@ -29,13 +29,7 @@ public abstract class MdnsDiscoveryAgent {
 
         // Add a computer object for each IPv4 address reported by the PC
         for (Inet4Address v4Addr : v4Addrs) {
-            synchronized (computers) {
-                MdnsComputer computer = new MdnsComputer(name, v4Addr, v6GlobalAddr, port);
-                if (computers.add(computer)) {
-                    // This was a new entry
-                    listener.notifyComputerAdded(computer);
-                }
-            }
+            registerComputer(new MdnsComputer(name, v4Addr, v6GlobalAddr, port));
         }
 
         // If there were no IPv4 addresses, use IPv6 for registration
@@ -43,10 +37,28 @@ public abstract class MdnsDiscoveryAgent {
             Inet6Address v6LocalAddr = getLocalAddress(v6Addrs);
 
             if (v6LocalAddr != null || v6GlobalAddr != null) {
-                MdnsComputer computer = new MdnsComputer(name, v6LocalAddr, v6GlobalAddr, port);
-                if (computers.add(computer)) {
-                    // This was a new entry
-                    listener.notifyComputerAdded(computer);
+                registerComputer(new MdnsComputer(name, v6LocalAddr, v6GlobalAddr, port));
+            }
+        }
+    }
+
+    private void registerComputer(MdnsComputer computer) {
+        synchronized (computers) {
+            if (!computers.add(computer)) {
+                // Already known
+                return;
+            }
+        }
+
+        // The listener may block for a while, so call it without holding the lock
+        boolean handled = false;
+        try {
+            handled = listener.notifyComputerAdded(computer);
+        } finally {
+            if (!handled) {
+                // Forget the entry so the next announce is reported again
+                synchronized (computers) {
+                    computers.remove(computer);
                 }
             }
         }

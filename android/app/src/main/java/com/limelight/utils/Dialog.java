@@ -14,17 +14,19 @@ public class Dialog implements Runnable {
     private final String message;
     private final Activity activity;
     private final Runnable runOnDismiss;
+    private final Runnable runOnCancel;
 
     private AlertDialog alert;
 
     private static final ArrayList<Dialog> rundownDialogs = new ArrayList<>();
 
-    private Dialog(Activity activity, String title, String message, Runnable runOnDismiss)
+    private Dialog(Activity activity, String title, String message, Runnable runOnDismiss, Runnable runOnCancel)
     {
         this.activity = activity;
         this.title = title;
         this.message = message;
         this.runOnDismiss = runOnDismiss;
+        this.runOnCancel = runOnCancel;
     }
 
     public static void closeDialogs()
@@ -49,12 +51,21 @@ public class Dialog implements Runnable {
                     activity.finish();
                 }
             }
-        }));
+        }, null));
+    }
+
+    // Shows a dialog with an additional Cancel button that runs the given action
+    public static void displayCancelableDialog(Activity activity, String title, String message, Runnable runOnCancel)
+    {
+        activity.runOnUiThread(new Dialog(activity, title, message, new Runnable() {
+            @Override
+            public void run() {}
+        }, runOnCancel));
     }
 
     public static void displayDialog(Activity activity, String title, String message, Runnable runOnDismiss)
     {
-        activity.runOnUiThread(new Dialog(activity, title, message, runOnDismiss));
+        activity.runOnUiThread(new Dialog(activity, title, message, runOnDismiss, null));
     }
 
     @Override
@@ -80,6 +91,18 @@ public class Dialog implements Runnable {
                   runOnDismiss.run();
               }
         });
+        if (runOnCancel != null) {
+            alert.setButton(AlertDialog.BUTTON_NEGATIVE, activity.getResources().getText(android.R.string.cancel), new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface dialog, int which) {
+                    synchronized (rundownDialogs) {
+                        rundownDialogs.remove(Dialog.this);
+                        alert.dismiss();
+                    }
+
+                    runOnCancel.run();
+                }
+            });
+        }
         alert.setButton(AlertDialog.BUTTON_NEUTRAL, activity.getResources().getText(R.string.help), new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int which) {
                 synchronized (rundownDialogs) {

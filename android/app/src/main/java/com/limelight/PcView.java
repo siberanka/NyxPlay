@@ -1,8 +1,14 @@
 package com.limelight;
 
+import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import javax.net.ssl.SSLException;
 
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 import com.limelight.binding.PlatformBinding;
@@ -92,6 +98,17 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
 
                     // Now make the binder visible
                     managerBinder = localBinder;
+
+                    // Tell the user if saved computers had to be removed
+                    final int droppedHosts = localBinder.takeDroppedHostCount();
+                    if (droppedHosts > 0) {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(PcView.this, getResources().getString(R.string.hosts_removed_invalid_id, droppedHosts), Toast.LENGTH_LONG).show();
+                            }
+                        });
+                    }
 
                     // Start updates
                     startComputerUpdates();
@@ -467,6 +484,21 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
         startComputerUpdates();
     }
 
+    private final AtomicBoolean pairingInProgress = new AtomicBoolean(false);
+
+    // Maps a pairing failure to a message that explains what happened. Returns null if there is nothing better than the exception text.
+    static Integer getPairingErrorMessageId(Exception e) {
+        if (e instanceof InterruptedIOException || e instanceof EOFException ||
+                e instanceof SocketException || e instanceof SSLException) {
+            return R.string.pair_host_stopped;
+        }
+        String detail = e.getMessage();
+        if (detail != null && detail.contains("unexpected end of stream")) {
+            return R.string.pair_host_stopped;
+        }
+        return null;
+    }
+
     private void doPair(final ComputerDetails computer, String otp, String passphrase) {
         if (computer.state == ComputerDetails.State.OFFLINE || computer.activeAddress == null) {
             Toast.makeText(PcView.this, getResources().getString(R.string.pair_pc_offline), Toast.LENGTH_SHORT).show();
@@ -477,6 +509,11 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
             return;
         }
 
+        if (!pairingInProgress.compareAndSet(false, true)) {
+            Toast.makeText(PcView.this, getResources().getString(R.string.pair_already_in_progress), Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         Toast.makeText(PcView.this, getResources().getString(R.string.pairing), Toast.LENGTH_SHORT).show();
         new Thread(new Runnable() {
             @Override
@@ -484,6 +521,7 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
                 NvHTTP httpConn;
                 String message;
                 boolean success = false;
+                final AtomicBoolean cancelledByUser = new AtomicBoolean(false);
                 try {
                     // Stop updates and wait while pairing
                     stopComputerUpdates(true);
@@ -491,6 +529,14 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
                     httpConn = new NvHTTP(ServerHelper.getCurrentAddressFromComputer(computer),
                             computer.httpsPort, managerBinder.getUniqueId(), computer.serverCert,
                             PlatformBinding.getCryptoProvider(PcView.this));
+                    final NvHTTP pairingConn = httpConn;
+                    final Runnable cancelPairing = new Runnable() {
+                        @Override
+                        public void run() {
+                            cancelledByUser.set(true);
+                            pairingConn.cancelPairing();
+                        }
+                    };
                     if (httpConn.getPairState() == PairState.PAIRED) {
                         // Don't display any toast, but open the app list
                         message = null;
@@ -504,13 +550,13 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
 
                         // Spin the dialog off in a thread because it blocks
                         if (passphrase == null) {
-                            Dialog.displayDialog(PcView.this, getResources().getString(R.string.pair_pairing_title),
+                            Dialog.displayCancelableDialog(PcView.this, getResources().getString(R.string.pair_pairing_title),
                                     getResources().getString(R.string.pair_pairing_msg)+" "+pinStr+"\n\n"+
-                                            getResources().getString(R.string.pair_pairing_help), false);
+                                            getResources().getString(R.string.pair_pairing_help), cancelPairing);
                         } else {
-                            Dialog.displayDialog(PcView.this, getResources().getString(R.string.pair_pairing_title),
+                            Dialog.displayCancelableDialog(PcView.this, getResources().getString(R.string.pair_pairing_title),
                                     getResources().getString(R.string.pair_otp_pairing_msg)+"\n\n"+
-                                            getResources().getString(R.string.pair_otp_pairing_help), false);
+                                            getResources().getString(R.string.pair_otp_pairing_help), cancelPairing);
                         }
 
                         PairingManager pm = httpConn.getPairingManager();
@@ -531,16 +577,20 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
                             message = getResources().getString(R.string.pair_already_in_progress);
                         }
                         else if (pairState == PairState.PAIRED) {
-                            // Just navigate to the app view without displaying a toast
-                            message = null;
-                            success = true;
+                            // Pin this certificate for later HTTPS use (the computer may have
+                            // been removed from the list while the PIN was being entered)
+                            if (managerBinder.setServerCert(computer.uuid, pm.getPairedCert())) {
+                                // Just navigate to the app view without displaying a toast
+                                message = null;
+                                success = true;
 
-                            // Pin this certificate for later HTTPS use
-                            managerBinder.getComputer(computer.uuid).serverCert = pm.getPairedCert();
-
-                            // Invalidate reachability information after pairing to force
-                            // a refresh before reading pair state again
-                            managerBinder.invalidateStateForComputer(computer.uuid);
+                                // Invalidate reachability information after pairing to force
+                                // a refresh before reading pair state again
+                                managerBinder.invalidateStateForComputer(computer.uuid);
+                            }
+                            else {
+                                message = getResources().getString(R.string.pair_pc_removed);
+                            }
                         }
                         else {
                             // Should be no other values
@@ -553,7 +603,16 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
                     message = getResources().getString(R.string.error_404);
                 } catch (XmlPullParserException | IOException e) {
                     e.printStackTrace();
-                    message = e.getMessage();
+                    if (cancelledByUser.get()) {
+                        // The user gave up, so there is nothing to report
+                        message = null;
+                    }
+                    else {
+                        Integer messageId = getPairingErrorMessageId(e);
+                        message = messageId != null ? getResources().getString(messageId) : e.getMessage();
+                    }
+                } finally {
+                    pairingInProgress.set(false);
                 }
 
                 Dialog.closeDialogs();

@@ -51,6 +51,9 @@
     <string name="pair_pc_ingame">Bilgisayar şu anda bir oyunda. Eşleştirmeden önce oyunu kapatmalısınız.</string>
     <string name="pair_pairing_msg">Lütfen hedef bilgisayarda aşağıdaki PIN kodunu girin:</string>
     <string name="pair_already_in_progress">Eşleştirme zaten devam ediyor</string>
+    <string name="pair_host_stopped">Bilgisayar eşleştirme sırasında yanıt vermeyi bıraktı. Lütfen tekrar deneyin.</string>
+    <string name="pair_pc_removed">Bilgisayar, eşleştirme sırasında listeden kaldırıldı.</string>
+    <string name="hosts_removed_invalid_id">Kayıtlı %1$d bilgisayarın kimliği kullanılamaz durumdaydı ve kaldırıldı. Lütfen yeniden ekleyin.</string>
     <string name="wol_pc_online">Bilgisayar çevrimiçi</string>
     <string name="wol_no_mac">Kayıtlı bir MAC adresi olmadığından bilgisayar uyandırılamıyor</string>
     <string name="wol_waking_pc">Bilgisayar uyandırılıyor…</string>
@@ -299,4 +302,4 @@
     <string name="physical_keyboard_layout_it">İtalyanca</string>
     <string name="title_ime_predictions">Klavye önerileri</string>
     <string name="summary_ime_predictions">Ekran klavyesinde öneriler, kaydırarak yazma ve sesli girişe izin verir. Kapalıyken her tuş anında gönderilir.</string>
-</resources>
+</resources>

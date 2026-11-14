@@ -41,16 +41,19 @@ public class DiscoveryService extends Service {
     public void onCreate() {
         MdnsDiscoveryListener listener = new MdnsDiscoveryListener() {
             @Override
-            public void notifyComputerAdded(MdnsComputer computer) {
-                if (boundListener != null) {
-                    boundListener.notifyComputerAdded(computer);
+            public boolean notifyComputerAdded(MdnsComputer computer) {
+                MdnsDiscoveryListener bound = boundListener;
+                if (bound != null) {
+                    return bound.notifyComputerAdded(computer);
                 }
+                return false;
             }
 
             @Override
             public void notifyDiscoveryFailure(Exception e) {
-                if (boundListener != null) {
-                    boundListener.notifyDiscoveryFailure(e);
+                MdnsDiscoveryListener bound = boundListener;
+                if (bound != null) {
+                    bound.notifyDiscoveryFailure(e);
                 }
             }
         };

@@ -3,6 +3,7 @@ package com.limelight.computers;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.StringReader;
+import java.security.cert.X509Certificate;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -10,6 +11,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -51,6 +53,8 @@ public class ComputerManagerService extends Service {
     private static final int INITIAL_POLL_TRIES = 2;
     private static final int EMPTY_LIST_THRESHOLD = 3;
     private static final int POLL_DATA_TTL_MS = 30000;
+    private static final int ADD_COMPUTER_EXTRA_ATTEMPTS = 2;
+    private static final int ADD_COMPUTER_RETRY_DELAY_MS = 300;
 
     private final ComputerManagerBinder binder = new ComputerManagerBinder();
 
@@ -59,9 +63,11 @@ public class ComputerManagerService extends Service {
 
     private IdentityManager idManager;
     private final LinkedList<PollingTuple> pollingTuples = new LinkedList<>();
-    private ComputerManagerListener listener = null;
+    private volatile ComputerManagerListener listener = null;
     private final AtomicInteger activePolls = new AtomicInteger(0);
-    private boolean pollingActive = false;
+    private volatile boolean pollingActive = false;
+    private final AtomicLong invalidReplyCount = new AtomicLong(0);
+    private volatile int droppedHostCount = 0;
     private final Lock defaultNetworkLock = new ReentrantLock();
 
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -73,7 +79,9 @@ public class ComputerManagerService extends Service {
                 DiscoveryService.DiscoveryBinder privateBinder = ((DiscoveryService.DiscoveryBinder)binder);
 
                 // Set us as the event listener
-                privateBinder.setListener(createDiscoveryListener());
+                if (privateBinder != null) {
+                    privateBinder.setListener(createDiscoveryListener());
+                }
 
                 // Signal a possible waiter that we're all setup
                 discoveryBinder = privateBinder;
@@ -92,6 +100,14 @@ public class ComputerManagerService extends Service {
             return false;
         }
 
+        try {
+            return runPollWithDatabase(details, newPc, offlineCount);
+        } finally {
+            releaseLocalDatabaseReference();
+        }
+    }
+
+    private boolean runPollWithDatabase(ComputerDetails details, boolean newPc, int offlineCount) throws InterruptedException {
         final int pollTriesBeforeOffline = details.state == ComputerDetails.State.UNKNOWN ?
                 INITIAL_POLL_TRIES : OFFLINE_POLL_TRIES;
 
@@ -102,15 +118,11 @@ public class ComputerManagerService extends Service {
             if (!pollComputer(details)) {
                 if (!newPc && offlineCount < pollTriesBeforeOffline) {
                     // Return without calling the listener
-                    releaseLocalDatabaseReference();
                     return false;
                 }
 
                 details.state = ComputerDetails.State.OFFLINE;
             }
-        } catch (InterruptedException e) {
-            releaseLocalDatabaseReference();
-            throw e;
         } finally {
             activePolls.decrementAndGet();
         }
@@ -123,7 +135,6 @@ public class ComputerManagerService extends Service {
             // removed after this was issued
             if (!newPc && existingComputer == null) {
                 // It's gone
-                releaseLocalDatabaseReference();
                 return false;
             }
 
@@ -153,11 +164,11 @@ public class ComputerManagerService extends Service {
         }
 
         // Don't call the listener if this is a failed lookup of a new PC
-        if ((!newPc || details.state == ComputerDetails.State.ONLINE) && listener != null) {
-            listener.notifyComputerUpdated(details);
+        ComputerManagerListener currentListener = listener;
+        if ((!newPc || details.state == ComputerDetails.State.ONLINE) && currentListener != null) {
+            currentListener.notifyComputerUpdated(details);
         }
 
-        releaseLocalDatabaseReference();
         return true;
     }
 
@@ -171,13 +182,19 @@ public class ComputerManagerService extends Service {
                     try {
                         // Only allow one request to the machine at a time
                         synchronized (tuple.networkLock) {
-                            // Check if this poll has modified the details
-                            if (!runPoll(tuple.computer, false, offlineCount)) {
-                                LimeLog.warning(tuple.computer.name + " is offline (try " + offlineCount + ")");
+                            try {
+                                // Check if this poll has modified the details
+                                if (!runPoll(tuple.computer, false, offlineCount)) {
+                                    LimeLog.warning(tuple.computer.name + " is offline (try " + offlineCount + ")");
+                                    offlineCount++;
+                                } else {
+                                    tuple.lastSuccessfulPollMs = SystemClock.elapsedRealtime();
+                                    offlineCount = 0;
+                                }
+                            } catch (RuntimeException e) {
+                                // An unexpected failure must not end polling for this machine
+                                LimeLog.warning("Poll of " + tuple.computer.name + " failed: " + e);
                                 offlineCount++;
-                            } else {
-                                tuple.lastSuccessfulPollMs = SystemClock.elapsedRealtime();
-                                offlineCount = 0;
                             }
                         }
 
@@ -291,17 +308,55 @@ public class ComputerManagerService extends Service {
         }
 
         public void invalidateStateForComputer(String uuid) {
+            PollingTuple match = null;
             synchronized (pollingTuples) {
                 for (PollingTuple tuple : pollingTuples) {
                     if (uuid.equals(tuple.computer.uuid)) {
-                        // We need the network lock to prevent a concurrent poll
-                        // from wiping this change out
-                        synchronized (tuple.networkLock) {
-                            tuple.computer.state = ComputerDetails.State.UNKNOWN;
-                        }
+                        match = tuple;
+                        break;
                     }
                 }
             }
+
+            if (match != null) {
+                // We need the network lock to prevent a concurrent poll
+                // from wiping this change out. It is taken without holding the
+                // tuple list lock because a poll can hold it for a long time.
+                synchronized (match.networkLock) {
+                    match.computer.state = ComputerDetails.State.UNKNOWN;
+                }
+            }
+        }
+
+        // Pins the certificate obtained by pairing and persists it right away.
+        // Returns false if the computer is not known anymore.
+        public boolean setServerCert(String uuid, X509Certificate cert) {
+            ComputerDetails known = getComputer(uuid);
+            if (known == null) {
+                return false;
+            }
+            known.serverCert = cert;
+
+            if (getLocalDatabaseReference()) {
+                try {
+                    ComputerDetails stored = dbManager.getComputerByUUID(uuid);
+                    if (stored != null) {
+                        stored.serverCert = cert;
+                        dbManager.updateComputer(stored);
+                    }
+                } finally {
+                    releaseLocalDatabaseReference();
+                }
+            }
+            return true;
+        }
+
+        // Number of saved computers that were dropped because of an unusable ID.
+        // The value is reset after it has been read.
+        public int takeDroppedHostCount() {
+            int count = droppedHostCount;
+            droppedHostCount = 0;
+            return count;
         }
     }
 
@@ -394,7 +449,7 @@ public class ComputerManagerService extends Service {
     private MdnsDiscoveryListener createDiscoveryListener() {
         return new MdnsDiscoveryListener() {
             @Override
-            public void notifyComputerAdded(MdnsComputer computer) {
+            public boolean notifyComputerAdded(MdnsComputer computer) {
                 ComputerDetails details = new ComputerDetails();
 
                 // Populate the computer template with mDNS info
@@ -414,9 +469,10 @@ public class ComputerManagerService extends Service {
 
                 try {
                     // Kick off a blocking serverinfo poll on this machine
-                    if (!addComputerBlocking(details)) {
-                        LimeLog.warning("Auto-discovered PC failed to respond: "+details);
+                    if (addComputerBlocking(details)) {
+                        return true;
                     }
+                    LimeLog.warning("Auto-discovered PC failed to respond: "+details);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
 
@@ -425,6 +481,9 @@ public class ComputerManagerService extends Service {
                     // status back to true.
                     Thread.currentThread().interrupt();
                 }
+
+                // Let the next announce try again
+                return false;
             }
 
             @Override
@@ -467,6 +526,24 @@ public class ComputerManagerService extends Service {
     }
 
     public boolean addComputerBlocking(ComputerDetails fakeDetails) throws InterruptedException {
+        // A single dropped connection must not make adding a reachable host fail, so the whole
+        // sequence is repeated a few times. Hosts that return invalid data are not retried.
+        for (int attempt = 0; ; attempt++) {
+            long invalidRepliesBefore = invalidReplyCount.get();
+
+            if (addComputerOnce(fakeDetails)) {
+                return true;
+            }
+
+            if (attempt >= ADD_COMPUTER_EXTRA_ATTEMPTS || invalidReplyCount.get() != invalidRepliesBefore) {
+                return false;
+            }
+
+            Thread.sleep(ADD_COMPUTER_RETRY_DELAY_MS);
+        }
+    }
+
+    private boolean addComputerOnce(ComputerDetails fakeDetails) throws InterruptedException {
         // Block while we try to fill the details
 
         // We cannot use runPoll() here because it will attempt to persist the state of the machine
@@ -483,8 +560,14 @@ public class ComputerManagerService extends Service {
             }
 
             // Poll again, possibly with the pinned cert, to get accurate pairing information.
-            // This will insert the host into the database too.
+            // This will insert the host into the database too. A failure of this confirmation
+            // poll marks the details offline, so it is repeated once before giving up.
+            ComputerDetails.State polledState = fakeDetails.state;
             runPoll(fakeDetails, true, 0);
+            if (fakeDetails.state != ComputerDetails.State.ONLINE) {
+                fakeDetails.state = polledState;
+                runPoll(fakeDetails, true, 0);
+            }
         }
 
         // If the machine is reachable, it was successful
@@ -571,11 +654,13 @@ public class ComputerManagerService extends Service {
 
             return newDetails;
         } catch (XmlPullParserException e) {
+            invalidReplyCount.incrementAndGet();
             e.printStackTrace();
             return null;
         } catch (IOException e) {
             return null;
         } catch (RuntimeException e) {
+            invalidReplyCount.incrementAndGet();
             // /serverinfo is unauthenticated: a malformed (or malicious) reply must not crash the poller
             // (NumberFormatException, IllegalArgumentException, ...)
             LimeLog.warning("Rejecting malformed serverinfo from " + address + ": " + e);
@@ -736,6 +821,8 @@ public class ComputerManagerService extends Service {
             return;
         }
 
+        droppedHostCount = dbManager.getDroppedHostCount();
+
         for (ComputerDetails computer : dbManager.getAllComputers()) {
             // Add tuples for each computer
             addTuple(computer);
@@ -752,8 +839,9 @@ public class ComputerManagerService extends Service {
                     synchronized (pollingTuples) {
                         for (PollingTuple tuple : pollingTuples) {
                             tuple.computer.state = ComputerDetails.State.UNKNOWN;
-                            if (listener != null) {
-                                listener.notifyComputerUpdated(tuple.computer);
+                            ComputerManagerListener currentListener = listener;
+                            if (currentListener != null) {
+                                currentListener.notifyComputerUpdated(tuple.computer);
                             }
                         }
                     }
@@ -765,8 +853,9 @@ public class ComputerManagerService extends Service {
                     synchronized (pollingTuples) {
                         for (PollingTuple tuple : pollingTuples) {
                             tuple.computer.state = ComputerDetails.State.OFFLINE;
-                            if (listener != null) {
-                                listener.notifyComputerUpdated(tuple.computer);
+                            ComputerManagerListener currentListener = listener;
+                            if (currentListener != null) {
+                                currentListener.notifyComputerUpdated(tuple.computer);
                             }
                         }
                     }
@@ -858,8 +947,9 @@ public class ComputerManagerService extends Service {
                         // Can't poll if it's not online or paired
                         if (computer.state != ComputerDetails.State.ONLINE ||
                                 computer.pairState != PairingManager.PairState.PAIRED) {
-                            if (listener != null) {
-                                listener.notifyComputerUpdated(computer);
+                            ComputerManagerListener currentListener = listener;
+                            if (currentListener != null) {
+                                currentListener.notifyComputerUpdated(computer);
                             }
                             continue;
                         }
@@ -919,8 +1009,9 @@ public class ComputerManagerService extends Service {
 
                                 // Notify that the app list has been updated
                                 // and ensure that the thread is still active
-                                if (listener != null && thread != null) {
-                                    listener.notifyComputerUpdated(computer);
+                                ComputerManagerListener currentListener = listener;
+                                if (currentListener != null && thread != null) {
+                                    currentListener.notifyComputerUpdated(computer);
                                 }
                             }
                             else if (appList.isEmpty()) {
@@ -974,4 +1065,4 @@ class ReachabilityTuple {
         this.computer = computer;
         this.reachableAddress = reachableAddress;
     }
-}
+}

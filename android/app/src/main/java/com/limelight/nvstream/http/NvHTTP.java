@@ -53,6 +53,7 @@ import com.limelight.nvstream.http.PairingManager.PairState;
 import com.limelight.nvstream.jni.MoonBridge;
 import com.limelight.utils.DeviceUtils;
 
+import okhttp3.Call;
 import okhttp3.ConnectionPool;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
@@ -76,6 +77,8 @@ public class NvHTTP {
     public static final int READ_TIMEOUT = 7000;
     // Upper bound for an entire request/response exchange (including the body)
     public static final int CALL_TIMEOUT = 60000;
+    // Upper bound for the pairing request that waits for the user to enter the PIN
+    public static final int PAIRING_WAIT_TIMEOUT = 300000;
 
     // Largest accepted text response (the app list is the biggest legitimate one)
     private static final long MAX_RESPONSE_SIZE = 4 * 1024 * 1024;
@@ -89,6 +92,9 @@ public class NvHTTP {
     
     private OkHttpClient httpClientLongConnectTimeout;
     private OkHttpClient httpClientLongConnectNoReadTimeout;
+    private OkHttpClient httpClientPairingWait;
+    private volatile Call pairingCall;
+    private volatile boolean pairingCancelled;
     private OkHttpClient httpClientShortConnectTimeout;
 
     private X509TrustManager defaultTrustManager;
@@ -199,6 +205,11 @@ public class NvHTTP {
                 .readTimeout(0, TimeUnit.MILLISECONDS)
                 .callTimeout(0, TimeUnit.MILLISECONDS)
                 .build();
+
+        httpClientPairingWait = httpClientLongConnectTimeout.newBuilder()
+                .readTimeout(PAIRING_WAIT_TIMEOUT, TimeUnit.MILLISECONDS)
+                .callTimeout(PAIRING_WAIT_TIMEOUT, TimeUnit.MILLISECONDS)
+                .build();
     }
 
     public HttpUrl getHttpsUrl(boolean likelyOnline) throws IOException {
@@ -269,7 +280,7 @@ public class NvHTTP {
                 currentTag.pop();
                 break;
             case (XmlPullParser.TEXT):
-                if (currentTag.peek().equals(tagname)) {
+                if (!currentTag.isEmpty() && currentTag.peek().equals(tagname)) {
                     return xpp.getText();
                 }
                 break;
@@ -312,7 +323,7 @@ public class NvHTTP {
                 currentTag.pop();
                 break;
             case (XmlPullParser.TEXT):
-                if (currentTag.peek().equals(tagname)) {
+                if (!currentTag.isEmpty() && currentTag.peek().equals(tagname)) {
                     array.add(xpp.getText());
                 }
                 break;
@@ -512,7 +523,14 @@ public class NvHTTP {
         if (requestBody == null) request = _builder.get().build();
         else request = _builder.post(requestBody).build();
 
-        Response response = performAndroidTlsHack(client).newCall(request).execute();
+        Call call = performAndroidTlsHack(client).newCall(request);
+        if (path.equals("pair")) {
+            pairingCall = call;
+            if (pairingCancelled) {
+                call.cancel();
+            }
+        }
+        Response response = call.execute();
 
         ResponseBody body = response.body();
         
@@ -816,6 +834,10 @@ public class NvHTTP {
                 }
                 break;
             case (XmlPullParser.TEXT):
+                if (currentTag.isEmpty() || appList.isEmpty()) {
+                    // Text outside of any app entry carries no data
+                    break;
+                }
                 NvApp app = appList.getLast();
                 if (currentTag.peek().equals("AppTitle")) {
                     app.setAppName(xpp.getText());
@@ -867,14 +889,26 @@ public class NvHTTP {
                 if (resp.contentLength() > MAX_RESPONSE_SIZE) {
                     throw new IOException("Response too large");
                 }
-                return getAppListByReader(new InputStreamReader(new LimitedInputStream(resp.byteStream(), MAX_RESPONSE_SIZE)));
+                return getAppListByReader(new InputStreamReader(new LimitedInputStream(resp.byteStream(), MAX_RESPONSE_SIZE), StandardCharsets.UTF_8));
             }
         }
     }
 
     String executePairingCommand(String additionalArguments, boolean enableReadTimeout) throws HostHttpResponseException, IOException {
-        return openHttpConnectionToString(enableReadTimeout ? httpClientLongConnectTimeout : httpClientLongConnectNoReadTimeout,
+        return openHttpConnectionToString(enableReadTimeout ? httpClientLongConnectTimeout : httpClientPairingWait,
                 baseUrlHttp, "pair", "updateState=1&" + additionalArguments);
+    }
+
+    /**
+     * Aborts the pairing request that is currently in flight (if any) and makes
+     * further pairing requests on this instance fail immediately.
+     */
+    public void cancelPairing() {
+        pairingCancelled = true;
+        Call call = pairingCall;
+        if (call != null) {
+            call.cancel();
+        }
     }
 
     String executePairingChallenge() throws HostHttpResponseException, IOException {

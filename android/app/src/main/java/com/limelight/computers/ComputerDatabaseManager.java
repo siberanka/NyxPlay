@@ -42,6 +42,7 @@ public class ComputerDatabaseManager {
     private static final String SERVER_CERT_COLUMN_NAME = "ServerCert";
 
     private SQLiteDatabase computerDb;
+    private int droppedHostCount;
 
     public ComputerDatabaseManager(Context c) {
         try {
@@ -67,18 +68,45 @@ public class ComputerDatabaseManager {
                 ADDRESSES_COLUMN_NAME, MAC_ADDRESS_COLUMN_NAME, SERVER_CERT_COLUMN_NAME));
 
         // Move all computers from the old DB (if any) to the new one
-        List<ComputerDetails> oldComputers = LegacyDatabaseReader.migrateAllComputers(c);
+        migrateComputers(LegacyDatabaseReader.migrateAllComputers(c));
+        migrateComputers(LegacyDatabaseReader2.migrateAllComputers(c));
+        migrateComputers(LegacyDatabaseReader3.migrateAllComputers(c));
+
+        // Remove rows that can never be listed because of an unusable ID
+        droppedHostCount = removeInvalidComputers();
+    }
+
+    private void migrateComputers(List<ComputerDetails> oldComputers) {
         for (ComputerDetails computer : oldComputers) {
+            if (!ComputerDetails.isValidUuid(computer.uuid)) {
+                LimeLog.warning("Skipping legacy computer with an invalid ID: " + computer.name);
+                continue;
+            }
             updateComputer(computer);
         }
-        oldComputers = LegacyDatabaseReader2.migrateAllComputers(c);
-        for (ComputerDetails computer : oldComputers) {
-            updateComputer(computer);
+    }
+
+    private int removeInvalidComputers() {
+        LinkedList<Long> invalidRows = new LinkedList<>();
+        try (final Cursor c = computerDb.rawQuery("SELECT rowid, "+COMPUTER_UUID_COLUMN_NAME+", "+
+                COMPUTER_NAME_COLUMN_NAME+" FROM "+COMPUTER_TABLE_NAME, null)) {
+            while (c.moveToNext()) {
+                if (!ComputerDetails.isValidUuid(c.getString(1))) {
+                    LimeLog.warning("Removing saved computer with an invalid ID: " + c.getString(2));
+                    invalidRows.add(c.getLong(0));
+                }
+            }
         }
-        oldComputers = LegacyDatabaseReader3.migrateAllComputers(c);
-        for (ComputerDetails computer : oldComputers) {
-            updateComputer(computer);
+
+        for (long row : invalidRows) {
+            computerDb.delete(COMPUTER_TABLE_NAME, "rowid=?", new String[]{ String.valueOf(row) });
         }
+        return invalidRows.size();
+    }
+
+    // Number of saved computers that were removed while opening the database because their ID was unusable
+    public int getDroppedHostCount() {
+        return droppedHostCount;
     }
 
     public void deleteComputer(ComputerDetails details) {
@@ -184,7 +212,14 @@ public class ComputerDatabaseManager {
         try (final Cursor c = computerDb.rawQuery("SELECT * FROM "+COMPUTER_TABLE_NAME, null)) {
             LinkedList<ComputerDetails> computerList = new LinkedList<>();
             while (c.moveToNext()) {
-                ComputerDetails details = getComputerFromCursor(c);
+                ComputerDetails details;
+                try {
+                    details = getComputerFromCursor(c);
+                } catch (RuntimeException e) {
+                    // One unreadable row must not prevent loading the others
+                    LimeLog.warning("Skipping unreadable saved computer: " + e);
+                    continue;
+                }
                 if (!ComputerDetails.isValidUuid(details.uuid)) {
                     // Never use an invalid persisted ID to build cache paths
                     continue;
