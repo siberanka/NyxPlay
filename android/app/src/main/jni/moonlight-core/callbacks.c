@@ -151,8 +151,21 @@ int BridgeDrSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
 
     // Increase the size of our frame data buffer if our frame won't fit
     if ((*env)->GetArrayLength(env, DecodedFrameBuffer) < decodeUnit->fullLength) {
+        jbyteArray newBuffer = (*env)->NewByteArray(env, decodeUnit->fullLength);
+        if (newBuffer == NULL) {
+            // Out of memory. Keep the existing buffer and drop this frame.
+            (*env)->ExceptionClear(env);
+            return DR_NEED_IDR;
+        }
+
+        jbyteArray newGlobal = (*env)->NewGlobalRef(env, newBuffer);
+        (*env)->DeleteLocalRef(env, newBuffer);
+        if (newGlobal == NULL) {
+            return DR_NEED_IDR;
+        }
+
         (*env)->DeleteGlobalRef(env, DecodedFrameBuffer);
-        DecodedFrameBuffer = (*env)->NewGlobalRef(env, (*env)->NewByteArray(env, decodeUnit->fullLength));
+        DecodedFrameBuffer = newGlobal;
     }
 
     PLENTRY currentEntry;
@@ -347,13 +360,22 @@ void BridgeClSetHdrMode(bool enabled) {
     // Check if HDR metadata was provided
     if (enabled && LiGetHdrMetadata(&hdrMetadata)) {
         hdrMetadataByteArray = (*env)->NewByteArray(env, sizeof(SS_HDR_METADATA));
-        (*env)->SetByteArrayRegion(env, hdrMetadataByteArray, 0, sizeof(SS_HDR_METADATA), (jbyte*)&hdrMetadata);
+        if (hdrMetadataByteArray != NULL) {
+            (*env)->SetByteArrayRegion(env, hdrMetadataByteArray, 0, sizeof(SS_HDR_METADATA), (jbyte*)&hdrMetadata);
+        }
+        else {
+            (*env)->ExceptionClear(env);
+        }
     }
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClSetHdrModeMethod, enabled, hdrMetadataByteArray);
     if ((*env)->ExceptionCheck(env)) {
         // We will crash here
         (*JVM)->DetachCurrentThread(JVM);
+    }
+
+    if (hdrMetadataByteArray != NULL) {
+        (*env)->DeleteLocalRef(env, hdrMetadataByteArray);
     }
 }
 

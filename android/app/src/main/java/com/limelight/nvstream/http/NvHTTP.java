@@ -1,6 +1,7 @@
 package com.limelight.nvstream.http;
 
 import java.io.FileNotFoundException;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -10,6 +11,7 @@ import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.Proxy;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
@@ -59,6 +61,7 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import okio.BufferedSource;
 
 
 public class NvHTTP {
@@ -71,6 +74,11 @@ public class NvHTTP {
     public static final int SHORT_CONNECTION_TIMEOUT = 3000;
     public static final int LONG_CONNECTION_TIMEOUT = 5000;
     public static final int READ_TIMEOUT = 7000;
+    // Upper bound for an entire request/response exchange (including the body)
+    public static final int CALL_TIMEOUT = 60000;
+
+    // Largest accepted text response (the app list is the biggest legitimate one)
+    private static final long MAX_RESPONSE_SIZE = 4 * 1024 * 1024;
 
     // Print URL and content to logcat on debug builds
     private static boolean verbose = BuildConfig.DEBUG;
@@ -178,6 +186,7 @@ public class NvHTTP {
                 .connectionPool(new ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
                 .hostnameVerifier(hv)
                 .readTimeout(READ_TIMEOUT, TimeUnit.MILLISECONDS)
+                .callTimeout(CALL_TIMEOUT, TimeUnit.MILLISECONDS)
                 .connectTimeout(LONG_CONNECTION_TIMEOUT, TimeUnit.MILLISECONDS)
                 .proxy(Proxy.NO_PROXY)
                 .build();
@@ -188,6 +197,7 @@ public class NvHTTP {
 
         httpClientLongConnectNoReadTimeout = httpClientLongConnectTimeout.newBuilder()
                 .readTimeout(0, TimeUnit.MILLISECONDS)
+                .callTimeout(0, TimeUnit.MILLISECONDS)
                 .build();
     }
 
@@ -415,6 +425,9 @@ public class NvHTTP {
 
         // UUID is mandatory to determine which machine is responding
         details.uuid = getXmlString(serverInfo, "uniqueid", true);
+        if (!ComputerDetails.isValidUuid(details.uuid)) {
+            throw new XmlPullParserException("Invalid uniqueid in serverinfo");
+        }
 
         String permStr = getXmlString(serverInfo, "Permission", false);
         if (permStr != null) {
@@ -531,8 +544,22 @@ public class NvHTTP {
     private String openHttpConnectionToString(OkHttpClient client, HttpUrl baseUrl, String path, String query, RequestBody requestBody) throws IOException {
         try {
             ResponseBody resp = openHttpConnection(client, baseUrl, path, query, requestBody);
-            String respString = resp.string();
-            resp.close();
+            String respString;
+            try {
+                if (resp.contentLength() > MAX_RESPONSE_SIZE) {
+                    throw new IOException("Response too large");
+                }
+
+                BufferedSource source = resp.source();
+                if (source.request(MAX_RESPONSE_SIZE + 1)) {
+                    throw new IOException("Response too large");
+                }
+
+                MediaType contentType = resp.contentType();
+                respString = source.readString(contentType != null ? contentType.charset(StandardCharsets.UTF_8) : StandardCharsets.UTF_8);
+            } finally {
+                resp.close();
+            }
 
             if (verbose && !path.equals("serverinfo")) {
                 LimeLog.info(getCompleteUrl(baseUrl, path, query)+" -> "+respString);
@@ -721,7 +748,46 @@ public class NvHTTP {
         return pm;
     }
     
+    private static class LimitedInputStream extends FilterInputStream {
+        private long remaining;
+
+        LimitedInputStream(InputStream in, long limit) {
+            super(in);
+            remaining = limit;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int b = super.read();
+            if (b != -1 && --remaining < 0) {
+                throw new IOException("Response too large");
+            }
+            return b;
+        }
+
+        @Override
+        public int read(byte[] buf, int off, int len) throws IOException {
+            int count = super.read(buf, off, len);
+            if (count > 0) {
+                remaining -= count;
+                if (remaining < 0) {
+                    throw new IOException("Response too large");
+                }
+            }
+            return count;
+        }
+    }
+
     public static LinkedList<NvApp> getAppListByReader(Reader r) throws XmlPullParserException, IOException {
+        try {
+            return parseAppList(r);
+        } catch (RuntimeException e) {
+            // Malformed content (bad numbers, unexpected structure) is a failed parse, not a crash
+            throw new XmlPullParserException("Malformed app list: " + e);
+        }
+    }
+
+    private static LinkedList<NvApp> parseAppList(Reader r) throws XmlPullParserException, IOException {
         XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
         factory.setNamespaceAware(true);
         XmlPullParser xpp = factory.newPullParser();
@@ -798,7 +864,10 @@ public class NvHTTP {
         }
         else {
             try (final ResponseBody resp = openHttpConnection(httpClientLongConnectTimeout, getHttpsUrl(true), "applist", null, null)) {
-                return getAppListByReader(new InputStreamReader(resp.byteStream()));
+                if (resp.contentLength() > MAX_RESPONSE_SIZE) {
+                    throw new IOException("Response too large");
+                }
+                return getAppListByReader(new InputStreamReader(new LimitedInputStream(resp.byteStream(), MAX_RESPONSE_SIZE)));
             }
         }
     }

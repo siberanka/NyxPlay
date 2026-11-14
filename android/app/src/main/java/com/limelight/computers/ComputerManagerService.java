@@ -930,6 +930,9 @@ public class ComputerManagerService extends Service {
                             e.printStackTrace();
                         } catch (XmlPullParserException e) {
                             e.printStackTrace();
+                        } catch (RuntimeException e) {
+                            // Treat unexpected content as a failed poll
+                            e.printStackTrace();
                         }
                     } while (waitPollingDelay());
                 }

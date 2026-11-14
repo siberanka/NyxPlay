@@ -8,6 +8,7 @@ import android.graphics.ImageDecoder;
 import android.os.Build;
 
 import com.limelight.LimeLog;
+import com.limelight.nvstream.http.ComputerDetails;
 import com.limelight.utils.CacheHelper;
 
 import java.io.File;
@@ -22,6 +23,19 @@ public class DiskAssetLoader {
     // Standard box art is 300x400
     private static final int STANDARD_ASSET_WIDTH = 300;
     private static final int STANDARD_ASSET_HEIGHT = 400;
+
+    // Sanity limits for cached images; anything outside is treated as corrupt
+    private static final int MAX_SOURCE_DIMENSION = 16384;
+    private static final float MAX_ASPECT_RATIO = 16.f;
+    private static final int MAX_TARGET_DIMENSION = 2048;
+
+    private static boolean isPlausibleSize(int width, int height) {
+        if (width <= 0 || height <= 0 || width > MAX_SOURCE_DIMENSION || height > MAX_SOURCE_DIMENSION) {
+            return false;
+        }
+        float aspectRatio = (float) width / height;
+        return aspectRatio <= MAX_ASPECT_RATIO && aspectRatio >= 1.f / MAX_ASPECT_RATIO;
+    }
 
     private final boolean isLowRamDevice;
     private final File cacheDir;
@@ -61,6 +75,22 @@ public class DiskAssetLoader {
     public ScaledBitmap loadBitmapFromCache(CachedAppAssetLoader.LoaderTuple tuple, int sampleSize) {
         File file = getFile(tuple.computer.uuid, tuple.app.getAppId());
 
+        ScaledBitmap result = null;
+        try {
+            result = decodeBitmapFromCache(tuple, sampleSize, file);
+        } catch (RuntimeException | OutOfMemoryError e) {
+            LimeLog.warning("Failed to decode cached art for tuple "+tuple+": "+e);
+        }
+
+        if (result == null) {
+            // Remove art that can't be decoded so it will be fetched again
+            file.delete();
+        }
+        return result;
+    }
+
+    private ScaledBitmap decodeBitmapFromCache(CachedAppAssetLoader.LoaderTuple tuple, int sampleSize, File file) {
+
         // Don't bother with anything if it doesn't exist
         if (!file.exists()) {
             return null;
@@ -81,7 +111,7 @@ public class DiskAssetLoader {
             BitmapFactory.Options decodeOnlyOptions = new BitmapFactory.Options();
             decodeOnlyOptions.inJustDecodeBounds = true;
             BitmapFactory.decodeFile(file.getAbsolutePath(), decodeOnlyOptions);
-            if (decodeOnlyOptions.outWidth <= 0 || decodeOnlyOptions.outHeight <= 0) {
+            if (!isPlausibleSize(decodeOnlyOptions.outWidth, decodeOnlyOptions.outHeight)) {
                 // Dimensions set to -1 on error. Return value always null.
                 return null;
             }
@@ -117,6 +147,10 @@ public class DiskAssetLoader {
                         scaledBitmap.originalWidth = imageInfo.getSize().getWidth();
                         scaledBitmap.originalHeight = imageInfo.getSize().getHeight();
 
+                        if (!isPlausibleSize(scaledBitmap.originalWidth, scaledBitmap.originalHeight)) {
+                            throw new IllegalArgumentException("Implausible image size");
+                        }
+
                         float aspectRatio = (float) scaledBitmap.originalWidth / scaledBitmap.originalHeight;
                         float standardAspectRatio = (float) STANDARD_ASSET_WIDTH / STANDARD_ASSET_HEIGHT;
                         int targetWidth = STANDARD_ASSET_WIDTH;
@@ -127,6 +161,8 @@ public class DiskAssetLoader {
                         } else {
                             targetWidth = (int) (aspectRatio / standardAspectRatio * targetWidth);
                         }
+                        targetWidth = Math.max(1, Math.min(targetWidth, MAX_TARGET_DIMENSION));
+                        targetHeight = Math.max(1, Math.min(targetHeight, MAX_TARGET_DIMENSION));
                         imageDecoder.setTargetSize(targetWidth, targetHeight);
                         if (isLowRamDevice) {
                             imageDecoder.setMemorySizePolicy(ImageDecoder.MEMORY_POLICY_LOW_RAM);
@@ -148,6 +184,10 @@ public class DiskAssetLoader {
     }
 
     public void deleteAssetsForComputer(String computerUuid) {
+        if (!ComputerDetails.isValidUuid(computerUuid)) {
+            return;
+        }
+
         File dir = CacheHelper.openPath(false, cacheDir, "boxart", computerUuid);
         File[] files = dir.listFiles();
         if (files != null) {

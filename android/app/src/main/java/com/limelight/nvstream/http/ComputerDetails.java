@@ -12,6 +12,14 @@ public class ComputerDetails {
         ONLINE, OFFLINE, UNKNOWN
     }
 
+    private static final java.util.regex.Pattern UUID_PATTERN = java.util.regex.Pattern.compile(
+            "[A-Za-z0-9-]{1,64}");
+
+    // Host-supplied unique IDs are used to build cache paths, so only a strict safe charset is accepted
+    public static boolean isValidUuid(String uuid) {
+        return uuid != null && UUID_PATTERN.matcher(uuid).matches();
+    }
+
     public static class AddressTuple {
         public String address;
         public int port;

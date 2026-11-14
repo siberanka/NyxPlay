@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 
 import com.limelight.grid.assets.DiskAssetLoader;
+import com.limelight.nvstream.http.ComputerDetails;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -53,7 +54,16 @@ public class PosterContentProvider extends ContentProvider {
         }
         String appId = segments.get(APP_ID_PATH_INDEX);
         String uuid = segments.get(COMPUTER_UUID_PATH_INDEX);
-        File file = mDiskAssetLoader.getFile(uuid, Integer.parseInt(appId));
+        if (!ComputerDetails.isValidUuid(uuid)) {
+            throw new FileNotFoundException();
+        }
+        int appIdInt;
+        try {
+            appIdInt = Integer.parseInt(appId);
+        } catch (NumberFormatException e) {
+            throw new FileNotFoundException();
+        }
+        File file = mDiskAssetLoader.getFile(uuid, appIdInt);
         if (file.exists()) {
             return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
         }

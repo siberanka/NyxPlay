@@ -305,9 +305,21 @@ public class AddComputerManually extends AppCompatActivity {
                     intent.putExtra(Game.EXTRA_APP_NAME, appName);
                     intent.putExtra(Game.EXTRA_APP_ID, appID);
 
-                    finish();
-
-                    startActivity(intent);
+                    // This link can be opened by any app or web page, so ask before starting a stream
+                    AlertDialog.Builder launchBuilder = new AlertDialog.Builder(this);
+                    launchBuilder.setTitle(R.string.launch_confirm_title);
+                    launchBuilder.setMessage(R.string.launch_confirm_message);
+                    launchBuilder.setCancelable(false);
+                    launchBuilder.setPositiveButton(getString(R.string.proceed), (dialog, which) -> {
+                        dialog.dismiss();
+                        startActivity(intent);
+                        finish();
+                    });
+                    launchBuilder.setNegativeButton(getString(R.string.cancel), (dialog, which) -> {
+                        dialog.dismiss();
+                        finish();
+                    });
+                    launchBuilder.create().show();
 
                     return;
                 }

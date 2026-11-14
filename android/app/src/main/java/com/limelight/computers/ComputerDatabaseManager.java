@@ -184,7 +184,12 @@ public class ComputerDatabaseManager {
         try (final Cursor c = computerDb.rawQuery("SELECT * FROM "+COMPUTER_TABLE_NAME, null)) {
             LinkedList<ComputerDetails> computerList = new LinkedList<>();
             while (c.moveToNext()) {
-                computerList.add(getComputerFromCursor(c));
+                ComputerDetails details = getComputerFromCursor(c);
+                if (!ComputerDetails.isValidUuid(details.uuid)) {
+                    // Never use an invalid persisted ID to build cache paths
+                    continue;
+                }
+                computerList.add(details);
             }
             return computerList;
         }
@@ -209,7 +214,8 @@ public class ComputerDatabaseManager {
                 return null;
             }
 
-            return getComputerFromCursor(c);
+            ComputerDetails details = getComputerFromCursor(c);
+            return ComputerDetails.isValidUuid(details.uuid) ? details : null;
         }
     }
 
@@ -220,6 +226,10 @@ public class ComputerDatabaseManager {
      * @return The computer details, or null if no computer with that UUID exists
      */
     public ComputerDetails getComputerByUUID(String uuid) {
+        if (!ComputerDetails.isValidUuid(uuid)) {
+            return null;
+        }
+
         try (final Cursor c = computerDb.query(
                 COMPUTER_TABLE_NAME, null, COMPUTER_UUID_COLUMN_NAME+"=?",
                 new String[]{ uuid }, null, null, null)

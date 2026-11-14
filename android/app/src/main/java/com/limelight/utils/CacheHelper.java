@@ -13,10 +13,19 @@ import java.io.OutputStream;
 import java.io.Reader;
 
 public class CacheHelper {
+    private static boolean isSafeComponent(String component) {
+        return component != null && !component.isEmpty() && !component.equals(".") && !component.equals("..") &&
+                component.indexOf('/') < 0 && component.indexOf('\\') < 0 && component.indexOf("\u0000") < 0;
+    }
+
     public static File openPath(boolean createPath, File root, String... path) {
         File f = root;
         for (int i = 0; i < path.length; i++) {
             String component = path[i];
+
+            if (!isSafeComponent(component)) {
+                throw new IllegalArgumentException("Unsafe path component");
+            }
 
             if (i == path.length - 1) {
                 // This is the file component so now we create parent directories

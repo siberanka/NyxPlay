@@ -354,6 +354,10 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
     }
 
     private void populateAppGridWithCache() {
+        if (!ComputerDetails.isValidUuid(uuidString)) {
+            return;
+        }
+
         try {
             // Try to load from cache
             lastRawApplist = CacheHelper.readInputStreamToString(CacheHelper.openCacheFileForInput(getCacheDir(), "applist", uuidString));

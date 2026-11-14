@@ -3,6 +3,7 @@ package com.limelight;
 import static com.limelight.utils.ServerHelper.getSecondaryDisplay;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Service;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -250,9 +251,7 @@ public class ShortcutTrampoline extends AppCompatActivity {
         }
 
         if (hostUUID != null && !hostUUID.isEmpty()) {
-            try {
-                UUID.fromString(hostUUID);
-            } catch (IllegalArgumentException ex) {
+            if (!ComputerDetails.isValidUuid(hostUUID)) {
                 Dialog.displayDialog(ShortcutTrampoline.this,
                         getResources().getString(R.string.conn_error_title),
                         getResources().getString(R.string.scut_invalid_uuid),
@@ -363,6 +362,9 @@ public class ShortcutTrampoline extends AppCompatActivity {
         Intent intent = getIntent();
         String action = intent.getAction();
         Uri dataUri = intent.getData();
+
+        // Launcher shortcuts created by this app use ACTION_DEFAULT, so a VIEW intent comes from outside
+        final boolean externalLaunch = Intent.ACTION_VIEW.equals(action) && dataUri != null;
 
         String hostUUID = null;
         String hostName = null;
@@ -500,12 +502,28 @@ public class ShortcutTrampoline extends AppCompatActivity {
             }
         }
 
-        // Bind to the computer manager service
-        bindService(new Intent(this, ComputerManagerService.class), serviceConnection,
-                Service.BIND_AUTO_CREATE);
+        final Runnable startLaunch = () -> {
+            // Bind to the computer manager service
+            bindService(new Intent(this, ComputerManagerService.class), serviceConnection,
+                    Service.BIND_AUTO_CREATE);
 
-        blockingLoadSpinner = SpinnerDialog.displayDialog(this, getResources().getString(R.string.conn_establishing_title),
-                getResources().getString(R.string.applist_connect_msg), true);
+            blockingLoadSpinner = SpinnerDialog.displayDialog(this, getResources().getString(R.string.conn_establishing_title),
+                    getResources().getString(R.string.applist_connect_msg), true);
+        };
+
+        if (externalLaunch) {
+            // The shortcut file came from another app, so ask before starting a stream
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.launch_confirm_title)
+                    .setMessage(R.string.launch_confirm_message)
+                    .setCancelable(false)
+                    .setPositiveButton(R.string.proceed, (dialog, which) -> startLaunch.run())
+                    .setNegativeButton(R.string.cancel, (dialog, which) -> finish())
+                    .show();
+        }
+        else {
+            startLaunch.run();
+        }
     }
 
     @Override
