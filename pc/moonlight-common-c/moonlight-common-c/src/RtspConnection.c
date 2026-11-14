@@ -6,6 +6,8 @@
 #define RTSP_TOTAL_RECEIVE_TIMEOUT_SEC (RTSP_RECEIVE_TIMEOUT_SEC * 2)
 #define RTSP_POLL_INTERVAL_MS 100
 #define RTSP_RETRY_DELAY_MS 500
+#define RTSP_MAX_REQUEST_RETRIES 2
+#define RTSP_REQUEST_RETRY_DELAY_MS 200
 #define MAX_RTSP_RESPONSE_SIZE (1024 * 1024)
 
 static int currentSeqNumber;
@@ -385,8 +387,28 @@ Exit:
     return ret;
 }
 
-// Send RTSP message and get response over TCP
-static bool transactRtspMessageTcp(PRTSP_MESSAGE request, PRTSP_MESSAGE response, int* error) {
+// Returns true for errors caused by the peer resetting the connection
+static bool isRtspConnectionResetError(int error) {
+#if defined(_WIN32) && !defined(NXDK)
+    return error == WSAECONNRESET || error == WSAECONNABORTED;
+#else
+    return error == ECONNRESET || error == ECONNABORTED || error == EPIPE;
+#endif
+}
+
+// Only requests that can be repeated without side effects are retried
+static bool isRtspRequestIdempotent(PRTSP_MESSAGE request) {
+    const char* command = request->message.request.command;
+    return command != NULL &&
+           (!strcmp(command, "OPTIONS") ||
+            !strcmp(command, "DESCRIBE") ||
+            !strcmp(command, "SETUP"));
+}
+
+// Send RTSP message and get response over TCP. If noResponseData is not NULL, it is set to
+// true when the attempt failed before any byte of the response was received.
+static bool transactRtspMessageTcpOnce(PRTSP_MESSAGE request, PRTSP_MESSAGE response, int* error,
+                                       uint64_t receiveDeadline, bool* noResponseData) {
     SOCK_RET err;
     bool ret;
     int offset;
@@ -400,6 +422,10 @@ static bool transactRtspMessageTcp(PRTSP_MESSAGE request, PRTSP_MESSAGE response
     ret = false;
     responseBuffer = NULL;
     connectRetries = 0;
+    offset = 0;
+    if (noResponseData != NULL) {
+        *noResponseData = false;
+    }
 
     // Retry up to 10 seconds if we receive ECONNREFUSED errors from the host PC.
     // This can happen with GFE 3.22 when initially launching a session because it
@@ -441,13 +467,15 @@ static bool transactRtspMessageTcp(PRTSP_MESSAGE request, PRTSP_MESSAGE response
     if (err == SOCKET_ERROR) {
         *error = LastSocketError();
         Limelog("Failed to send RTSP message: %d\n", *error);
+        if (noResponseData != NULL) {
+            *noResponseData = true;
+        }
         goto Exit;
     }
 
     // Read the response until the server closes the connection
     offset = 0;
     responseBufferSize = 0;
-    uint64_t receiveDeadline = PltGetMillis() + (RTSP_TOTAL_RECEIVE_TIMEOUT_SEC * 1000);
     uint64_t lastDataTime = PltGetMillis();
     for (;;) {
         struct pollfd pfd;
@@ -489,6 +517,9 @@ static bool transactRtspMessageTcp(PRTSP_MESSAGE request, PRTSP_MESSAGE response
         else if (err < 0) {
             *error = LastSocketError();
             Limelog("Failed to wait for RTSP response: %d\n", *error);
+            if (offset == 0 && noResponseData != NULL) {
+                *noResponseData = true;
+            }
             goto Exit;
         }
 
@@ -497,10 +528,23 @@ static bool transactRtspMessageTcp(PRTSP_MESSAGE request, PRTSP_MESSAGE response
             // Error reading
             *error = LastSocketError();
             Limelog("Failed to read RTSP response: %d\n", *error);
+            if (offset > 0 && isRtspConnectionResetError(*error) &&
+                    unsealRtspMessage(responseBuffer, offset, response)) {
+                // The host reset the connection after sending a complete response
+                ret = true;
+                goto Exit;
+            }
+            if (offset == 0 && noResponseData != NULL) {
+                *noResponseData = true;
+            }
             goto Exit;
         }
         else if (err == 0) {
             // Done reading
+            if (offset == 0 && noResponseData != NULL) {
+                // The host closed the connection without sending anything
+                *noResponseData = true;
+            }
             break;
         }
         else {
@@ -536,6 +580,32 @@ Exit:
     closeSocket(sock);
     sock = INVALID_SOCKET;
     return ret;
+}
+
+// Send RTSP message and get response over TCP, repeating idempotent requests when
+// the connection fails before any part of the response was received.
+static bool transactRtspMessageTcp(PRTSP_MESSAGE request, PRTSP_MESSAGE response, int* error) {
+    bool retryable = isRtspRequestIdempotent(request);
+    uint64_t deadline = PltGetMillis() + (RTSP_TOTAL_RECEIVE_TIMEOUT_SEC * 1000);
+    int attempt = 0;
+
+    for (;;) {
+        bool noResponseData = false;
+        if (transactRtspMessageTcpOnce(request, response, error, deadline, &noResponseData)) {
+            return true;
+        }
+
+        if (!retryable || !noResponseData || ConnectionInterrupted ||
+                attempt >= RTSP_MAX_REQUEST_RETRIES ||
+                (*error != -1 && !isRtspConnectionResetError(*error)) ||
+                PltGetMillis() + RTSP_REQUEST_RETRY_DELAY_MS >= deadline) {
+            return false;
+        }
+
+        attempt++;
+        Limelog("RTSP request retry %d after error %d\n", attempt, *error);
+        PltSleepMs(RTSP_REQUEST_RETRY_DELAY_MS);
+    }
 }
 
 static bool transactRtspMessage(PRTSP_MESSAGE request, PRTSP_MESSAGE response, bool expectingPayload, int* error) {

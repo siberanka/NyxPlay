@@ -15,8 +15,15 @@ class BoxArtManager : public QObject
 public:
     explicit BoxArtManager(QObject *parent = nullptr);
 
+    ~BoxArtManager();
+
     QUrl
     loadBoxArt(NvComputer* computer, NvApp& app);
+
+    // Returns the cached image for an app, or an empty URL if there is none.
+    // Never starts a download.
+    QUrl
+    getCachedBoxArt(NvComputer* computer, const NvApp& app);
 
     static
     void

@@ -19,6 +19,29 @@ BoxArtManager::BoxArtManager(QObject *parent) :
     }
 }
 
+BoxArtManager::~BoxArtManager()
+{
+    // Drop downloads that have not started so that destruction
+    // only waits for the ones already running.
+    m_ThreadPool.clear();
+    m_ThreadPool.waitForDone();
+}
+
+QUrl BoxArtManager::getCachedBoxArt(NvComputer* computer, const NvApp& app)
+{
+    QString cachePath = getFilePathForBoxArt(computer, app.id);
+    if (cachePath.isEmpty()) {
+        return QUrl();
+    }
+
+    QFile cacheFile(cachePath);
+    if (cacheFile.exists() && cacheFile.size() > 0) {
+        return QUrl::fromLocalFile(cacheFile.fileName());
+    }
+
+    return QUrl();
+}
+
 QString
 BoxArtManager::getFilePathForBoxArt(NvComputer* computer, int appId)
 {

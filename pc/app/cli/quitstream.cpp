@@ -8,6 +8,7 @@
 #include <QTimer>
 
 #define COMPUTER_SEEK_TIMEOUT 10000
+#define QUIT_APP_TIMEOUT 30000
 
 namespace CliQuitStream
 {
@@ -75,12 +76,17 @@ public:
                 m_State = StateFailure;
                 emit q->failed(QObject::tr("Failed to connect to %1").arg(m_ComputerName));
             }
+            else if (m_State == StateQuitApp) {
+                m_State = StateFailure;
+                emit q->failed(QObject::tr("Quitting app failed, reason: %1").arg(QObject::tr("Timed out")));
+            }
             break;
         // Occurs when searched computer is found
         case Event::ComputerFound:
             if (m_State == StateSeekComputer) {
                 if (event.computer->pairState == NvComputer::PS_PAIRED) {
                     m_State = StateQuitApp;
+                    m_TimeoutTimer->start(QUIT_APP_TIMEOUT);
                     emit q->quittingApp();
                     m_ComputerManager->quitRunningApp(event.computer);
                 } else {
@@ -95,6 +101,7 @@ public:
         // Occurs when app quit completed (error message is set if failed)
         case Event::AppQuitCompleted:
             if (m_State == StateQuitApp) {
+                m_TimeoutTimer->stop();
                 if (event.errorMessage.isEmpty()) {
                     QCoreApplication::exit(0);
                 } else {

@@ -528,7 +528,7 @@ QVector<NvAddress> NvComputer::uniqueAddresses() const
     return uniqueAddressList;
 }
 
-bool NvComputer::update(const NvComputer& that)
+bool NvComputer::update(const NvComputer& that, bool keepWorkingActiveAddress)
 {
     bool changed = false;
 
@@ -573,7 +573,11 @@ bool NvComputer::update(const NvComputer& that)
     ASSIGN_IF_CHANGED(pairState);
     ASSIGN_IF_CHANGED(serverCodecModeSupport);
     ASSIGN_IF_CHANGED(currentGameId);
-    ASSIGN_IF_CHANGED(activeAddress);
+    if (!(keepWorkingActiveAddress && this->state == CS_ONLINE && !this->activeAddress.isNull())) {
+        // An address discovered by a one-off add must not displace the
+        // address that the polling thread is already using successfully.
+        ASSIGN_IF_CHANGED(activeAddress);
+    }
     ASSIGN_IF_CHANGED(state);
     ASSIGN_IF_CHANGED(gfeVersion);
     ASSIGN_IF_CHANGED(appVersion);

@@ -51,7 +51,7 @@ public:
     setRemoteAddress(QHostAddress);
 
     bool
-    update(const NvComputer& that);
+    update(const NvComputer& that, bool keepWorkingActiveAddress = false);
 
     bool
     wake() const;

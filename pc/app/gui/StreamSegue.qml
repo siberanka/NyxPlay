@@ -25,7 +25,10 @@ Item {
         // Display the error dialog after Session::exec() returns
         streamSegueErrorDialog.text = qsTr("Starting %1 failed: Error %2").arg(stage).arg(errorCode)
 
-        if (failingPorts) {
+        if (errorCode === 10054 || errorCode === 10053 || errorCode === 104 || errorCode === 103 || errorCode === 54 || errorCode === 53) {
+            streamSegueErrorDialog.text += "\n\n" + qsTr("The host closed the connection unexpectedly. Try again; if it keeps happening, restart the host.")
+        }
+        else if (failingPorts) {
             streamSegueErrorDialog.text += "\n\n" + qsTr("Check your firewall and port forwarding rules for port(s): %1").arg(failingPorts)
         }
     }

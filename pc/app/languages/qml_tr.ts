@@ -212,6 +212,31 @@
         <source>Missing audio capture device. Reinstalling GeForce Experience should resolve this error.</source>
         <translation>Ses yakalama aygıtı eksik. GeForce Experience&apos;ı yeniden yüklemek bu hatayı çözmelidir.</translation>
     </message>
+    <message>
+        <location filename="../backend/nvhttp.cpp" line="1"/>
+        <source>App %1</source>
+        <translation>Uygulama %1</translation>
+    </message>
+    <message>
+        <location filename="../backend/nvhttp.cpp" line="1"/>
+        <source>Response too large</source>
+        <translation>Yanıt çok büyük</translation>
+    </message>
+    <message>
+        <location filename="../backend/nvhttp.cpp" line="1"/>
+        <source>The host closed the connection unexpectedly. Try again; if it keeps happening, restart the host.</source>
+        <translation>Ana bilgisayar bağlantıyı beklenmedik şekilde kapattı. Yeniden deneyin; sorun sürerse ana bilgisayarı yeniden başlatın.</translation>
+    </message>
+    <message>
+        <location filename="../backend/nvhttp.cpp" line="1"/>
+        <source>The host could not be reached. Check your firewall and port forwarding rules.</source>
+        <translation>Ana bilgisayara ulaşılamadı. Güvenlik duvarı ve bağlantı noktası yönlendirme kurallarınızı kontrol edin.</translation>
+    </message>
+    <message>
+        <location filename="../backend/nvhttp.cpp" line="1"/>
+        <source>Network error %1</source>
+        <translation>Ağ hatası %1</translation>
+    </message>
 </context>
 <context>
     <name>PcView</name>
@@ -378,6 +403,11 @@
         <source>GeForce Experience returned error: %1</source>
         <translation>GeForce Experience şu hatayı döndürdü: %1</translation>
     </message>
+    <message>
+        <location filename="../backend/computermanager.cpp" line="1"/>
+        <source>Pairing failed: %1</source>
+        <translation>Eşleştirme başarısız oldu: %1</translation>
+    </message>
 </context>
 <context>
     <name>PendingQuitTask</name>
@@ -422,6 +452,21 @@
         <location filename="../cli/listapps.cpp" line="108"/>
         <source>Computer %1 has not been paired. Please open NyxPlay to pair before retrieving games list.</source>
         <translation>%1 bilgisayarı eşleştirilmedi. Lütfen oyun listesini almadan önce eşleştirmek için NyxPlay&apos;ı açın.</translation>
+    </message>
+    <message>
+        <location filename="../cli/pair.cpp" line="1"/>
+        <source>Pairing timed out</source>
+        <translation>Eşleştirme zaman aşımına uğradı</translation>
+    </message>
+    <message>
+        <location filename="../cli/quitstream.cpp" line="1"/>
+        <source>Timed out</source>
+        <translation>Zaman aşımı</translation>
+    </message>
+    <message>
+        <location filename="../cli/listapps.cpp" line="1"/>
+        <source>Timed out while listing apps</source>
+        <translation>Uygulama listesi alınırken zaman aşımı oluştu</translation>
     </message>
 </context>
 <context>
@@ -1240,6 +1285,11 @@
         <location filename="../gui/StreamSegue.qml" line="169"/>
         <source>Ctrl+Alt+Shift+Q</source>
         <translation>Ctrl+Alt+Shift+Q</translation>
+    </message>
+    <message>
+        <location filename="../gui/StreamSegue.qml" line="1"/>
+        <source>The host closed the connection unexpectedly. Try again; if it keeps happening, restart the host.</source>
+        <translation>Ana bilgisayar bağlantıyı beklenmedik şekilde kapattı. Yeniden deneyin; sorun sürerse ana bilgisayarı yeniden başlatın.</translation>
     </message>
 </context>
 <context>

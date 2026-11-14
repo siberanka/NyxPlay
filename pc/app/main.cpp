@@ -14,6 +14,10 @@
 #include <QTemporaryFile>
 #include <QRegularExpression>
 
+#include <chrono>
+#include <cstdlib>
+#include <thread>
+
 #ifdef Q_OS_UNIX
 #include <sys/socket.h>
 #include <signal.h>
@@ -995,6 +999,7 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
     QString initialView;
     bool hasGUI = true;
+    ComputerManager* listComputerManager = nullptr;
 
     switch (commandLineParserResult) {
     case GlobalCommandLineParser::NormalStartRequested:
@@ -1035,7 +1040,8 @@ int main(int argc, char *argv[])
             ListCommandLineParser listParser;
             listParser.parse(app.arguments());
             auto launcher = new CliListApps::Launcher(listParser.getHost(), listParser, &app);
-            launcher->execute(new ComputerManager(StreamingPreferences::get()));
+            listComputerManager = new ComputerManager(StreamingPreferences::get());
+            launcher->execute(listComputerManager);
             hasGUI = false;
             break;
         }
@@ -1053,9 +1059,26 @@ int main(int argc, char *argv[])
 
     int err = app.exec();
 
+    if (listComputerManager != nullptr) {
+        // The list command is meant for scripts, so make sure that a stuck
+        // teardown can never keep the process alive.
+        std::thread([err]() {
+            std::this_thread::sleep_for(std::chrono::seconds(20));
+            fflush(stderr);
+            fflush(stdout);
+            std::_Exit(err);
+        }).detach();
+    }
+
     // Give worker tasks time to properly exit. Fixes PendingQuitTask
     // sometimes freezing and blocking process exit.
     QThreadPool::globalInstance()->waitForDone(30000);
+
+    if (listComputerManager != nullptr) {
+        // Stop polling and discovery explicitly instead of leaving it to process teardown
+        delete listComputerManager;
+        listComputerManager = nullptr;
+    }
 
     // Restore the default logger for all libraries before shutting down ours
 #if SDL_VERSION_ATLEAST(3, 0, 0)

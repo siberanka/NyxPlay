@@ -11,12 +11,19 @@
 #include <QImageReader>
 #include <QtEndian>
 #include <QNetworkProxy>
+#include <QElapsedTimer>
+#include <QReadLocker>
+#include <QCoreApplication>
 
 #define FAST_FAIL_TIMEOUT_MS 2000
 #define REQUEST_TIMEOUT_MS 5000
 #define LAUNCH_TIMEOUT_MS 120000
 #define RESUME_TIMEOUT_MS 30000
 #define QUIT_TIMEOUT_MS 30000
+#define IDEMPOTENT_RETRY_DELAY_MS 150
+#define MAX_IDEMPOTENT_RETRIES 2
+#define MAX_BOXART_DIMENSION 4096
+#define BOXART_ALLOCATION_LIMIT_MB 64
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 #define XML_NAME_EQUALS(x, y) ((x) == (y))
@@ -40,8 +47,32 @@ NvHTTP::NvHTTP(NvAddress address, uint16_t httpsPort, QSslCertificate serverCert
     m_Nam->setProxy(noProxy);
 }
 
+// Reads the connection parameters of a computer under its lock, because
+// polling threads may update them while a request is being prepared.
+struct NvHTTPTarget
+{
+    explicit NvHTTPTarget(NvComputer* computer)
+    {
+        QReadLocker lock(&computer->lock);
+        address = computer->activeAddress;
+        httpsPort = computer->activeHttpsPort;
+        serverCert = computer->serverCert;
+        useTrueUid = !computer->isNvidiaServerSoftware;
+    }
+
+    NvAddress address;
+    uint16_t httpsPort;
+    QSslCertificate serverCert;
+    bool useTrueUid;
+};
+
 NvHTTP::NvHTTP(NvComputer* computer, QNetworkAccessManager* nam) :
-    NvHTTP(computer->activeAddress, computer->activeHttpsPort, computer->serverCert, !computer->isNvidiaServerSoftware, nam)
+    NvHTTP(NvHTTPTarget(computer), nam)
+{
+}
+
+NvHTTP::NvHTTP(const NvHTTPTarget& target, QNetworkAccessManager* nam) :
+    NvHTTP(target.address, target.httpsPort, target.serverCert, target.useTrueUid, nam)
 {
 }
 
@@ -146,7 +177,8 @@ NvHTTP::getServerInfo(NvLogLevel logLevel, bool fastFail)
                                                 "serverinfo",
                                                 nullptr,
                                                 fastFail ? FAST_FAIL_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
-                                                logLevel);
+                                                logLevel,
+                                                fastFail ? 1 : MAX_IDEMPOTENT_RETRIES);
             // Throws if the request failed
             verifyResponseStatus(serverInfo);
         }
@@ -159,7 +191,8 @@ NvHTTP::getServerInfo(NvLogLevel logLevel, bool fastFail)
                                                     "serverinfo",
                                                     nullptr,
                                                     fastFail ? FAST_FAIL_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
-                                                    logLevel);
+                                                    logLevel,
+                                                    fastFail ? 1 : MAX_IDEMPOTENT_RETRIES);
                 verifyResponseStatus(serverInfo);
             }
             else
@@ -176,7 +209,8 @@ NvHTTP::getServerInfo(NvLogLevel logLevel, bool fastFail)
                                             "serverinfo",
                                             nullptr,
                                             fastFail ? FAST_FAIL_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
-                                            logLevel);
+                                            logLevel,
+                                            fastFail ? 1 : MAX_IDEMPOTENT_RETRIES);
         verifyResponseStatus(serverInfo);
 
         // Populate the HTTPS port
@@ -306,46 +340,88 @@ NvHTTP::getAppList()
                                             "applist",
                                             nullptr,
                                             REQUEST_TIMEOUT_MS,
-                                            NvLogLevel::NVLL_ERROR);
+                                            NvLogLevel::NVLL_ERROR,
+                                            MAX_IDEMPOTENT_RETRIES,
+                                            MAX_APPLIST_BYTES);
+    return parseAppList(appxml);
+}
+
+QVector<NvApp>
+NvHTTP::parseAppList(const QString& appxml)
+{
     verifyResponseStatus(appxml);
 
     QXmlStreamReader xmlReader(appxml);
     QVector<NvApp> apps;
+    NvApp current;
+    bool inApp = false;
+    int skipped = 0;
+
+    // Completes the entry being parsed. Entries without a usable ID cannot be
+    // launched, so they are dropped without affecting the rest of the list.
+    auto finishApp = [&]() {
+        if (!inApp) {
+            return;
+        }
+        inApp = false;
+
+        if (current.id <= 0) {
+            skipped++;
+            return;
+        }
+        if (apps.size() >= MAX_APPLIST_ENTRIES) {
+            skipped++;
+            return;
+        }
+        if (current.name.isEmpty()) {
+            current.name = tr("App %1").arg(current.id);
+        }
+        apps.append(current);
+    };
+
     while (!xmlReader.atEnd()) {
-        while (xmlReader.readNextStartElement()) {
-            auto name = xmlReader.name();
-            if (XML_NAME_EQUALS(name, "App")) {
-                // We must have a valid app before advancing to the next one
-                if (!apps.isEmpty() && !apps.last().isInitialized()) {
-                    qWarning() << "Invalid applist XML";
-                    throw std::runtime_error("Invalid applist XML");
+        if (xmlReader.readNext() != QXmlStreamReader::StartElement) {
+            continue;
+        }
+
+        auto name = xmlReader.name();
+        if (XML_NAME_EQUALS(name, "App")) {
+            finishApp();
+            current = NvApp();
+            inApp = true;
+        }
+        else if (inApp) {
+            if (XML_NAME_EQUALS(name, "AppTitle")) {
+                // An app without a name may be sent as <AppTitle/>
+                QString title = xmlReader.readElementText();
+                if (title.size() > MAX_APP_NAME_LENGTH) {
+                    title.truncate(MAX_APP_NAME_LENGTH);
                 }
-                apps.append(NvApp());
+                current.name = title.isNull() ? QString("") : title;
             }
-            else if (!apps.isEmpty()) {
-                if (XML_NAME_EQUALS(name, "AppTitle")) {
-                    // If an app has no name, Sunshine may send us <AppTitle/>,
-                    // which readElementText() returns as a null QString.
-                    // We want to treat this as an empty QString instead, so we
-                    // will explicitly convert it. An empty string will satisfy
-                    // NvApp's isInitialized() check.
-                    QString name = xmlReader.readElementText();
-                    if (name.isNull()) {
-                        name = "";
-                    }
-                    apps.last().name = name;
-                }
-                else if (XML_NAME_EQUALS(name, "ID")) {
-                    apps.last().id = xmlReader.readElementText().toInt();
-                }
-                else if (XML_NAME_EQUALS(name, "IsHdrSupported")) {
-                    apps.last().hdrSupported = xmlReader.readElementText() == "1";
-                }
-                else if (XML_NAME_EQUALS(name, "IsAppCollectorGame")) {
-                    apps.last().isAppCollectorGame = xmlReader.readElementText() == "1";
-                }
+            else if (XML_NAME_EQUALS(name, "ID")) {
+                bool ok = false;
+                int id = xmlReader.readElementText().toInt(&ok);
+                current.id = ok ? id : 0;
+            }
+            else if (XML_NAME_EQUALS(name, "IsHdrSupported")) {
+                current.hdrSupported = xmlReader.readElementText() == "1";
+            }
+            else if (XML_NAME_EQUALS(name, "IsAppCollectorGame")) {
+                current.isAppCollectorGame = xmlReader.readElementText() == "1";
             }
         }
+    }
+    finishApp();
+
+    // A damaged document must not replace a good cached list with a partial one
+    if (xmlReader.hasError()) {
+        qWarning() << "Invalid applist XML:" << xmlReader.errorString();
+        throw std::runtime_error("Invalid applist XML");
+    }
+
+    if (skipped > 0) {
+        qWarning() << "Ignored" << skipped << "invalid entries in the app list";
     }
 
     return apps;
@@ -398,8 +474,28 @@ NvHTTP::getBoxArt(int appId)
                                           "appid="+QString::number(appId)+
                                           "&AssetType=2&AssetIdx=0",
                                           REQUEST_TIMEOUT_MS,
-                                          NvLogLevel::NVLL_VERBOSE);
-    QImage image = QImageReader(reply).read();
+                                          NvLogLevel::NVLL_VERBOSE,
+                                          MAX_IDEMPOTENT_RETRIES,
+                                          MAX_BOXART_BYTES);
+
+    QImage image;
+    {
+        QImageReader reader(reply);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        // Bound the memory a decoded image may use
+        QImageReader::setAllocationLimit(BOXART_ALLOCATION_LIMIT_MB);
+#endif
+        QSize size = reader.size();
+        if (!size.isValid() || (size.width() <= MAX_BOXART_DIMENSION && size.height() <= MAX_BOXART_DIMENSION)) {
+            image = reader.read();
+            if (image.width() > MAX_BOXART_DIMENSION || image.height() > MAX_BOXART_DIMENSION) {
+                image = QImage();
+            }
+        }
+        else {
+            qWarning() << "Ignoring oversized box art for app" << appId;
+        }
+    }
     delete reply;
 
     return image;
@@ -461,9 +557,11 @@ NvHTTP::openConnectionToString(QUrl baseUrl,
                                QString command,
                                QString arguments,
                                int timeoutMs,
-                               NvLogLevel logLevel)
+                               NvLogLevel logLevel,
+                               int retries,
+                               qint64 maxResponseBytes)
 {
-    QNetworkReply* reply = openConnection(baseUrl, command, arguments, timeoutMs, logLevel);
+    QNetworkReply* reply = openConnection(baseUrl, command, arguments, timeoutMs, logLevel, retries, maxResponseBytes);
     QString ret;
 
     QTextStream stream(reply);
@@ -480,12 +578,104 @@ NvHTTP::openConnectionToString(QUrl baseUrl,
     return ret;
 }
 
+bool
+NvHTTP::isConnectionResetError(int errorCode)
+{
+    switch (errorCode) {
+    case 10054: // WSAECONNRESET
+    case 10053: // WSAECONNABORTED
+    case 104:   // ECONNRESET (Linux)
+    case 103:   // ECONNABORTED (Linux)
+    case 54:    // ECONNRESET (BSD)
+    case 53:    // ECONNABORTED (BSD)
+        return true;
+    default:
+        return false;
+    }
+}
+
+QString
+NvHTTP::describeNetworkError(int errorCode)
+{
+    if (isConnectionResetError(errorCode)) {
+        return tr("The host closed the connection unexpectedly. Try again; if it keeps happening, restart the host.");
+    }
+
+    switch (errorCode) {
+    case 10060: // WSAETIMEDOUT
+    case 10061: // WSAECONNREFUSED
+    case 10065: // WSAEHOSTUNREACH
+    case 110:   // ETIMEDOUT (Linux)
+    case 111:   // ECONNREFUSED (Linux)
+    case 113:   // EHOSTUNREACH (Linux)
+    case 60:    // ETIMEDOUT (BSD)
+    case 61:    // ECONNREFUSED (BSD)
+        return tr("The host could not be reached. Check your firewall and port forwarding rules.");
+    default:
+        return tr("Network error %1").arg(errorCode);
+    }
+}
+
 QNetworkReply*
 NvHTTP::openConnection(QUrl baseUrl,
                        QString command,
                        QString arguments,
                        int timeoutMs,
-                       NvLogLevel logLevel)
+                       NvLogLevel logLevel,
+                       int retries,
+                       qint64 maxResponseBytes)
+{
+    QElapsedTimer elapsed;
+    elapsed.start();
+
+    for (int attempt = 0;; attempt++) {
+        bool receivedData = false;
+
+        try {
+            return openConnectionOnce(baseUrl, command, arguments, timeoutMs, logLevel, maxResponseBytes, &receivedData);
+        }
+        catch (const QtNetworkReplyException& e) {
+            // Only repeat requests that failed because the connection was dropped
+            // before any part of the response arrived.
+            bool retryableError =
+                    e.getError() == QNetworkReply::RemoteHostClosedError ||
+                    e.getError() == QNetworkReply::ConnectionRefusedError ||
+                    e.getError() == QNetworkReply::UnknownNetworkError ||
+                    e.getError() == QNetworkReply::TemporaryNetworkFailureError;
+            bool withinBudget = timeoutMs <= 0 || elapsed.elapsed() + IDEMPOTENT_RETRY_DELAY_MS < timeoutMs;
+            if (attempt >= retries || receivedData || !retryableError || !withinBudget) {
+                throw;
+            }
+
+            if (logLevel >= NvLogLevel::NVLL_ERROR) {
+                qWarning() << command << "request retry" << (attempt + 1) << "after error" << e.getError();
+            }
+
+            // Wait briefly, but give up immediately if the application is quitting
+            bool quitting = false;
+            QEventLoop delayLoop;
+            auto quitConnection = connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, &delayLoop, [&]() {
+                quitting = true;
+                delayLoop.quit();
+            });
+            QTimer::singleShot(IDEMPOTENT_RETRY_DELAY_MS, &delayLoop, &QEventLoop::quit);
+            delayLoop.exec(QEventLoop::ExcludeUserInputEvents);
+            disconnect(quitConnection);
+            if (quitting) {
+                throw;
+            }
+        }
+    }
+}
+
+QNetworkReply*
+NvHTTP::openConnectionOnce(QUrl baseUrl,
+                           QString command,
+                           QString arguments,
+                           int timeoutMs,
+                           NvLogLevel logLevel,
+                           qint64 maxResponseBytes,
+                           bool* receivedData)
 {
     // Port must be set
     Q_ASSERT(baseUrl.port(0) != 0);
@@ -522,6 +712,16 @@ NvHTTP::openConnection(QUrl baseUrl,
     auto sslErrorsConnection = connect(m_Nam, &QNetworkAccessManager::sslErrors, this, &NvHTTP::handleSslErrors);
     QNetworkReply* reply = m_Nam->get(request);
     QEventLoop loop;
+
+    // Refuse responses larger than the allowed size
+    bool tooLarge = false;
+    auto readyReadConnection = connect(reply, &QNetworkReply::readyRead, reply, [&]() {
+        *receivedData = true;
+        if (reply->bytesAvailable() > maxResponseBytes) {
+            tooLarge = true;
+            reply->abort();
+        }
+    });
 
     // Connect the quit signals
     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
@@ -569,6 +769,16 @@ NvHTTP::openConnection(QUrl baseUrl,
     m_Nam->clearAccessCache();
 #endif
     disconnect(sslErrorsConnection);
+    disconnect(readyReadConnection);
+    if (reply->bytesAvailable() > 0) {
+        *receivedData = true;
+    }
+
+    if (tooLarge) {
+        qWarning() << command << "response exceeded the size limit";
+        delete reply;
+        throw QtNetworkReplyException(QNetworkReply::UnknownContentError, tr("Response too large"));
+    }
 
     // Handle error
     if (reply->error() != QNetworkReply::NoError)
@@ -594,7 +804,10 @@ NvHTTP::openConnection(QUrl baseUrl,
             throw exception;
         }
         else {
-            QtNetworkReplyException exception(reply->error(), reply->errorString());
+            QtNetworkReplyException exception(reply->error(),
+                                              reply->error() == QNetworkReply::RemoteHostClosedError ?
+                                                  tr("The host closed the connection unexpectedly. Try again; if it keeps happening, restart the host.") :
+                                                  reply->errorString());
             delete reply;
             throw exception;
         }

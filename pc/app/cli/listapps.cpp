@@ -5,8 +5,18 @@
 #include "backend/computerseeker.h"
 
 #include <QCoreApplication>
+#include <QTimer>
 
 #define COMPUTER_SEEK_TIMEOUT 30000
+
+// Overall limit for the command, covering the seek phase and the list request
+#define LIST_DEADLINE_MS (COMPUTER_SEEK_TIMEOUT + 15000)
+
+// Process exit codes
+#define EXIT_ERROR 1
+#define EXIT_NOT_PAIRED 2
+#define EXIT_NOT_FOUND 3
+#define EXIT_PROTOCOL_ERROR 4
 
 namespace CliListApps
 {
@@ -64,6 +74,13 @@ public:
 
                 m_BoxArtManager = new BoxArtManager(q);
 
+                // Make sure the command always terminates
+                QTimer::singleShot(LIST_DEADLINE_MS, q, [this]() {
+                    fprintf(stderr, "%s\n", qPrintable(QObject::tr("Timed out while listing apps")));
+                    fflush(stderr);
+                    QCoreApplication::exit(EXIT_NOT_FOUND);
+                });
+
                 if (m_Arguments.isVerbose()) {
                     fprintf(stdout, "Establishing connection to PC...\n");
                 }
@@ -72,9 +89,10 @@ public:
         // Occurs when computer search timed out
         case Event::ComputerSeekTimedout:
             if (m_State == StateSeekComputer) {
-                fprintf(stderr, "%s\n", qPrintable(QString("Failed to connect to %1").arg(m_ComputerName)));
+                m_State = StateFailure;
+                fprintf(stderr, "%s\n", qPrintable(QObject::tr("Failed to connect to %1").arg(m_ComputerName)));
 
-                QCoreApplication::exit(-1);
+                QCoreApplication::exit(EXIT_NOT_FOUND);
             }
             break;
         // Occurs when searched computer is found
@@ -99,9 +117,18 @@ public:
                         m_Arguments.isPrintCSV() ? printAppsCSV(appList) : printApps(appList);
 
                         QCoreApplication::exit(0);
-                    } catch (std::exception& exception) {
+                    } catch (const GfeHttpResponseException& exception) {
+                        m_State = StateFailure;
+                        fprintf(stderr, "%s\n", qPrintable(exception.toQString()));
+                        QCoreApplication::exit(EXIT_PROTOCOL_ERROR);
+                    } catch (const QtNetworkReplyException& exception) {
+                        m_State = StateFailure;
+                        fprintf(stderr, "%s\n", qPrintable(exception.toQString()));
+                        QCoreApplication::exit(EXIT_ERROR);
+                    } catch (const std::exception& exception) {
+                        m_State = StateFailure;
                         fprintf(stderr, "%s\n", exception.what());
-                        QCoreApplication::exit(1);
+                        QCoreApplication::exit(EXIT_PROTOCOL_ERROR);
                     }
                 } else {
                     m_State = StateFailure;
@@ -109,7 +136,7 @@ public:
                                             "Please open NyxPlay to pair before retrieving games list.")
                                             .arg(event.computer->name)));
 
-                    QCoreApplication::exit(-1);
+                    QCoreApplication::exit(EXIT_NOT_PAIRED);
                 }
             }
             break;
@@ -137,7 +164,7 @@ public:
                                                           app.isAppCollectorGame ? "true" : "false",
                                                           app.hidden ? "true" : "false",
                                                           app.directLaunch ? "true" : "false",
-                                                          qPrintable(m_BoxArtManager->loadBoxArt(m_Computer, app).toDisplayString()));
+                                                          qPrintable(m_BoxArtManager->getCachedBoxArt(m_Computer, app).toDisplayString()));
     }
 
     Launcher *q_ptr;

@@ -8,6 +8,7 @@
 
 #define COMPUTER_SEEK_TIMEOUT 30000
 #define APP_SEEK_TIMEOUT 10000
+#define APP_QUIT_TIMEOUT 30000
 
 namespace CliStartStream
 {
@@ -114,6 +115,8 @@ public:
         // confirmation dialog
         case Event::AppQuitRequested:
             if (m_State == StateSeekApp) {
+                m_QuitRequested = true;
+                m_TimeoutTimer->start(APP_QUIT_TIMEOUT);
                 m_ComputerManager->quitRunningApp(m_Computer);
             }
             break;
@@ -134,7 +137,12 @@ public:
             }
             if (m_State == StateSeekApp) {
                 m_State = StateFailure;
-                emit q->failed(QObject::tr("Failed to find application %1").arg(m_AppName));
+                if (m_QuitRequested) {
+                    emit q->failed(QObject::tr("Quitting app failed, reason: %1").arg(QObject::tr("Timed out")));
+                }
+                else {
+                    emit q->failed(QObject::tr("Failed to find application %1").arg(m_AppName));
+                }
             }
             break;
         }
@@ -178,6 +186,7 @@ public:
     ComputerSeeker *m_ComputerSeeker;
     NvComputer *m_Computer;
     State m_State;
+    bool m_QuitRequested = false;
     QTimer *m_TimeoutTimer;
 };
 

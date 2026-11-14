@@ -214,6 +214,7 @@ class ComputerManager : public QObject
     friend class DeferredHostDeletionTask;
     friend class PendingAddTask;
     friend class PendingPairingTask;
+    friend class PendingQuitTask;
     friend class DelayedFlushThread;
 
 public:

@@ -11,6 +11,7 @@
 #include <QNetworkReply>
 
 class NvComputer;
+struct NvHTTPTarget;
 
 class NvDisplayMode
 {
@@ -103,6 +104,12 @@ class NvHTTP : public QObject
     Q_OBJECT
 
 public:
+    static constexpr qint64 DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024;
+    static constexpr qint64 MAX_APPLIST_BYTES = 8 * 1024 * 1024;
+    static constexpr qint64 MAX_BOXART_BYTES = 8 * 1024 * 1024;
+    static constexpr int MAX_APPLIST_ENTRIES = 5000;
+    static constexpr int MAX_APP_NAME_LENGTH = 256;
+
     enum NvLogLevel {
         NVLL_NONE,
         NVLL_ERROR,
@@ -112,6 +119,8 @@ public:
     explicit NvHTTP(NvAddress address, uint16_t httpsPort, QSslCertificate serverCert, bool useTrueUid, QNetworkAccessManager* nam = nullptr);
 
     explicit NvHTTP(NvComputer* computer, QNetworkAccessManager* nam = nullptr);
+
+    explicit NvHTTP(const NvHTTPTarget& target, QNetworkAccessManager* nam);
 
     static
     int
@@ -139,7 +148,9 @@ public:
                            QString command,
                            QString arguments,
                            int timeoutMs,
-                           NvLogLevel logLevel = NvLogLevel::NVLL_VERBOSE);
+                           NvLogLevel logLevel = NvLogLevel::NVLL_VERBOSE,
+                           int retries = 0,
+                           qint64 maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES);
 
     void setServerCert(QSslCertificate serverCert);
     void setAddress(NvAddress address);
@@ -175,6 +186,22 @@ public:
     QVector<NvApp>
     getAppList();
 
+    // Parses an applist response. Entries without a usable ID are skipped.
+    // Throws if the response is not a successful, well-formed document.
+    static
+    QVector<NvApp>
+    parseAppList(const QString& xml);
+
+    // Returns a user-facing explanation for a socket error code
+    static
+    QString
+    describeNetworkError(int errorCode);
+
+    // Returns true for socket errors that mean the peer dropped an established connection
+    static
+    bool
+    isConnectionResetError(int errorCode);
+
     QImage
     getBoxArt(int appId);
 
@@ -193,7 +220,18 @@ private:
                    QString command,
                    QString arguments,
                    int timeoutMs,
-                   NvLogLevel logLevel);
+                   NvLogLevel logLevel,
+                   int retries = 0,
+                   qint64 maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES);
+
+    QNetworkReply*
+    openConnectionOnce(QUrl baseUrl,
+                       QString command,
+                       QString arguments,
+                       int timeoutMs,
+                       NvLogLevel logLevel,
+                       qint64 maxResponseBytes,
+                       bool* receivedData);
 
     NvAddress m_Address;
     QNetworkAccessManager* m_Nam;

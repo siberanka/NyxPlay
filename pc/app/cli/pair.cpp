@@ -7,6 +7,9 @@
 
 #define COMPUTER_SEEK_TIMEOUT 10000
 
+// The host keeps a pending pairing request for about this long
+#define PAIRING_TIMEOUT 120000
+
 namespace CliPair
 {
 
@@ -84,6 +87,7 @@ public:
                     Q_ASSERT(!m_PredefinedPin.isEmpty());
 
                     m_State = StatePairing;
+                    m_TimeoutTimer->start(PAIRING_TIMEOUT);
                     m_ComputerManager->pairHost(event.computer, m_PredefinedPin);
                     emit q->pairing(event.computer->name, m_PredefinedPin);
                 }
@@ -92,6 +96,7 @@ public:
         // Occurs when pairing operation completes
         case Event::PairingCompleted:
             if (m_State == StatePairing) {
+                m_TimeoutTimer->stop();
                 if (event.errorMessage.isEmpty()) {
                     m_State = StateComplete;
                     emit q->success();
@@ -107,6 +112,10 @@ public:
             if (m_State == StateSeekComputer) {
                 m_State = StateFailure;
                 emit q->failed(QObject::tr("Failed to connect to %1").arg(m_ComputerName));
+            }
+            else if (m_State == StatePairing) {
+                m_State = StateFailure;
+                emit q->failed(QObject::tr("Pairing timed out"));
             }
             break;
         }

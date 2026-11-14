@@ -47,6 +47,31 @@
 
 #define CONN_TEST_SERVER "qt.conntest.moonlight-stream.org"
 
+// Returns true when the host is on the same machine or a private network, where
+// an external connectivity test would not tell us anything useful.
+static bool isPrivateTarget(NvComputer* computer)
+{
+    QString address;
+    {
+        QReadLocker lock(&computer->lock);
+        address = computer->activeAddress.address();
+    }
+
+    QHostAddress host(address);
+    if (host.isNull()) {
+        return false;
+    }
+
+    return host.isLoopback() ||
+            host.isInSubnet(QHostAddress("10.0.0.0"), 8) ||
+            host.isInSubnet(QHostAddress("172.16.0.0"), 12) ||
+            host.isInSubnet(QHostAddress("192.168.0.0"), 16) ||
+            host.isInSubnet(QHostAddress("169.254.0.0"), 16) ||
+            host.isInSubnet(QHostAddress("100.64.0.0"), 10) ||
+            host.isInSubnet(QHostAddress("fe80::"), 10) ||
+            host.isInSubnet(QHostAddress("fc00::"), 7);
+}
+
 CONNECTION_LISTENER_CALLBACKS Session::k_ConnCallbacks = {
     Session::clStageStarting,
     nullptr,
@@ -78,18 +103,26 @@ void Session::clStageStarting(int stage)
 void Session::clStageFailed(int stage, int errorCode)
 {
     // Perform the port test now, while we're on the async connection thread and not blocking the UI.
+    // A dropped connection and a host on a private network are not firewall problems, so
+    // the test (and the port hint that goes with it) is skipped for them.
     unsigned int portFlags = LiGetPortFlagsFromStage(stage);
-    s_ActiveSession->m_PortTestResults = LiTestClientConnectivity(CONN_TEST_SERVER, 443, portFlags);
+    bool portHint = !NvHTTP::isConnectionResetError(errorCode) && !isPrivateTarget(s_ActiveSession->m_Computer);
+    if (portHint) {
+        s_ActiveSession->m_PortTestResults = LiTestClientConnectivity(CONN_TEST_SERVER, 443, portFlags);
+    }
 
     char failingPorts[128];
     LiStringifyPortFlags(portFlags, ", ", failingPorts, sizeof(failingPorts));
-    emit s_ActiveSession->stageFailed(QString::fromLocal8Bit(LiGetStageName(stage)), errorCode, QString(failingPorts));
+    emit s_ActiveSession->stageFailed(QString::fromLocal8Bit(LiGetStageName(stage)), errorCode,
+                                      NvHTTP::isConnectionResetError(errorCode) ? QString() : QString(failingPorts));
 }
 
 void Session::clConnectionTerminated(int errorCode)
 {
     unsigned int portFlags = LiGetPortFlagsFromTerminationErrorCode(errorCode);
-    s_ActiveSession->m_PortTestResults = LiTestClientConnectivity(CONN_TEST_SERVER, 443, portFlags);
+    if (!isPrivateTarget(s_ActiveSession->m_Computer)) {
+        s_ActiveSession->m_PortTestResults = LiTestClientConnectivity(CONN_TEST_SERVER, 443, portFlags);
+    }
 
     // Display the termination dialog if this was not intended
     switch (errorCode) {
@@ -1650,7 +1683,12 @@ bool Session::startConnectionAsync()
         return false;
     }
 
-    QByteArray hostnameStr = m_Computer->activeAddress.address().toUtf8();
+    QByteArray hostnameStr;
+    {
+        // Polling threads may update the active address concurrently
+        QReadLocker lock(&m_Computer->lock);
+        hostnameStr = m_Computer->activeAddress.address().toUtf8();
+    }
     QByteArray siAppVersion = m_Computer->appVersion.toUtf8();
 
     SERVER_INFORMATION hostInfo;

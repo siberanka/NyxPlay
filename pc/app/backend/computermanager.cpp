@@ -11,8 +11,11 @@
 #include <QCoreApplication>
 #include <QRandomGenerator>
 
+#include <memory>
+
 #define SER_HOSTS "hosts"
 #define SER_HOSTS_BACKUP "hostsbackup"
+#define SER_HOSTS_INVALID "hostsinvalid"
 
 class PcMonitorThread : public QThread
 {
@@ -182,11 +185,20 @@ ComputerManager::ComputerManager(StreamingPreferences* prefs)
     }
 
     // Inflate our hosts from QSettings
+    QList<QVariantMap> rejectedRecords;
     for (int i = 0; i < hosts; i++) {
         settings.setArrayIndex(i);
         NvComputer* computer = new NvComputer(settings);
         if (!NvComputer::isValidUuid(computer->uuid)) {
-            // Never use an invalid persisted ID to build cache paths
+            // Never use an invalid persisted ID to build cache paths. The raw
+            // record is kept aside so that it is not lost when the list is rewritten.
+            qWarning() << "Ignoring saved host entry" << i << "with an invalid ID";
+            QVariantMap record;
+            const QStringList keys = settings.childKeys();
+            for (const QString& key : keys) {
+                record.insert(key, settings.value(key));
+            }
+            rejectedRecords.append(record);
             delete computer;
             continue;
         }
@@ -194,6 +206,42 @@ ComputerManager::ComputerManager(StreamingPreferences* prefs)
         m_LastSerializedHosts[computer->uuid] = *computer;
     }
     settings.endArray();
+
+    // Preserve records that could not be used (see above)
+    if (!rejectedRecords.isEmpty()) {
+        QList<QVariantMap> preserved;
+        int existing = settings.beginReadArray(SER_HOSTS_INVALID);
+        for (int i = 0; i < existing; i++) {
+            settings.setArrayIndex(i);
+            QVariantMap record;
+            const QStringList keys = settings.childKeys();
+            for (const QString& key : keys) {
+                record.insert(key, settings.value(key));
+            }
+            preserved.append(record);
+        }
+        settings.endArray();
+
+        bool added = false;
+        for (const QVariantMap& record : std::as_const(rejectedRecords)) {
+            if (!preserved.contains(record) && preserved.size() < 50) {
+                preserved.append(record);
+                added = true;
+            }
+        }
+
+        if (added) {
+            settings.remove(SER_HOSTS_INVALID);
+            settings.beginWriteArray(SER_HOSTS_INVALID);
+            for (int i = 0; i < preserved.size(); i++) {
+                settings.setArrayIndex(i);
+                for (auto it = preserved[i].constBegin(); it != preserved[i].constEnd(); ++it) {
+                    settings.setValue(it.key(), it.value());
+                }
+            }
+            settings.endArray();
+        }
+    }
 
     // Fetch latest compatibility data asynchronously
     m_CompatFetcher.start();
@@ -635,6 +683,9 @@ private:
             emit pairingCompleted(m_Computer, tr("GeForce Experience returned error: %1").arg(e.toQString()));
         } catch (const QtNetworkReplyException& e) {
             emit pairingCompleted(m_Computer, e.toQString());
+        } catch (const std::exception& e) {
+            qWarning() << "Pairing aborted:" << e.what();
+            emit pairingCompleted(m_Computer, tr("Pairing failed: %1").arg(QString::fromUtf8(e.what())));
         }
     }
 
@@ -661,10 +712,13 @@ public:
     {
         connect(this, &PendingQuitTask::quitAppFailed,
                 computerManager, &ComputerManager::quitAppCompleted);
+        connect(this, &PendingQuitTask::quitAppSucceeded,
+                computerManager, &ComputerManager::handleComputerStateChanged);
     }
 
 signals:
     void quitAppFailed(QString error);
+    void quitAppSucceeded(NvComputer* computer);
 
 private:
     void run()
@@ -675,6 +729,15 @@ private:
             if (m_Computer->currentGameId != 0) {
                 http.quitApp();
             }
+
+            // The host confirmed the quit (or nothing was running). Report it without
+            // waiting for a polling cycle, which may not be running for CLI commands.
+            // handleComputerStateChanged() completes the pending quit request.
+            {
+                QWriteLocker lock(&m_Computer->lock);
+                m_Computer->currentGameId = 0;
+            }
+            emit quitAppSucceeded(m_Computer);
         } catch (const GfeHttpResponseException& e) {
             {
                 QWriteLocker lock(&m_Computer->lock);
@@ -813,7 +876,8 @@ private:
                 }
             }
             return serverInfo;
-        } catch (...) {
+        } catch (const std::exception& e) {
+            qWarning() << "Failed to fetch serverinfo from" << m_Address.toString() << ":" << e.what();
             if (!m_Mdns) {
                 unsigned int portTestResult;
 
@@ -866,12 +930,14 @@ private:
         NvComputer* newComputer;
         try {
             newComputer = new NvComputer(http, serverInfo);
-        } catch (...) {
+        } catch (const std::exception& e) {
+            qWarning() << "Malformed serverinfo from" << m_Address.toString() << ":" << e.what();
             if (!m_Mdns) {
                 emit computerAddCompleted(false, false);
             }
             return;
         }
+        std::unique_ptr<NvComputer> newComputerOwner(newComputer);
         http.setTrueUid(!newComputer->isNvidiaServerSoftware);
 
         // Check if we have a record of this host UUID to pull the pinned cert
@@ -896,8 +962,8 @@ private:
             try {
                 NvComputer httpsComputer(http, serverInfo);
                 newComputer->update(httpsComputer);
-            } catch (...) {
-                delete newComputer;
+            } catch (const std::exception& e) {
+                qWarning() << "Malformed serverinfo from" << m_Address.toString() << ":" << e.what();
                 if (!m_Mdns) {
                     emit computerAddCompleted(false, false);
                 }
@@ -962,8 +1028,8 @@ private:
 
             if (existingComputer != nullptr) {
                 // Fold it into the existing PC
-                bool changed = existingComputer->update(*newComputer);
-                delete newComputer;
+                bool changed = existingComputer->update(*newComputer, true);
+                newComputerOwner.reset();
 
                 // Drop the lock before notifying
                 m_ComputerManager->m_Lock.unlock();
@@ -980,8 +1046,8 @@ private:
                 }
             }
             else {
-                // Store this in our active sets
-                m_ComputerManager->m_KnownHosts[newComputer->uuid] = newComputer;
+                // Store this in our active sets (the map takes over ownership)
+                m_ComputerManager->m_KnownHosts[newComputer->uuid] = newComputerOwner.release();
 
                 // Start polling if enabled (write lock required)
                 m_ComputerManager->startPollingComputer(newComputer);
