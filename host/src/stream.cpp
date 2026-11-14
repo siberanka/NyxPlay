@@ -709,7 +709,8 @@ namespace stream {
 
       // increase the FEC percentage for this frame if the parity shard minimum is not met
       if (parity_shards < minparityshards && fecpercentage != 0) {
-        parity_shards = minparityshards;
+        // A Reed-Solomon block cannot hold more than DATA_SHARDS_MAX shards in total
+        parity_shards = data_shards < DATA_SHARDS_MAX ? std::min<size_t>(minparityshards, DATA_SHARDS_MAX - data_shards) : 0;
         fecpercentage = (100 * parity_shards) / data_shards;
 
         BOOST_LOG(verbose) << "Increasing FEC percentage to "sv << fecpercentage << " to meet parity shard minimum"sv << std::endl;
@@ -760,7 +761,15 @@ namespace stream {
         // packets = parity_shards + data_shards
         rs_t rs {reed_solomon_new(data_shards, parity_shards)};
 
-        reed_solomon_encode(rs.get(), shards_p.begin(), nr_shards, blocksize);
+        if (rs) {
+          reed_solomon_encode(rs.get(), shards_p.begin(), nr_shards, blocksize);
+        } else {
+          // Send the block without FEC rather than failing the stream
+          BOOST_LOG(error) << "Failed to create the Reed-Solomon codec, sending without FEC"sv;
+          fecpercentage = 0;
+          parity_shards = 0;
+          nr_shards = data_shards;
+        }
       }
 
       return {

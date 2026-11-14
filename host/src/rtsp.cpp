@@ -434,6 +434,16 @@ namespace rtsp_stream {
     }
 
     void handle_msg(tcp::socket &sock, launch_session_t &session, msg_t &&req) {
+      // Only requests are dispatched, a response shares its storage with the request fields
+      if (req->type != TYPE_REQUEST || req->message.request.command == nullptr || req->message.request.target == nullptr) {
+        BOOST_LOG(warning) << "Ignoring RTSP message that is not a well-formed request"sv;
+        respond(sock, session, nullptr, 400, "BAD REQUEST", req->sequenceNumber, {});
+
+        boost::system::error_code ec;
+        sock.shutdown(boost::asio::socket_base::shutdown_type::shutdown_both, ec);
+        return;
+      }
+
       auto func = _map_cmd_cb.find(req->message.request.command);
       if (func != std::end(_map_cmd_cb)) {
         func->second(this, sock, session, std::move(req));
@@ -795,7 +805,13 @@ namespace rtsp_stream {
     uint32_t encryption_flags_requested = SS_ENC_CONTROL_V2;
 
     // Determine the encryption desired for this remote endpoint
-    auto encryption_mode = net::encryption_mode_for_address(sock.remote_endpoint().address());
+    boost::system::error_code remote_ec;
+    auto remote_endpoint = sock.remote_endpoint(remote_ec);
+    if (remote_ec) {
+      BOOST_LOG(debug) << "RTSP peer is gone: "sv << remote_ec.message();
+      return;
+    }
+    auto encryption_mode = net::encryption_mode_for_address(remote_endpoint.address());
     if (encryption_mode != config::ENCRYPTION_MODE_NEVER) {
       // Advertise support for video encryption if it's not disabled
       encryption_flags_supported |= SS_ENC_VIDEO;
@@ -872,8 +888,14 @@ namespace rtsp_stream {
     auto seqn_str = std::to_string(req->sequenceNumber);
     seqn.content = const_cast<char *>(seqn_str.c_str());
 
-    std::string_view target {req->message.request.target};
-    auto begin = std::find(std::begin(target), std::end(target), '=') + 1;
+    std::string_view target {req->message.request.target ? req->message.request.target : ""};
+    auto equals = std::find(std::begin(target), std::end(target), '=');
+    if (equals == std::end(target)) {
+      cmd_not_found(sock, session, std::move(req));
+
+      return;
+    }
+    auto begin = equals + 1;
     auto end = std::find(begin, std::end(target), '/');
     std::string_view type {begin, (size_t) std::distance(begin, end)};
 
@@ -1023,6 +1045,17 @@ namespace rtsp_stream {
       config.monitor.chromaSamplingType = util::from_view(args.at("x-ss-video[0].chromaSamplingType"sv));
       config.monitor.enableIntraRefresh = util::from_view(args.at("x-ss-video[0].intraRefresh"sv));
 
+      // These values are used as divisors and to size buffers, keep them in a sane range
+      if (config.monitor.width < 1 || config.monitor.width > 16384 ||
+          config.monitor.height < 1 || config.monitor.height > 16384 ||
+          config.monitor.framerate < 1 || config.monitor.framerate > 1000000 ||
+          config.monitor.bitrate < 1 || config.monitor.bitrate > 10000000) {
+        BOOST_LOG(warning) << "Rejecting ANNOUNCE with out of range video parameters: width ["sv << config.monitor.width
+                           << "] height ["sv << config.monitor.height << "] fps ["sv << config.monitor.framerate
+                           << "] bitrate ["sv << config.monitor.bitrate << ']';
+        throw std::out_of_range("video parameters");
+      }
+
       if (config::video.limit_framerate) {
         config.monitor.encodingFramerate = session.fps;
       } else {
@@ -1042,6 +1075,10 @@ namespace rtsp_stream {
       config.monitor.input_only = session.input_only;
 
       configuredBitrateKbps = util::from_view(args.at("x-ml-video.configuredBitrateKbps"sv));
+      if (configuredBitrateKbps < 0 || configuredBitrateKbps > 10000000) {
+        BOOST_LOG(warning) << "Rejecting ANNOUNCE with out of range configured bitrate ["sv << configuredBitrateKbps << ']';
+        throw std::out_of_range("configured bitrate");
+      }
 
       if (!configuredBitrateKbps) {
         configuredBitrateKbps = config.monitor.bitrate;
@@ -1073,7 +1110,7 @@ namespace rtsp_stream {
     if (config.packetsize < 200 || config.packetsize > 65535 ||
         config.audio.channels < 1 || config.audio.channels > 8 ||
         config.audio.packetDuration < 1 || config.audio.packetDuration > 100 ||
-        config.minRequiredFecPackets < 0 || config.minRequiredFecPackets > 255) {
+        config.minRequiredFecPackets < 0 || config.minRequiredFecPackets > 254) {
       BOOST_LOG(warning) << "Rejecting ANNOUNCE with out of range stream parameters: packetSize ["sv << config.packetsize
                          << "] channels ["sv << config.audio.channels << "] packetDuration ["sv << config.audio.packetDuration
                          << "] minRequiredFecPackets ["sv << config.minRequiredFecPackets << ']';
@@ -1159,7 +1196,13 @@ namespace rtsp_stream {
     }
 
     // Check that any required encryption is enabled
-    auto encryption_mode = net::encryption_mode_for_address(sock.remote_endpoint().address());
+    boost::system::error_code remote_ec;
+    auto remote_endpoint = sock.remote_endpoint(remote_ec);
+    if (remote_ec) {
+      BOOST_LOG(debug) << "RTSP peer is gone: "sv << remote_ec.message();
+      return;
+    }
+    auto encryption_mode = net::encryption_mode_for_address(remote_endpoint.address());
     if (encryption_mode == config::ENCRYPTION_MODE_MANDATORY &&
         (config.encryptionFlagsEnabled & (SS_ENC_VIDEO | SS_ENC_AUDIO)) != (SS_ENC_VIDEO | SS_ENC_AUDIO)) {
       BOOST_LOG(error) << "Rejecting client that cannot comply with mandatory encryption requirement"sv;
@@ -1168,12 +1211,20 @@ namespace rtsp_stream {
       return;
     }
 
+    // A launch session starts a single stream, refuse a repeated ANNOUNCE
+    if (session.announced.exchange(true)) {
+      BOOST_LOG(warning) << "Rejecting repeated ANNOUNCE for an already used launch session"sv;
+      respond(sock, session, &option, 400, "BAD REQUEST", req->sequenceNumber, {});
+      return;
+    }
+
     auto stream_session = stream::session::alloc(config, session);
     server->insert(stream_session);
 
-    if (stream::session::start(*stream_session, sock.remote_endpoint().address().to_string())) {
+    if (stream::session::start(*stream_session, remote_endpoint.address().to_string())) {
       BOOST_LOG(error) << "Failed to start a streaming session"sv;
 
+      session.announced = false;
       server->remove(stream_session);
       respond(sock, session, &option, 500, "Internal Server Error", req->sequenceNumber, {});
       return;
@@ -1240,9 +1291,13 @@ namespace rtsp_stream {
     std::string_view type = msg->type == TYPE_RESPONSE ? "RESPONSE"sv : "REQUEST"sv;
 
     std::string_view payload {msg->payload, (size_t) msg->payloadLength};
-    std::string_view protocol {msg->protocol};
+    auto safe_view = [](const char *str) {
+      return str ? std::string_view {str} : std::string_view {};
+    };
+
+    std::string_view protocol {safe_view(msg->protocol)};
     auto seqnm = msg->sequenceNumber;
-    std::string_view messageBuffer {msg->messageBuffer};
+    std::string_view messageBuffer {safe_view(msg->messageBuffer)};
 
     BOOST_LOG(debug) << "type ["sv << type << ']';
     BOOST_LOG(debug) << "sequence number ["sv << seqnm << ']';
@@ -1253,23 +1308,23 @@ namespace rtsp_stream {
       auto &resp = msg->message.response;
 
       auto statuscode = resp.statusCode;
-      std::string_view status {resp.statusString};
+      std::string_view status {safe_view(resp.statusString)};
 
       BOOST_LOG(debug) << "statuscode :: "sv << statuscode;
       BOOST_LOG(debug) << "status :: "sv << status;
     } else {
       auto &req = msg->message.request;
 
-      std::string_view command {req.command};
-      std::string_view target {req.target};
+      std::string_view command {safe_view(req.command)};
+      std::string_view target {safe_view(req.target)};
 
       BOOST_LOG(debug) << "command :: "sv << command;
       BOOST_LOG(debug) << "target :: "sv << target;
     }
 
     for (auto option = msg->options; option != nullptr; option = option->next) {
-      std::string_view content {option->content};
-      std::string_view name {option->option};
+      std::string_view content {safe_view(option->content)};
+      std::string_view name {safe_view(option->option)};
 
       BOOST_LOG(debug) << name << " :: "sv << content;
     }

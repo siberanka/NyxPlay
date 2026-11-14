@@ -254,6 +254,25 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
     return;
   }
 
+  // Start the host by absolute path next to the install directory of this executable
+  // (<install dir>\tools\<this file>) instead of relying on the search path
+  WCHAR host_path[MAX_PATH] = {};
+  auto host_path_len = GetModuleFileNameW(nullptr, host_path, _countof(host_path));
+  if (host_path_len == 0 || host_path_len >= _countof(host_path)) {
+    // Tell SCM we failed to start
+    service_status.dwWin32ExitCode = host_path_len == 0 ? GetLastError() : ERROR_INSUFFICIENT_BUFFER;
+    service_status.dwCurrentState = SERVICE_STOPPED;
+    SetServiceStatus(service_status_handle, &service_status);
+    return;
+  }
+  for (auto i = 0; i < 2; i++) {
+    auto last_sep = wcsrchr(host_path, L'\\');
+    if (last_sep) {
+      *last_sep = 0;
+    }
+  }
+  wcscat_s(host_path, _countof(host_path), L"\\nyxplay-host.exe");
+
   // Only allow Sunshine.exe to inherit the log file handle, not all inheritable handles
   UpdateProcThreadAttribute(startup_info.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, &log_file_handle, sizeof(log_file_handle), nullptr, nullptr);
 
@@ -286,7 +305,7 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
     UpdateProcThreadAttribute(startup_info.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST, &job_handle, sizeof(job_handle), nullptr, nullptr);
 
     PROCESS_INFORMATION process_info;
-    if (!CreateProcessAsUserW(console_token, L"nyxplay-host.exe", nullptr, nullptr, nullptr, TRUE, CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr, (LPSTARTUPINFOW) &startup_info, &process_info)) {
+    if (!CreateProcessAsUserW(console_token, host_path, nullptr, nullptr, nullptr, TRUE, CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr, (LPSTARTUPINFOW) &startup_info, &process_info)) {
       CloseHandle(console_token);
       CloseHandle(job_handle);
       continue;

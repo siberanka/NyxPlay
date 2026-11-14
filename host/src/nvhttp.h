@@ -66,6 +66,7 @@ namespace nvhttp {
    * @brief Maximum number of pairing sessions retained at one time.
    */
   constexpr std::size_t MAX_PENDING_PAIRING_SESSIONS = 32;
+  constexpr std::size_t MAX_PENDING_PAIRING_SESSIONS_PER_ADDRESS = 4;
 
   /**
    * @brief Number of hexadecimal characters in an operator approval identifier.

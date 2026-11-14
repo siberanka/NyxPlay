@@ -473,6 +473,19 @@ namespace nvhttp {
       launch_session->fps = 60000; // 60fps * 1000 denominator
     }
 
+    // Some clients send a refresh rate of 0 and announce the real rate later
+    if (launch_session->fps == 0) {
+      launch_session->fps = 60000;
+    }
+
+    // The values are used as divisors and to size buffers later on
+    if (launch_session->width < 1 || launch_session->width > 16384 ||
+        launch_session->height < 1 || launch_session->height > 16384 ||
+        launch_session->fps < 1000 || launch_session->fps > 1000000) {
+      BOOST_LOG(warning) << "Rejecting out of range display mode from client: "sv << launch_session->width << 'x' << launch_session->height << 'x' << launch_session->fps;
+      return nullptr;
+    }
+
     launch_session->device_name = named_cert_p->name.empty() ? "NyxPlayDisplay"s : named_cert_p->name;
     launch_session->unique_id = named_cert_p->uuid;
     launch_session->perm = named_cert_p->perm;
@@ -556,21 +569,32 @@ namespace nvhttp {
     }
   }
 
+  /**
+   * @brief Key of a pending pairing session: one session per source address and uniqueid.
+   */
+  std::string pair_session_key(const std::string &address, const std::string &unique_id) {
+    return address + '\n' + unique_id;
+  }
+
   pair_session_insert_e insert_pair_session(pair_session_t sess, std::string &pairing_id) {
     std::lock_guard lock(map_id_sess_mutex);
     const auto now = std::chrono::steady_clock::now();
     expire_pair_sessions_unlocked(now);
     pairing_id.clear();
 
-    if (auto existing = map_id_sess.find(sess.client.uniqueID); existing != map_id_sess.end()) {
+    auto key = pair_session_key(sess.async_insert_pin.address, sess.client.uniqueID);
+    if (auto existing = map_id_sess.find(key); existing != map_id_sess.end()) {
       // Many clients use a fixed uniqueid. A new attempt from the same address supersedes the
-      // previous one (the user cancelled and retried); another address must not take it over.
-      if (existing->second.async_insert_pin.address != sess.async_insert_pin.address) {
-        return pair_session_insert_e::ALREADY_EXISTS;
-      }
+      // previous one (the user cancelled and retried); other addresses have their own sessions.
       drop_pair_session_unlocked(existing, 409, "Pairing request superseded by a newer request");
     }
     if (map_id_sess.size() >= MAX_PENDING_PAIRING_SESSIONS) {
+      return pair_session_insert_e::FULL;
+    }
+    // One address must not be able to fill the whole store
+    if (std::ranges::count_if(map_id_sess, [&](const auto &entry) {
+          return entry.second.async_insert_pin.address == sess.async_insert_pin.address;
+        }) >= static_cast<std::ptrdiff_t>(MAX_PENDING_PAIRING_SESSIONS_PER_ADDRESS)) {
       return pair_session_insert_e::FULL;
     }
 
@@ -582,7 +606,6 @@ namespace nvhttp {
 
     sess.async_insert_pin.id = pairing_id;
     sess.async_insert_pin.expires_at = now + PAIRING_SESSION_TIMEOUT;
-    auto key = sess.client.uniqueID;
     map_id_sess.emplace(std::move(key), std::move(sess));
     return pair_session_insert_e::ADDED;
   }
@@ -661,7 +684,7 @@ namespace nvhttp {
 
   void remove_session(const pair_session_t &sess) {
     std::lock_guard lock(map_id_sess_mutex);
-    map_id_sess.erase(sess.client.uniqueID);
+    map_id_sess.erase(pair_session_key(sess.async_insert_pin.address, sess.client.uniqueID));
   }
 
   void fail_pair(pair_session_t &sess, pt::ptree &tree, const std::string status_msg) {
@@ -853,7 +876,31 @@ namespace nvhttp {
   };
 
   inline crypto::named_cert_t* get_verified_cert(req_https_t request) {
-    return (crypto::named_cert_t*)request->userp.get();
+    auto cached = (crypto::named_cert_t*)request->userp.get();
+
+    // The certificate was verified when the connection was opened. A kept-alive connection can
+    // outlive the pairing, so make sure the client is still paired on every request.
+    std::lock_guard client_lock(client_auth_mutex);
+    for (auto &cert_p : client_root.named_devices) {
+      if (cert_p.get() == cached) {
+        return cached;
+      }
+    }
+    // The record may have been replaced by a state reload: look the client up again
+    for (auto &cert_p : client_root.named_devices) {
+      if (cert_p->uuid == cached->uuid && cert_p->cert == cached->cert) {
+        request->userp = cert_p;
+        return cert_p.get();
+      }
+    }
+
+    // No longer paired: answer with a record that has no permissions
+    static const crypto::named_cert_t revoked = [] {
+      crypto::named_cert_t record {};
+      record.perm = crypto::PERM::_no;
+      return record;
+    }();
+    return const_cast<crypto::named_cert_t *>(&revoked);
   }
 
   template <class T>
@@ -979,7 +1026,7 @@ namespace nvhttp {
         }
 
         std::lock_guard lock(map_id_sess_mutex);
-        auto sess_it = map_id_sess.find(uniqID);
+        auto sess_it = map_id_sess.find(pair_session_key(net::addr_to_normalized_string(request->remote_endpoint().address()), uniqID));
         if (sess_it == map_id_sess.end() || sess_it->second.async_insert_pin.id != pairing_id) {
           tree.put("root.paired", 0);
           tree.put("root.<xmlattr>.status_code", 408);
@@ -1052,7 +1099,7 @@ namespace nvhttp {
 
     std::lock_guard lock(map_id_sess_mutex);
     expire_pair_sessions_unlocked(std::chrono::steady_clock::now());
-    auto sess_it = map_id_sess.find(uniqID);
+    auto sess_it = map_id_sess.find(pair_session_key(net::addr_to_normalized_string(request->remote_endpoint().address()), uniqID));
     if (sess_it == std::end(map_id_sess)) {
       tree.put("root.<xmlattr>.status_code", 400);
       tree.put("root.<xmlattr>.status_message", "Invalid uniqueid");
@@ -1422,7 +1469,8 @@ namespace nvhttp {
     // If we have already launched an app, we should allow clients with view permission to join the input only or current app's session.
     if (
       current_appid > 0
-      && (appuuid_str != TERMINATE_APP_UUID || appid != proc::terminate_app_id)
+      && appuuid_str != TERMINATE_APP_UUID
+      && appid != proc::terminate_app_id
       && (is_input_only || appid == current_appid || (!appuuid_str.empty() && appuuid_str == current_app_uuid))
     ) {
       perm = PERM::_allow_view;
@@ -1483,6 +1531,13 @@ namespace nvhttp {
 
     host_audio = util::from_view(get_arg(args, "localAudioPlayMode"));
     auto launch_session = make_launch_session(host_audio, is_input_only, args, named_cert_p);
+    if (!launch_session) {
+      tree.put("root.resume", 0);
+      tree.put("root.<xmlattr>.status_code", 400);
+      tree.put("root.<xmlattr>.status_message", "Invalid display mode");
+
+      return;
+    }
 
     auto encryption_mode = net::encryption_mode_for_address(request->remote_endpoint().address());
     if (!launch_session->rtsp_cipher && encryption_mode == config::ENCRYPTION_MODE_MANDATORY) {
@@ -1641,6 +1696,13 @@ namespace nvhttp {
       host_audio = util::from_view(get_arg(args, "localAudioPlayMode"));
     }
     auto launch_session = make_launch_session(host_audio, false, args, named_cert_p);
+    if (!launch_session) {
+      tree.put("root.resume", 0);
+      tree.put("root.<xmlattr>.status_code", 400);
+      tree.put("root.<xmlattr>.status_message", "Invalid display mode");
+
+      return;
+    }
 
     if (!proc::proc.allow_client_commands || !named_cert_p->allow_client_commands) {
       launch_session->client_do_cmds.clear();
@@ -1811,6 +1873,7 @@ namespace nvhttp {
 
     std::string content = platf::get_clipboard();
     response->write(content);
+    response->close_connection_after_response = true;
     return;
   }
 
@@ -1866,9 +1929,11 @@ namespace nvhttp {
 
       response->write(SimpleWeb::StatusCode::server_error_internal_server_error);
       response->close_connection_after_response = true;
+      return;
     }
 
     response->write();
+    response->close_connection_after_response = true;
     return;
   }
 

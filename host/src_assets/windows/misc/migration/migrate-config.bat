@@ -6,7 +6,12 @@ for %%I in ("%~dp0\..") do set "OLD_DIR=%%~fI"
 rem Create the config directory if it didn't already exist
 set "NEW_DIR=%OLD_DIR%\config"
 if not exist "%NEW_DIR%\" mkdir "%NEW_DIR%"
-icacls "%NEW_DIR%" /reset
+
+rem Restrict the config directory right away, before anything is moved into it. Never reset it
+rem to the inherited ACL, that would make it readable by Users until the end of the script.
+rem Note: We must use the SIDs directly because "SYSTEM" and "Administrators" are localized
+icacls "%NEW_DIR%" /grant:r *S-1-5-18:(OI)(CI)(F) *S-1-5-32-544:(OI)(CI)(F) /C /Q
+icacls "%NEW_DIR%" /inheritance:r /C /Q
 
 rem Migrate all files that aren't already present in the config dir
 if exist "%OLD_DIR%\apps.json" (
@@ -50,11 +55,10 @@ if exist "%OLD_DIR%\covers\" (
 
 rem Restrict the whole config directory (Web UI password hash, paired clients, credentials)
 rem to SYSTEM and Administrators. Run after all moves above, because moved files keep the
-rem ACL entries inherited from the old location. /reset /T first so every child inherits again,
-rem then drop inheritance from the config directory itself and grant only the two principals;
-rem the grants propagate to the existing children. Safe to re-run.
-rem Note: We must use the SIDs directly because "SYSTEM" and "Administrators" are localized
-icacls "%NEW_DIR%" /reset /T /C /Q
+rem ACL entries inherited from the old location. Reset only the children so they inherit from the
+rem restricted directory again; the directory itself keeps its restricted ACL throughout.
+rem Safe to re-run.
+icacls "%NEW_DIR%\*" /reset /T /C /Q
 icacls "%NEW_DIR%" /inheritance:r /C /Q
 icacls "%NEW_DIR%" /grant:r *S-1-5-18:(OI)(CI)(F) *S-1-5-32-544:(OI)(CI)(F) /C /Q
 

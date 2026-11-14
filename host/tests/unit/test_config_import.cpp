@@ -3,6 +3,7 @@
  * @brief Test src/config_import.* (migration from Apollo / Sunshine).
  */
 #include <src/config_import.h>
+#include <src/crypto.h>
 
 #include <nlohmann/json.hpp>
 
@@ -206,7 +207,9 @@ TEST_F(ConfigImportTest, LegacyDevicesLayoutIsCarriedOver) {
   auto r = import_from(src, dst, o);
   ASSERT_TRUE(r.ok) << r.error;
   auto state = read_json(dst / "sunshine_state.json");
-  EXPECT_EQ(state["root"]["devices"][0]["certs"].size(), 2u);
+  ASSERT_EQ(state["root"]["named_devices"].size(), 2u);
+  EXPECT_EQ(state["root"]["named_devices"][0]["perm"], static_cast<uint32_t>(crypto::PERM::_default));
+  EXPECT_FALSE(state["root"]["named_devices"][0]["allow_client_commands"].get<bool>());
 }
 
 TEST_F(ConfigImportTest, MissingIdentitySkipsClientsWithWarning) {

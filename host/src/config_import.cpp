@@ -20,6 +20,8 @@
 
 // local includes
 #include "config_import.h"
+#include "crypto.h"
+#include "uuid.h"
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -504,6 +506,54 @@ namespace config_import {
     };
 
     /**
+     * @brief Give imported devices without an explicit permission the default permission set.
+     * @details Such devices would otherwise be loaded with full access. Client commands stay
+     *          disabled for them. Devices that carry a permission are left as they are.
+     * @return Number of devices that were given the default permission.
+     */
+    size_t normalize_imported_clients(json &troot) {
+      size_t changed = 0;
+      if (!troot.contains("named_devices") || !troot["named_devices"].is_array()) {
+        troot["named_devices"] = json::array();
+      }
+      auto &named = troot["named_devices"];
+      for (auto &el : named) {
+        if (!el.is_object()) {
+          continue;
+        }
+        if (!el.contains("perm")) {
+          el["perm"] = static_cast<uint32_t>(crypto::PERM::_default);
+          if (!el.contains("allow_client_commands")) {
+            el["allow_client_commands"] = false;
+          }
+          ++changed;
+        }
+        // Every device needs a unique identifier to be told apart from the others
+        if (!el.contains("uuid") || !el["uuid"].is_string() || el["uuid"].get<std::string>().empty()) {
+          el["uuid"] = uuid_util::uuid_t::generate().string();
+        }
+      }
+      // The legacy layout has no per device settings and is loaded with full access: convert it
+      if (auto devices = troot.find("devices"); devices != troot.end()) {
+        if (devices->is_array()) {
+          for (auto &device : *devices) {
+            auto certs = device.is_object() ? device.find("certs") : device.end();
+            if (device.is_object() && certs != device.end() && certs->is_array()) {
+              for (auto &cert : *certs) {
+                if (cert.is_string()) {
+                  named.push_back({{"name", ""}, {"cert", cert}, {"uuid", uuid_util::uuid_t::generate().string()}, {"perm", static_cast<uint32_t>(crypto::PERM::_default)}, {"allow_client_commands", false}});
+                  ++changed;
+                }
+              }
+            }
+          }
+        }
+        troot.erase("devices");
+      }
+      return changed;
+    }
+
+    /**
      * @brief Number of paired devices described by a state "root" node (both layouts).
      */
     size_t count_clients(const json &root) {
@@ -738,6 +788,9 @@ namespace config_import {
           }
           if (root->contains("devices")) {
             troot["devices"] = (*root)["devices"];
+          }
+          if (const auto downgraded = normalize_imported_clients(troot); downgraded > 0) {
+            result.warnings.push_back("clients: " + std::to_string(downgraded) + " imported client(s) were given the default permission; adjust them in the Web UI");
           }
           if (replaced > 0) {
             result.warnings.push_back("clients: " + std::to_string(replaced) + " paired client(s) of this host were replaced (see backup)");

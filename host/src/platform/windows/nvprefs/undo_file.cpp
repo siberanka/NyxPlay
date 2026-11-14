@@ -25,7 +25,8 @@ namespace {
     }
 
     EXPLICIT_ACCESS ea = {};
-    ea.grfAccessPermissions = GENERIC_READ | GENERIC_WRITE | DELETE;
+    // A non-owning process only reads the file and deletes it after restoring, it never writes
+    ea.grfAccessPermissions = GENERIC_READ | DELETE;
     ea.grfAccessMode = GRANT_ACCESS;
     ea.grfInheritance = NO_INHERITANCE;
     ea.Trustee.TrusteeForm = TRUSTEE_IS_SID;
@@ -51,7 +52,7 @@ namespace nvprefs {
 
   std::optional<undo_file_t> undo_file_t::open_existing_file(std::filesystem::path file_path, bool &access_denied) {
     undo_file_t file;
-    file.file_handle.reset(CreateFileW(file_path.c_str(), GENERIC_READ | DELETE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+    file.file_handle.reset(CreateFileW(file_path.c_str(), GENERIC_READ | DELETE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
     if (file.file_handle) {
       access_denied = false;
       return file;
@@ -64,10 +65,10 @@ namespace nvprefs {
 
   std::optional<undo_file_t> undo_file_t::create_new_file(std::filesystem::path file_path) {
     undo_file_t file;
-    file.file_handle.reset(CreateFileW(file_path.c_str(), GENERIC_WRITE | STANDARD_RIGHTS_ALL, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr));
+    file.file_handle.reset(CreateFileW(file_path.c_str(), GENERIC_WRITE | STANDARD_RIGHTS_ALL, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
 
     if (file.file_handle) {
-      // give GENERIC_READ, GENERIC_WRITE and DELETE permissions to Users group
+      // give GENERIC_READ and DELETE permissions to Users group
       if (relax_permissions(file.file_handle.get()) != 0) {
         error_message("Failed to relax permissions on undo file");
       }

@@ -56,6 +56,9 @@ namespace rtsp_stream {
     std::string rtsp_url_scheme;
     uint32_t rtsp_iv_counter;
 
+    /// Set by the first accepted ANNOUNCE, a launch session starts at most one stream.
+    std::atomic<bool> announced {false};
+
     std::list<crypto::command_entry_t> client_do_cmds;
     std::list<crypto::command_entry_t> client_undo_cmds;
 

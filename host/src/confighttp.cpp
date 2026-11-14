@@ -1692,6 +1692,10 @@ namespace confighttp {
           };
           BOOST_LOG(info) << "Launching app ["sv << app.name << "] from web UI"sv;
           auto launch_session = nvhttp::make_launch_session(true, false, request->parse_query_string(), &named_cert);
+          if (!launch_session) {
+            bad_request(response, request, "Invalid display mode");
+            return;
+          }
           auto err = proc::proc.execute(app, launch_session);
           if (err) {
             bad_request(response, request, err == 503 ?
