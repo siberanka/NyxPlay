@@ -2,7 +2,6 @@ package com.limelight;
 
 import static com.limelight.utils.ServerHelper.getSecondaryDisplay;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Service;
 import android.content.ComponentName;
@@ -26,6 +25,7 @@ import com.limelight.nvstream.wol.WakeOnLanSender;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.utils.CacheHelper;
 import com.limelight.utils.Dialog;
+import com.limelight.utils.LaunchToken;
 import com.limelight.utils.ServerHelper;
 import com.limelight.utils.ShortcutHelper;
 import com.limelight.utils.SpinnerDialog;
@@ -34,16 +34,18 @@ import com.limelight.utils.UiHelper;
 import org.xmlpull.v1.XmlPullParserException;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ShortcutTrampoline extends AppCompatActivity {
     private PreferenceConfiguration prefConfig;
@@ -55,12 +57,33 @@ public class ShortcutTrampoline extends AppCompatActivity {
     private ComputerDetails computer;
     private SpinnerDialog blockingLoadSpinner;
 
-    private ComputerManagerService.ComputerManagerBinder managerBinder;
+    private volatile ComputerManagerService.ComputerManagerBinder managerBinder;
+    private final AtomicBoolean serviceBound = new AtomicBoolean(false);
+    private volatile boolean stopped;
+    private AlertDialog confirmDialog;
 
     private static final String TAG = "ShortcutTrampoline";
 
+    // Upper bound for a shortcut file; real files are a few hundred bytes
+    private static final int MAX_ART_FILE_BYTES = 16 * 1024;
+
+    // Releases the service connection exactly once, no matter which path gets here first
+    private void unbindOnce() {
+        if (serviceBound.compareAndSet(true, false)) {
+            try {
+                unbindService(serviceConnection);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "Service connection was already released", e);
+            }
+        }
+    }
+
     private final ServiceConnection serviceConnection = new ServiceConnection() {
         public void onServiceConnected(ComponentName className, IBinder binder) {
+            if (binder == null) {
+                return;
+            }
+
             final ComputerManagerService.ComputerManagerBinder localBinder =
                     ((ComputerManagerService.ComputerManagerBinder)binder);
 
@@ -70,6 +93,11 @@ public class ShortcutTrampoline extends AppCompatActivity {
                 public void run() {
                     // Wait for the binder to be ready
                     localBinder.waitForReady();
+
+                    // The activity may have been left while we were waiting
+                    if (stopped) {
+                        return;
+                    }
 
                     // Now make the binder visible
                     managerBinder = localBinder;
@@ -88,10 +116,8 @@ public class ShortcutTrampoline extends AppCompatActivity {
                             blockingLoadSpinner = null;
                         }
 
-                        if (managerBinder != null) {
-                            unbindService(serviceConnection);
-                            managerBinder = null;
-                        }
+                        unbindOnce();
+                        managerBinder = null;
 
                         return;
                     }
@@ -221,11 +247,12 @@ public class ShortcutTrampoline extends AppCompatActivity {
 
                                         // We don't want any more callbacks from now on, so go ahead
                                         // and unbind from the service
-                                        if (managerBinder != null) {
-                                            managerBinder.stopPolling();
-                                            unbindService(serviceConnection);
+                                        final ComputerManagerService.ComputerManagerBinder binderToRelease = managerBinder;
+                                        if (binderToRelease != null) {
+                                            binderToRelease.stopPolling();
                                             managerBinder = null;
                                         }
+                                        unbindOnce();
                                     }
                                 });
                             }
@@ -275,8 +302,8 @@ public class ShortcutTrampoline extends AppCompatActivity {
 
     protected boolean validateAppInput(String appUUID, String appIDStr, String appName) {
         if (appUUID == null && appIDStr == null && appName == null) {
-            // We're just going to the AppView
-            return false;
+            // We're just going to the AppView, so there is nothing to check
+            return true;
         }
 
         if (appUUID != null && !appUUID.isEmpty()) {
@@ -307,6 +334,7 @@ public class ShortcutTrampoline extends AppCompatActivity {
         return true;
     }
 
+    // Returns the parsed entries, or null (after showing an error) if the file cannot be used
     private Map<String, String> parseArtFileData(Uri fileUri) {
         if (fileUri == null) {
             return null;
@@ -314,8 +342,23 @@ public class ShortcutTrampoline extends AppCompatActivity {
 
         Map<String, String> artData = new HashMap<>();
 
-        try (InputStream inputStream = getContentResolver().openInputStream(fileUri);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+        try (InputStream inputStream = getContentResolver().openInputStream(fileUri)) {
+            if (inputStream == null) {
+                throw new IOException("Unable to open .art file");
+            }
+
+            // Read a bounded amount so a hostile file cannot exhaust memory
+            ByteArrayOutputStream content = new ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int read;
+            while ((read = inputStream.read(buffer)) != -1) {
+                if (content.size() + read > MAX_ART_FILE_BYTES) {
+                    throw new IOException(".art file is too large");
+                }
+                content.write(buffer, 0, read);
+            }
+
+            BufferedReader reader = new BufferedReader(new StringReader(content.toString(StandardCharsets.UTF_8.name())));
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
@@ -339,12 +382,13 @@ public class ShortcutTrampoline extends AppCompatActivity {
                     }
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             Log.e(TAG, "Error reading .art file", e);
             Dialog.displayDialog(ShortcutTrampoline.this,
                     getResources().getString(R.string.conn_error_title),
-                    "Error reading .art file: " + e.getMessage(),
+                    getResources().getString(R.string.scut_art_read_error),
                     true);
+            return null;
         }
         return artData;
     }
@@ -363,8 +407,11 @@ public class ShortcutTrampoline extends AppCompatActivity {
         String action = intent.getAction();
         Uri dataUri = intent.getData();
 
-        // Launcher shortcuts created by this app use ACTION_DEFAULT, so a VIEW intent comes from outside
-        final boolean externalLaunch = Intent.ACTION_VIEW.equals(action) && dataUri != null;
+        // Intents built by this app carry a per-install token. Anything else (a shared shortcut file,
+        // an intent from another app, a shortcut pinned by an older version) has to be confirmed first.
+        final boolean viewLaunch = Intent.ACTION_VIEW.equals(action) && dataUri != null;
+        final boolean externalLaunch = viewLaunch
+                || !LaunchToken.matches(this, intent.getStringExtra(LaunchToken.EXTRA));
 
         String hostUUID = null;
         String hostName = null;
@@ -372,16 +419,18 @@ public class ShortcutTrampoline extends AppCompatActivity {
         String appUUID = null;
         String appIDStr = null;
 
-        if (Intent.ACTION_VIEW.equals(action) && dataUri != null) {
+        if (viewLaunch) {
             Map<String, String> artData = parseArtFileData(dataUri);
-
-            if (artData != null) {
-                hostUUID = artData.get(ShortcutHelper.KEY_HOST_UUID);
-                hostName = artData.get(ShortcutHelper.KEY_HOST_NAME);
-                appName = artData.get(ShortcutHelper.KEY_APP_NAME);
-                appUUID = artData.get(ShortcutHelper.KEY_APP_UUID);
-                appIDStr = artData.get(ShortcutHelper.KEY_APP_ID);
+            if (artData == null) {
+                // The error has been shown already
+                return;
             }
+
+            hostUUID = artData.get(ShortcutHelper.KEY_HOST_UUID);
+            hostName = artData.get(ShortcutHelper.KEY_HOST_NAME);
+            appName = artData.get(ShortcutHelper.KEY_APP_NAME);
+            appUUID = artData.get(ShortcutHelper.KEY_APP_UUID);
+            appIDStr = artData.get(ShortcutHelper.KEY_APP_ID);
         }
 
         {
@@ -432,7 +481,12 @@ public class ShortcutTrampoline extends AppCompatActivity {
         // Set the AppView UUID intent
         setIntent(new Intent(getIntent()).putExtra(AppView.UUID_EXTRA, uuidString));
 
-        if (validateAppInput(appUUID, appIDStr, appName)) {
+        if (!validateAppInput(appUUID, appIDStr, appName)) {
+            // Invalid input, so just return
+            return;
+        }
+
+        if (appUUID != null || appIDStr != null || appName != null) {
             // If app data came from .art file or was determined by appNameString from extras
             if (appUUID != null && !appUUID.isEmpty()) {
                 app = new NvApp(appName, // appName can be null if only UUID is provided
@@ -503,9 +557,15 @@ public class ShortcutTrampoline extends AppCompatActivity {
         }
 
         final Runnable startLaunch = () -> {
+            if (externalLaunch && !viewLaunch) {
+                // A shortcut from an older version has no token: refresh the app's own shortcuts
+                // so that they start directly next time.
+                new ShortcutHelper(this).refreshShortcutTokens();
+            }
+
             // Bind to the computer manager service
-            bindService(new Intent(this, ComputerManagerService.class), serviceConnection,
-                    Service.BIND_AUTO_CREATE);
+            serviceBound.set(bindService(new Intent(this, ComputerManagerService.class), serviceConnection,
+                    Service.BIND_AUTO_CREATE));
 
             blockingLoadSpinner = SpinnerDialog.displayDialog(this, getResources().getString(R.string.conn_establishing_title),
                     getResources().getString(R.string.applist_connect_msg), true);
@@ -513,9 +573,17 @@ public class ShortcutTrampoline extends AppCompatActivity {
 
         if (externalLaunch) {
             // The shortcut file came from another app, so ask before starting a stream
-            new AlertDialog.Builder(this)
+            String pcLabel = hostName != null && !hostName.isEmpty() ? hostName : (_computer != null ? _computer.name : null);
+            String message;
+            if (pcLabel != null && appName != null && !appName.isEmpty()) {
+                message = getString(R.string.launch_confirm_message_named, appName, pcLabel);
+            } else {
+                message = getString(R.string.launch_confirm_message);
+            }
+
+            confirmDialog = new AlertDialog.Builder(this)
                     .setTitle(R.string.launch_confirm_title)
-                    .setMessage(R.string.launch_confirm_message)
+                    .setMessage(message)
                     .setCancelable(false)
                     .setPositiveButton(R.string.proceed, (dialog, which) -> startLaunch.run())
                     .setNegativeButton(R.string.cancel, (dialog, which) -> finish())
@@ -530,19 +598,39 @@ public class ShortcutTrampoline extends AppCompatActivity {
     protected void onStop() {
         super.onStop();
 
+        stopped = true;
+
         if (blockingLoadSpinner != null) {
             blockingLoadSpinner.dismiss();
             blockingLoadSpinner = null;
         }
 
-        Dialog.closeDialogs();
-
-        if (managerBinder != null) {
-            managerBinder.stopPolling();
-            unbindService(serviceConnection);
-            managerBinder = null;
+        if (confirmDialog != null) {
+            confirmDialog.dismiss();
+            confirmDialog = null;
         }
 
+        Dialog.closeDialogs();
+
+        final ComputerManagerService.ComputerManagerBinder binderToRelease = managerBinder;
+        if (binderToRelease != null) {
+            binderToRelease.stopPolling();
+            managerBinder = null;
+        }
+        unbindOnce();
+
         finish();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+
+        if (confirmDialog != null) {
+            confirmDialog.dismiss();
+            confirmDialog = null;
+        }
+
+        unbindOnce();
     }
 }

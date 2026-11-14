@@ -278,6 +278,10 @@ public class ComputerManagerService extends Service {
             return ComputerManagerService.this.addComputerBlocking(fakeDetails);
         }
 
+        public AddResult addComputerWithResult(ComputerDetails fakeDetails) throws InterruptedException {
+            return ComputerManagerService.this.addComputerWithResult(fakeDetails);
+        }
+
         public void removeComputer(ComputerDetails computer) {
             ComputerManagerService.this.removeComputer(computer);
         }
@@ -525,18 +529,34 @@ public class ComputerManagerService extends Service {
         }
     }
 
+    public enum AddResult {
+        ADDED,
+        // The address did not answer
+        UNREACHABLE,
+        // Something answered, but not with a usable host description
+        INVALID_REPLY
+    }
+
     public boolean addComputerBlocking(ComputerDetails fakeDetails) throws InterruptedException {
+        return addComputerWithResult(fakeDetails) == AddResult.ADDED;
+    }
+
+    public AddResult addComputerWithResult(ComputerDetails fakeDetails) throws InterruptedException {
         // A single dropped connection must not make adding a reachable host fail, so the whole
         // sequence is repeated a few times. Hosts that return invalid data are not retried.
         for (int attempt = 0; ; attempt++) {
             long invalidRepliesBefore = invalidReplyCount.get();
 
             if (addComputerOnce(fakeDetails)) {
-                return true;
+                return AddResult.ADDED;
             }
 
-            if (attempt >= ADD_COMPUTER_EXTRA_ATTEMPTS || invalidReplyCount.get() != invalidRepliesBefore) {
-                return false;
+            if (invalidReplyCount.get() != invalidRepliesBefore) {
+                return AddResult.INVALID_REPLY;
+            }
+
+            if (attempt >= ADD_COMPUTER_EXTRA_ATTEMPTS) {
+                return AddResult.UNREACHABLE;
             }
 
             Thread.sleep(ADD_COMPUTER_RETRY_DELAY_MS);

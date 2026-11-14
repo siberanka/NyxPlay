@@ -18,6 +18,7 @@ import com.limelight.nvstream.http.ComputerDetails;
 import com.limelight.nvstream.http.NvHTTP;
 import com.limelight.nvstream.jni.MoonBridge;
 import com.limelight.utils.Dialog;
+import com.limelight.utils.LaunchToken;
 import com.limelight.utils.ServerHelper;
 import com.limelight.utils.SpinnerDialog;
 import com.limelight.utils.UiHelper;
@@ -122,6 +123,7 @@ public class AddComputerManually extends AppCompatActivity {
         boolean wrongSiteLocal = false;
         boolean invalidInput = false;
         boolean success;
+        boolean invalidReply = false;
         int portTestResult;
 
         SpinnerDialog dialog = SpinnerDialog.displayDialog(this, getResources().getString(R.string.title_add_pc),
@@ -142,8 +144,10 @@ public class AddComputerManually extends AppCompatActivity {
                 }
 
                 details.manualAddress = new ComputerDetails.AddressTuple(host, port);
-                success = managerBinder.addComputerBlocking(details);
-                if (!success){
+                ComputerManagerService.AddResult result = managerBinder.addComputerWithResult(details);
+                success = result == ComputerManagerService.AddResult.ADDED;
+                invalidReply = result == ComputerManagerService.AddResult.INVALID_REPLY;
+                if (!success && !invalidReply) {
                     wrongSiteLocal = isWrongSubnetSiteLocalAddress(host);
                 }
             } else {
@@ -164,12 +168,12 @@ public class AddComputerManually extends AppCompatActivity {
         }
 
         // Keep the SpinnerDialog open while testing connectivity
-        if (!success && !wrongSiteLocal && !invalidInput) {
+        if (!success && !wrongSiteLocal && !invalidInput && !invalidReply) {
             // Run the test before dismissing the spinner because it can take a few seconds.
             portTestResult = MoonBridge.testClientConnectivity(ServerHelper.CONNECTION_TEST_SERVER, 443,
                     MoonBridge.ML_PORT_FLAG_TCP_47984 | MoonBridge.ML_PORT_FLAG_TCP_47989);
         } else {
-            // Don't bother with the test if we succeeded or the IP address was bogus
+            // Don't bother with the test if we succeeded, the IP address was bogus or the host answered
             portTestResult = MoonBridge.ML_TEST_RESULT_INCONCLUSIVE;
         }
 
@@ -177,6 +181,9 @@ public class AddComputerManually extends AppCompatActivity {
 
         if (invalidInput) {
             Dialog.displayDialog(this, getResources().getString(R.string.conn_error_title), getResources().getString(R.string.addpc_unknown_host), false);
+        }
+        else if (invalidReply) {
+            Dialog.displayDialog(this, getResources().getString(R.string.conn_error_title), getResources().getString(R.string.addpc_invalid_reply), false);
         }
         else if (wrongSiteLocal) {
             Dialog.displayDialog(this, getResources().getString(R.string.conn_error_title), getResources().getString(R.string.addpc_wrong_sitelocal), false);
@@ -211,6 +218,8 @@ public class AddComputerManually extends AppCompatActivity {
                         intent.putExtra("port", uri.getPort());
                         intent.putExtra("pin", pin);
                         intent.putExtra("passphrase", passphrase);
+                        // Marks this hand-off as coming from the app itself; the user has confirmed the link already
+                        intent.putExtra(LaunchToken.EXTRA, LaunchToken.get(AddComputerManually.this));
 
                         startActivity(intent);
                     }
@@ -280,6 +289,8 @@ public class AddComputerManually extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        UiHelper.setLocale(this);
+
         String action = getIntent().getAction();
 
         String server;
@@ -312,6 +323,8 @@ public class AddComputerManually extends AppCompatActivity {
                     launchBuilder.setCancelable(false);
                     launchBuilder.setPositiveButton(getString(R.string.proceed), (dialog, which) -> {
                         dialog.dismiss();
+                        // The user has confirmed this launch, so the trampoline does not need to ask again
+                        intent.putExtra(LaunchToken.EXTRA, LaunchToken.get(AddComputerManually.this));
                         startActivity(intent);
                         finish();
                     });
@@ -331,8 +344,6 @@ public class AddComputerManually extends AppCompatActivity {
             query = null;
             server = null;
         }
-
-        UiHelper.setLocale(this);
 
         setContentView(R.layout.activity_add_computer_manually);
 
@@ -373,13 +384,13 @@ public class AddComputerManually extends AppCompatActivity {
 
 
         // Check if we have been called from deep link
-        if (data == null || server == null || query == null) {
+        if (data == null || server == null) {
             return;
         }
 
         hostText.setText(server);
 
-        if (!query.isEmpty()) {
+        if (query != null && !query.isEmpty()) {
             String hostName = data.getQueryParameter("name");
             if (hostName != null && !hostName.isEmpty()) {
                 hostName = hostName + " (" + server + ")";
@@ -393,7 +404,7 @@ public class AddComputerManually extends AppCompatActivity {
 
             builder.setPositiveButton(getString(R.string.proceed), (dialog, which) -> {
                 dialog.dismiss();
-                finish();
+                // The activity closes itself once the computer has been added
                 computersToAdd.add(server + '?' + query);
             });
 

@@ -105,7 +105,11 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
                     // Get the computer object
                     computer = localBinder.getComputer(uuidString);
                     if (computer == null) {
-                        finish();
+                        // Tell the user why the screen is closing
+                        Dialog.displayDialog(AppView.this,
+                                getResources().getString(R.string.conn_error_title),
+                                getResources().getString(R.string.scut_pc_not_found),
+                                true);
                         return;
                     }
 

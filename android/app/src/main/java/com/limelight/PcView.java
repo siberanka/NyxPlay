@@ -32,6 +32,7 @@ import com.limelight.ui.AdapterFragment;
 import com.limelight.ui.AdapterFragmentCallbacks;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.HelpLauncher;
+import com.limelight.utils.LaunchToken;
 import com.limelight.utils.ServerHelper;
 import com.limelight.utils.ShortcutHelper;
 import com.limelight.utils.UiHelper;
@@ -84,6 +85,7 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
     private boolean freezeUpdates, runningPolling, inForeground, completeOnCreateCalled;
     private ComputerDetails.AddressTuple pendingPairingAddress;
     private String pendingPairingPin, pendingPairingPassphrase;
+    private boolean pendingPairingTrusted;
     private final ServiceConnection serviceConnection = new ServiceConnection() {
         public void onServiceConnected(ComponentName className, IBinder binder) {
             final ComputerManagerService.ComputerManagerBinder localBinder =
@@ -278,10 +280,17 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
 
         if (hostname != null && pendingPairingPin != null && pendingPairingPassphrase != null) {
             pendingPairingAddress = new ComputerDetails.AddressTuple(hostname, port);
+            // Requests that did not come from this app have to be confirmed by the user before pairing
+            pendingPairingTrusted = LaunchToken.matches(this, intent.getStringExtra(LaunchToken.EXTRA));
         } else {
             pendingPairingPin = null;
             pendingPairingPassphrase = null;
         }
+
+        // Do not keep the secrets in the intent, so a re-created activity cannot start pairing again
+        intent.removeExtra("pin");
+        intent.removeExtra("passphrase");
+        intent.removeExtra(LaunchToken.EXTRA);
     }
 
     private void completeOnCreate() {
@@ -327,10 +336,28 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
                                 details.activeAddress.equals(pendingPairingAddress)
                             ) {
                                 PcView.this.runOnUiThread(() -> {
-                                    doPair(details, pendingPairingPin, pendingPairingPassphrase);
+                                    if (pendingPairingAddress == null) {
+                                        return;
+                                    }
+
+                                    final String pin = pendingPairingPin;
+                                    final String passphrase = pendingPairingPassphrase;
+                                    final boolean trusted = pendingPairingTrusted;
                                     pendingPairingAddress = null;
                                     pendingPairingPin = null;
                                     pendingPairingPassphrase = null;
+                                    pendingPairingTrusted = false;
+
+                                    if (trusted) {
+                                        doPair(details, pin, passphrase);
+                                    } else if (!isFinishing()) {
+                                        new AlertDialog.Builder(PcView.this)
+                                                .setTitle(R.string.pair_pc_confirm_title)
+                                                .setMessage(getString(R.string.pair_pc_confirm_message, details.name))
+                                                .setPositiveButton(R.string.proceed, (dialog, which) -> doPair(details, pin, passphrase))
+                                                .setNegativeButton(R.string.cancel, null)
+                                                .show();
+                                    }
                                 });
                             }
                         }

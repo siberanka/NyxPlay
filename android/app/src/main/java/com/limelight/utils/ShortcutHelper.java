@@ -12,6 +12,7 @@ import android.os.Build;
 import android.widget.Toast;
 
 import com.limelight.R;
+import com.limelight.ShortcutTrampoline;
 import com.limelight.LimeLog;
 import com.limelight.nvstream.http.ComputerDetails;
 import com.limelight.nvstream.http.NvApp;
@@ -92,6 +93,38 @@ public class ShortcutHelper {
         }
 
         return false;
+    }
+
+    // Adds the launch token to shortcuts that were published by an older version.
+    // Only shortcuts of this app that start ShortcutTrampoline are touched.
+    public void refreshShortcutTokens() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1 || sm == null) {
+            return;
+        }
+
+        try {
+            List<ShortcutInfo> updated = new LinkedList<>();
+            for (ShortcutInfo info : getAllShortcuts()) {
+                Intent shortcutIntent = info.getIntent();
+                if (shortcutIntent == null || shortcutIntent.getComponent() == null ||
+                        !ShortcutTrampoline.class.getName().equals(shortcutIntent.getComponent().getClassName()) ||
+                        LaunchToken.matches(context, shortcutIntent.getStringExtra(LaunchToken.EXTRA))) {
+                    continue;
+                }
+
+                shortcutIntent.putExtra(LaunchToken.EXTRA, LaunchToken.get(context));
+                updated.add(new ShortcutInfo.Builder(context, info.getId())
+                        .setIntent(shortcutIntent)
+                        .build());
+            }
+
+            if (!updated.isEmpty()) {
+                sm.updateShortcuts(updated);
+            }
+        } catch (RuntimeException e) {
+            // Shortcut updates can be rate limited or rejected by the launcher; the next launch asks again
+            LimeLog.warning("Unable to refresh shortcuts: " + e.getMessage());
+        }
     }
 
     public void reportComputerShortcutUsed(ComputerDetails computer) {

@@ -46,6 +46,7 @@ public class ServerHelper {
         Intent i = new Intent(parent, ShortcutTrampoline.class);
         i.putExtra(AppView.NAME_EXTRA, computer.name);
         i.putExtra(AppView.UUID_EXTRA, computer.uuid);
+        i.putExtra(LaunchToken.EXTRA, LaunchToken.get(parent));
         i.setAction(Intent.ACTION_DEFAULT);
         return i;
     }
@@ -58,6 +59,7 @@ public class ServerHelper {
         i.putExtra(Game.EXTRA_APP_UUID, app.getAppUUID());
         i.putExtra(Game.EXTRA_APP_ID, ""+app.getAppId());
         i.putExtra(Game.EXTRA_APP_HDR, app.isHdrSupported());
+        i.putExtra(LaunchToken.EXTRA, LaunchToken.get(parent));
         i.setAction(Intent.ACTION_DEFAULT);
         return i;
     }

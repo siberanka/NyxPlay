@@ -47,7 +47,7 @@
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
-        android:contentDescription="Edit profile"
+        android:contentDescription="@string/desc_edit_profile"
         android:src="@drawable/ic_edit" />
 
     <ImageButton
@@ -55,7 +55,7 @@
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
-        android:contentDescription="Delete profile"
+        android:contentDescription="@string/desc_delete_profile"
         android:src="@drawable/ic_delete" />
 
 </LinearLayout>

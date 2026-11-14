@@ -2,6 +2,7 @@ package com.limelight;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.WebView;
@@ -36,6 +37,13 @@ public class HelpActivity extends AppCompatActivity {
                     }
                 }
             };
+        }
+
+        // Only web pages are shown here
+        Uri helpUri = getIntent().getData();
+        if (helpUri == null || !"https".equalsIgnoreCase(helpUri.getScheme())) {
+            finish();
+            return;
         }
 
         webView = new WebView(this);
@@ -75,7 +83,7 @@ public class HelpActivity extends AppCompatActivity {
             }
         });
 
-        webView.loadUrl(getIntent().getData().toString());
+        webView.loadUrl(helpUri.toString());
     }
 
     private void refreshBackDispatchState() {
@@ -108,7 +116,7 @@ public class HelpActivity extends AppCompatActivity {
     public void onBackPressed() {
         // Back goes back through the WebView history
         // until no more history remains
-        if (webView.canGoBack()) {
+        if (webView != null && webView.canGoBack()) {
             webView.goBack();
         }
         else {
