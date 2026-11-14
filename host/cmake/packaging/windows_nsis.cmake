@@ -22,7 +22,7 @@ SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
         Pop $0
         StrCmp $0 '0' 0 NoImport
         MessageBox MB_YESNO|MB_ICONQUESTION \
-            'An Apollo or Sunshine installation was found. Import its settings, applications and paired devices into ${PROJECT_DISPLAY_NAME}?$\\r$\\n$\\r$\\nBoth hosts cannot use the same ports: stop or uninstall the other host afterwards, or change the port in the settings.' \
+            'An Apollo or Sunshine installation was found. Import its settings, applications and paired devices into ${PROJECT_DISPLAY_NAME}?$\\\\r$\\\\n$\\\\r$\\\\nBoth hosts cannot use the same ports: stop or uninstall the other host afterwards, or change the port in the settings.' \
             /SD IDNO IDNO NoImport
             nsExec::ExecToLog '\\\"$INSTDIR\\\\nyxplay-host.exe\\\" --import-config auto'
         NoImport:

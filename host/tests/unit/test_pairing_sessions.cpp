@@ -74,23 +74,35 @@ TEST_F(PairingSessionTest, InsertReturnsUniqueHexIds) {
   std::set<std::string> ids;
   for (int i = 0; i < 8; ++i) {
     std::string id;
-    ASSERT_EQ(nvhttp::insert_pair_session(make_session("client" + std::to_string(i)), id), nvhttp::pair_session_insert_e::ADDED);
+    ASSERT_EQ(nvhttp::insert_pair_session(make_session("client" + std::to_string(i), "192.0.2." + std::to_string(i + 1)), id), nvhttp::pair_session_insert_e::ADDED);
     EXPECT_TRUE(is_hex32(id)) << id;
     ids.insert(id);
   }
   EXPECT_EQ(ids.size(), 8u);
 }
 
-TEST_F(PairingSessionTest, SameUniqueIdFromAnotherAddressIsRejected) {
+TEST_F(PairingSessionTest, SameUniqueIdFromAnotherAddressKeepsSeparateSession) {
   std::string first_id;
   ASSERT_EQ(nvhttp::insert_pair_session(make_session("dup", "192.0.2.1"), first_id), nvhttp::pair_session_insert_e::ADDED);
 
-  std::string second_id = "stale";
-  EXPECT_EQ(nvhttp::insert_pair_session(make_session("dup", "192.0.2.2"), second_id), nvhttp::pair_session_insert_e::ALREADY_EXISTS);
-  EXPECT_TRUE(second_id.empty());
+  std::string second_id;
+  EXPECT_EQ(nvhttp::insert_pair_session(make_session("dup", "192.0.2.2"), second_id), nvhttp::pair_session_insert_e::ADDED);
+  EXPECT_NE(first_id, second_id);
 
   // The original session is untouched
   EXPECT_TRUE(nvhttp::cancel_pairing(first_id));
+  EXPECT_TRUE(nvhttp::cancel_pairing(second_id));
+}
+
+TEST_F(PairingSessionTest, SingleAddressCannotFillTheStore) {
+  std::string id;
+  for (std::size_t i = 0; i < nvhttp::MAX_PENDING_PAIRING_SESSIONS_PER_ADDRESS; ++i) {
+    ASSERT_EQ(nvhttp::insert_pair_session(make_session("a" + std::to_string(i)), id), nvhttp::pair_session_insert_e::ADDED) << i;
+  }
+
+  EXPECT_EQ(nvhttp::insert_pair_session(make_session("extra"), id), nvhttp::pair_session_insert_e::FULL);
+  EXPECT_TRUE(id.empty());
+  EXPECT_EQ(nvhttp::insert_pair_session(make_session("other", "192.0.2.99"), id), nvhttp::pair_session_insert_e::ADDED);
 }
 
 TEST_F(PairingSessionTest, SameUniqueIdFromSameAddressReplacesOlderSession) {
@@ -108,18 +120,18 @@ TEST_F(PairingSessionTest, StoreIsBounded) {
   std::string id;
   std::string first_id;
   for (std::size_t i = 0; i < nvhttp::MAX_PENDING_PAIRING_SESSIONS; ++i) {
-    ASSERT_EQ(nvhttp::insert_pair_session(make_session("c" + std::to_string(i)), id), nvhttp::pair_session_insert_e::ADDED) << i;
+    ASSERT_EQ(nvhttp::insert_pair_session(make_session("c" + std::to_string(i), "198.51.100." + std::to_string(i / nvhttp::MAX_PENDING_PAIRING_SESSIONS_PER_ADDRESS)), id), nvhttp::pair_session_insert_e::ADDED) << i;
     if (i == 0) {
       first_id = id;
     }
   }
 
-  EXPECT_EQ(nvhttp::insert_pair_session(make_session("overflow"), id), nvhttp::pair_session_insert_e::FULL);
+  EXPECT_EQ(nvhttp::insert_pair_session(make_session("overflow", "203.0.113.1"), id), nvhttp::pair_session_insert_e::FULL);
   EXPECT_TRUE(id.empty());
 
   // Freeing one slot makes room again
   EXPECT_TRUE(nvhttp::cancel_pairing(first_id));
-  EXPECT_EQ(nvhttp::insert_pair_session(make_session("overflow"), id), nvhttp::pair_session_insert_e::ADDED);
+  EXPECT_EQ(nvhttp::insert_pair_session(make_session("overflow", "203.0.113.1"), id), nvhttp::pair_session_insert_e::ADDED);
 }
 
 TEST_F(PairingSessionTest, ExpireOnlyRemovesSessionsPastTheirDeadline) {
