@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string_view>
 
@@ -309,6 +310,10 @@ namespace config_import {
     std::vector<entry_t> load_conf(const fs::path &dir) {
       std::string content;
       if (read_file(dir / "sunshine.conf", content)) {
+        // A byte order mark would become part of the first key
+        if (content.starts_with("\xEF\xBB\xBF")) {
+          content.erase(0, 3);
+        }
         return parse_conf(content);
       }
       return {};
@@ -506,33 +511,30 @@ namespace config_import {
     };
 
     /**
-     * @brief Give imported devices without an explicit permission the default permission set.
-     * @details Such devices would otherwise be loaded with full access. Client commands stay
-     *          disabled for them. Devices that carry a permission are left as they are.
-     * @return Number of devices that were given the default permission.
+     * @brief What normalize_imported_clients had to change in an imported client list.
      */
-    size_t normalize_imported_clients(json &troot) {
-      size_t changed = 0;
+    struct client_normalization_t {
+      size_t defaulted = 0;  ///< Clients that got the default permission (no usable permission was given).
+      size_t dropped = 0;  ///< Entries without a usable certificate and repeated certificates.
+      size_t renumbered = 0;  ///< Clients that got a new identifier (empty or repeated).
+      size_t elevated = 0;  ///< Clients that keep file, command or clipboard permissions.
+    };
+
+    /**
+     * @brief Make an imported client list safe to load.
+     * @details Devices without a usable permission get the default permission set (they would
+     *          otherwise be loaded with full access) and keep client commands disabled. Unknown
+     *          permission bits are removed. Entries without a certificate and repeated certificates
+     *          are dropped, repeated or empty identifiers are replaced. Devices that carry a valid
+     *          permission keep it.
+     */
+    client_normalization_t normalize_imported_clients(json &troot) {
+      client_normalization_t stats;
       if (!troot.contains("named_devices") || !troot["named_devices"].is_array()) {
         troot["named_devices"] = json::array();
       }
       auto &named = troot["named_devices"];
-      for (auto &el : named) {
-        if (!el.is_object()) {
-          continue;
-        }
-        if (!el.contains("perm")) {
-          el["perm"] = static_cast<uint32_t>(crypto::PERM::_default);
-          if (!el.contains("allow_client_commands")) {
-            el["allow_client_commands"] = false;
-          }
-          ++changed;
-        }
-        // Every device needs a unique identifier to be told apart from the others
-        if (!el.contains("uuid") || !el["uuid"].is_string() || el["uuid"].get<std::string>().empty()) {
-          el["uuid"] = uuid_util::uuid_t::generate().string();
-        }
-      }
+
       // The legacy layout has no per device settings and is loaded with full access: convert it
       if (auto devices = troot.find("devices"); devices != troot.end()) {
         if (devices->is_array()) {
@@ -542,7 +544,7 @@ namespace config_import {
               for (auto &cert : *certs) {
                 if (cert.is_string()) {
                   named.push_back({{"name", ""}, {"cert", cert}, {"uuid", uuid_util::uuid_t::generate().string()}, {"perm", static_cast<uint32_t>(crypto::PERM::_default)}, {"allow_client_commands", false}});
-                  ++changed;
+                  ++stats.defaulted;
                 }
               }
             }
@@ -550,7 +552,52 @@ namespace config_import {
         }
         troot.erase("devices");
       }
-      return changed;
+
+      constexpr auto elevated_bits = static_cast<uint32_t>(crypto::PERM::file_upload) | static_cast<uint32_t>(crypto::PERM::file_dwnload) | static_cast<uint32_t>(crypto::PERM::server_cmd) | static_cast<uint32_t>(crypto::PERM::clipboard_set) | static_cast<uint32_t>(crypto::PERM::clipboard_read);
+      std::set<std::string> seen_certs;
+      std::set<std::string> seen_uuids;
+      json cleaned = json::array();
+      for (auto &el : named) {
+        if (!el.is_object() || !el.contains("cert") || !el["cert"].is_string() || el["cert"].get<std::string>().empty() ||
+            !seen_certs.insert(el["cert"].get<std::string>()).second) {
+          ++stats.dropped;
+          continue;
+        }
+
+        bool perm_usable = false;
+        if (el.contains("perm")) {
+          const auto &perm = el["perm"];
+          if (perm.is_number_unsigned() || (perm.is_number_integer() && perm.get<int64_t>() >= 0)) {
+            const auto raw = perm.get<uint64_t>();
+            if (raw <= 0xFFFFFFFFull) {
+              const auto masked = static_cast<uint32_t>(raw) & static_cast<uint32_t>(crypto::PERM::_all);
+              el["perm"] = masked;
+              perm_usable = true;
+              if ((masked & elevated_bits) != 0) {
+                ++stats.elevated;
+              }
+            }
+          }
+        }
+        if (!perm_usable) {
+          el["perm"] = static_cast<uint32_t>(crypto::PERM::_default);
+          if (!el.contains("allow_client_commands")) {
+            el["allow_client_commands"] = false;
+          }
+          ++stats.defaulted;
+        }
+
+        // Every device needs a unique identifier to be told apart from the others
+        if (!el.contains("uuid") || !el["uuid"].is_string() || el["uuid"].get<std::string>().empty() ||
+            !seen_uuids.insert(el["uuid"].get<std::string>()).second) {
+          el["uuid"] = uuid_util::uuid_t::generate().string();
+          seen_uuids.insert(el["uuid"].get<std::string>());
+          ++stats.renumbered;
+        }
+        cleaned.push_back(std::move(el));
+      }
+      named = std::move(cleaned);
+      return stats;
     }
 
     /**
@@ -789,8 +836,18 @@ namespace config_import {
           if (root->contains("devices")) {
             troot["devices"] = (*root)["devices"];
           }
-          if (const auto downgraded = normalize_imported_clients(troot); downgraded > 0) {
-            result.warnings.push_back("clients: " + std::to_string(downgraded) + " imported client(s) were given the default permission; adjust them in the Web UI");
+          const auto normalized = normalize_imported_clients(troot);
+          if (normalized.defaulted > 0) {
+            result.warnings.push_back("clients: " + std::to_string(normalized.defaulted) + " imported client(s) were given the default permission; adjust them in the Web UI");
+          }
+          if (normalized.dropped > 0) {
+            result.warnings.push_back("clients: " + std::to_string(normalized.dropped) + " entr(ies) without a usable certificate or with a repeated certificate were skipped");
+          }
+          if (normalized.renumbered > 0) {
+            result.warnings.push_back("clients: " + std::to_string(normalized.renumbered) + " client(s) had a missing or repeated identifier and got a new one");
+          }
+          if (normalized.elevated > 0) {
+            result.warnings.push_back("clients: " + std::to_string(normalized.elevated) + " imported client(s) may transfer files, run host commands or use the clipboard; review them in the Web UI");
           }
           if (replaced > 0) {
             result.warnings.push_back("clients: " + std::to_string(replaced) + " paired client(s) of this host were replaced (see backup)");

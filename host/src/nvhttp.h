@@ -84,6 +84,11 @@ namespace nvhttp {
   constexpr auto PAIRING_SESSION_TIMEOUT = std::chrono::minutes {5};
 
   /**
+   * @brief Time left for the remaining pairing phases once the PIN has been delivered.
+   */
+  constexpr auto PAIRING_POST_PIN_TIMEOUT = std::chrono::minutes {2};
+
+  /**
    * @brief Start the nvhttp server.
    * @examples
    * nvhttp::start();
@@ -382,4 +387,43 @@ namespace nvhttp {
     const bool allow_client_commands,
     const bool always_use_virtual_display
   );
+
+  /**
+   * @brief Get a snapshot of a paired client.
+   * @param uuid The UUID of the client.
+   * @return The client record (never modified after it was published), or `nullptr` if unknown.
+   */
+  std::shared_ptr<const crypto::named_cert_t> get_client(std::string_view uuid);
+
+  /**
+   * @brief Move the deadline of a pairing session out once the PIN has been delivered.
+   * @param sess The pairing session.
+   * @param now Monotonic time used as the base of the new deadline.
+   */
+  void extend_pair_session_deadline(pair_session_t &sess, std::chrono::steady_clock::time_point now);
+
+  /**
+   * @brief Resolve the paired client record of a request.
+   * @param userp The record bound to the connection; it is re-bound when the record was replaced.
+   * @return The current record, or a record without permissions when the client is no longer paired.
+   */
+  crypto::named_cert_t *resolve_verified_cert(std::shared_ptr<void> &userp);
+
+#ifdef SUNSHINE_TESTS
+  /**
+   * @brief Access to the client registry for unit tests.
+   */
+  namespace test_access {
+    /// Remove all clients, pending pairing sessions and one-time PIN state.
+    void reset();
+    /// Add a client through the regular pairing path; `false` when it could not be persisted.
+    bool add_client(const crypto::p_named_cert_t &named_cert_p);
+    /// Number of paired clients.
+    std::size_t client_count();
+    /// Persist the clients to `config::nvhttp.file_state`.
+    bool save();
+    /// Load the clients from `config::nvhttp.file_state`.
+    void load();
+  }  // namespace test_access
+#endif
 }  // namespace nvhttp

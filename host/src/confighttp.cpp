@@ -13,6 +13,7 @@
 #include <fstream>
 #include <map>
 #include <numeric>
+#include <regex>
 #include <set>
 #include <sstream>
 #include <thread>
@@ -910,6 +911,93 @@ namespace confighttp {
     send_response(response, output_tree);
   }
 
+  bool is_valid_client_display_mode(const std::string &mode) {
+    // <width>x<height>[x<refresh rate>] with plain decimal numbers
+    static const std::regex pattern {R"(^[0-9]{1,5}x[0-9]{1,5}(x[0-9]+(\.[0-9]+)?)?$)"};
+    return mode.empty() || (mode.size() <= 32 && std::regex_match(mode, pattern));
+  }
+
+  std::string parse_client_update(const nlohmann::json &input, const crypto::named_cert_t &current, client_update_t &update) {
+    if (!input.is_object()) {
+      return "Request body must be a JSON object";
+    }
+
+    update = {};
+    if (!input.contains("uuid") || !input["uuid"].is_string() || input["uuid"].get<std::string>().empty()) {
+      return "uuid is required";
+    }
+    update.uuid = input["uuid"].get<std::string>();
+
+    // Everything else is optional and keeps the stored value when absent
+    update.name = current.name;
+    update.display_mode = current.display_mode;
+    update.do_cmds = current.do_cmds;
+    update.undo_cmds = current.undo_cmds;
+    update.perm = current.perm;
+    update.enable_legacy_ordering = current.enable_legacy_ordering;
+    update.allow_client_commands = current.allow_client_commands;
+    update.always_use_virtual_display = current.always_use_virtual_display;
+
+    if (input.contains("name")) {
+      if (!input["name"].is_string()) {
+        return "name must be a string";
+      }
+      update.name = input["name"].get<std::string>();
+      if (!nvhttp::is_valid_pairing_name(update.name)) {
+        return "Client name must not be longer than 128 bytes";
+      }
+    }
+
+    if (input.contains("display_mode")) {
+      if (!input["display_mode"].is_string() || !is_valid_client_display_mode(input["display_mode"].get<std::string>())) {
+        return "Invalid display mode";
+      }
+      update.display_mode = input["display_mode"].get<std::string>();
+    }
+
+    if (input.contains("perm")) {
+      const auto &value = input["perm"];
+      const bool usable = value.is_number_unsigned() || (value.is_number_integer() && value.get<std::int64_t>() >= 0);
+      if (!usable) {
+        return "Invalid permission value";
+      }
+      const auto raw = value.get<std::uint64_t>();
+      if (raw > 0xFFFFFFFFull || (static_cast<std::uint32_t>(raw) & ~static_cast<std::uint32_t>(crypto::PERM::_all)) != 0) {
+        return "Invalid permission value";
+      }
+      update.perm = static_cast<crypto::PERM>(static_cast<std::uint32_t>(raw));
+    }
+
+    const std::pair<const char *, bool *> flags[] = {
+      {"enable_legacy_ordering", &update.enable_legacy_ordering},
+      {"allow_client_commands", &update.allow_client_commands},
+      {"always_use_virtual_display", &update.always_use_virtual_display},
+    };
+    for (const auto &[key, target] : flags) {
+      if (input.contains(key)) {
+        if (!input[key].is_boolean()) {
+          return std::string(key) + " must be a boolean";
+        }
+        *target = input[key].get<bool>();
+      }
+    }
+
+    if (input.contains("do")) {
+      if (!input["do"].is_array()) {
+        return "do must be an array";
+      }
+      update.do_cmds = nvhttp::extract_command_entries(input, "do");
+    }
+    if (input.contains("undo")) {
+      if (!input["undo"].is_array()) {
+        return "undo must be an array";
+      }
+      update.undo_cmds = nvhttp::extract_command_entries(input, "undo");
+    }
+
+    return {};
+  }
+
   /**
    * @brief Update client information.
    * @param response The HTTP response object.
@@ -939,25 +1027,38 @@ namespace confighttp {
     try {
       nlohmann::json input_tree = nlohmann::json::parse(ss.str());
       nlohmann::json output_tree;
-      std::string uuid = input_tree.value("uuid", "");
-      std::string name = input_tree.value("name", "");
-      std::string display_mode = input_tree.value("display_mode", "");
-      bool enable_legacy_ordering = input_tree.value("enable_legacy_ordering", true);
-      bool allow_client_commands = input_tree.value("allow_client_commands", true);
-      bool always_use_virtual_display = input_tree.value("always_use_virtual_display", false);
-      auto do_cmds = nvhttp::extract_command_entries(input_tree, "do");
-      auto undo_cmds = nvhttp::extract_command_entries(input_tree, "undo");
-      auto perm = static_cast<crypto::PERM>(input_tree.value("perm", static_cast<uint32_t>(crypto::PERM::_no)) & static_cast<uint32_t>(crypto::PERM::_all));
-      output_tree["status"] = nvhttp::update_device_info(
-        uuid,
-        name,
-        display_mode,
-        do_cmds,
-        undo_cmds,
-        perm,
-        enable_legacy_ordering,
-        allow_client_commands,
-        always_use_virtual_display
+
+      // Fields that are not part of the request keep their stored value
+      std::string uuid;
+      if (input_tree.is_object() && input_tree.contains("uuid") && input_tree["uuid"].is_string()) {
+        uuid = input_tree["uuid"].get<std::string>();
+      }
+      auto current = nvhttp::get_client(uuid);
+      client_update_t update;
+      if (current) {
+        if (auto error = parse_client_update(input_tree, *current, update); !error.empty()) {
+          bad_request(response, request, error);
+          return;
+        }
+      } else {
+        // Reports a missing uuid; an unknown one is answered below
+        crypto::named_cert_t none {};
+        if (auto error = parse_client_update(input_tree, none, update); !error.empty()) {
+          bad_request(response, request, error);
+          return;
+        }
+      }
+
+      output_tree["status"] = current && nvhttp::update_device_info(
+        update.uuid,
+        update.name,
+        update.display_mode,
+        update.do_cmds,
+        update.undo_cmds,
+        update.perm,
+        update.enable_legacy_ordering,
+        update.allow_client_commands,
+        update.always_use_virtual_display
       );
       send_response(response, output_tree);
     } catch (std::exception &e) {
@@ -1403,9 +1504,9 @@ namespace confighttp {
    * }
    * @endcode
    *
-   * `pairing_id` (from `GET /api/pin`) selects the request. It may be omitted while exactly one
-   * request is waiting; with several waiting requests the response lists them and nothing is paired,
-   * so a PIN can never be handed to a request the operator did not choose.
+   * `pairing_id` (from `GET /api/pin`) selects the request. Without it nothing is paired and the
+   * response lists the waiting requests, so a PIN can never be handed to a request the operator
+   * did not choose.
    *
    * @api_examples{/api/pin| POST| {"pairing_id":"0123456789abcdef0123456789abcdef","pin":"1234","name":"My PC"}}
    */
@@ -1435,15 +1536,13 @@ namespace confighttp {
       }
 
       if (pairing_id.empty()) {
+        // A PIN is only handed to a request the operator selected, never to whichever one is waiting
         auto pending = nvhttp::get_pending_pairings();
-        if (pending.size() != 1) {
-          output_tree["status"] = false;
-          output_tree["error"] = pending.empty() ? "No device is waiting for a PIN" : "Several devices are waiting for a PIN: select one";
-          output_tree["pairings"] = pending_pairings_json(pending);
-          send_response(response, output_tree);
-          return;
-        }
-        pairing_id = pending.front().id;
+        output_tree["status"] = false;
+        output_tree["error"] = pending.empty() ? "No device is waiting for a PIN" : "Select the device that is waiting for the PIN";
+        output_tree["pairings"] = pending_pairings_json(pending);
+        send_response(response, output_tree);
+        return;
       } else if (!nvhttp::is_valid_pairing_id(pairing_id)) {
         bad_request(response, request, "pairing_id must contain exactly 32 hexadecimal characters");
         return;

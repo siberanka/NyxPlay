@@ -190,3 +190,18 @@ TEST_F(PairingSessionTest, PendingListOnlyContainsSessionsWaitingForTheWebUi) {
   ASSERT_EQ(nvhttp::insert_pair_session(make_session("hidden"), id), nvhttp::pair_session_insert_e::ADDED);
   EXPECT_TRUE(nvhttp::get_pending_pairings().empty());
 }
+
+TEST_F(PairingSessionTest, DeliveringThePinExtendsTheSessionDeadline) {
+  auto sess = make_session("late-pin");
+  const auto now = std::chrono::steady_clock::now();
+
+  // Close to expiry: the remaining phases need more time than is left
+  sess.async_insert_pin.expires_at = now + 1s;
+  nvhttp::extend_pair_session_deadline(sess, now);
+  EXPECT_GE(sess.async_insert_pin.expires_at, now + 60s);
+
+  // A deadline that is already further away is not shortened
+  sess.async_insert_pin.expires_at = now + 1h;
+  nvhttp::extend_pair_session_deadline(sess, now);
+  EXPECT_EQ(sess.async_insert_pin.expires_at, now + 1h);
+}

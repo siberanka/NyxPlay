@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <fstream>
+#include <set>
 #include <sstream>
 
 #include "../tests_common.h"
@@ -383,4 +384,64 @@ TEST_F(ConfigImportTest, DetectSourcesExcludesAndIgnoresMissing) {
       EXPECT_FALSE(fs::equivalent(a.config_dir, s.config_dir));
     }
   }
+}
+
+TEST_F(ConfigImportTest, ImportedClientListIsMadeSafeToLoad) {
+  populate_source();
+  const auto elevated = static_cast<uint32_t>(crypto::PERM::server_cmd) | static_cast<uint32_t>(crypto::PERM::_all_actions);
+  nlohmann::json devices = nlohmann::json::array({
+    {{"name", "A"}, {"cert", "CA"}, {"uuid", "dup"}, {"perm", 4294967295u}},
+    {{"name", "B"}, {"cert", "CB"}, {"uuid", "dup"}, {"perm", "abc"}},
+    {{"name", "C"}, {"cert", "CC"}, {"uuid", ""}, {"perm", -1}},
+    {{"name", "D"}, {"cert", "CA"}, {"uuid", "d"}, {"perm", 1}},
+    {{"name", "E"}, {"uuid", "e"}, {"perm", 1}},
+    {{"name", "F"}, {"cert", 5}, {"uuid", "f"}},
+    7,
+    {{"name", "G"}, {"cert", "CG"}, {"uuid", "g"}, {"perm", 1.5}},
+    {{"name", "H"}, {"cert", "CH"}, {"uuid", "h"}, {"perm", elevated}},
+    {{"name", "I"}, {"cert", "CI"}, {"uuid", "i"}, {"perm", static_cast<uint32_t>(crypto::PERM::_default)}},
+  });
+  write(src / "sunshine_state.json", nlohmann::json({{"root", {{"uniqueid", "ID"}, {"named_devices", devices}}}}).dump(4));
+  options_t o;
+  o.settings = o.apps = false;
+  auto r = import_from(src, dst, o);
+  ASSERT_TRUE(r.ok) << r.error;
+
+  auto named = read_json(dst / "sunshine_state.json")["root"]["named_devices"];
+  // E (no certificate), F (bad certificate), 7 (not an object) and D (repeated certificate) are dropped
+  ASSERT_EQ(named.size(), 6u);
+  std::set<std::string> uuids;
+  for (auto &entry : named) {
+    EXPECT_FALSE(entry["uuid"].get<std::string>().empty());
+    uuids.insert(entry["uuid"].get<std::string>());
+    EXPECT_TRUE(entry["perm"].is_number_unsigned());
+    EXPECT_EQ(entry["perm"].get<uint32_t>() & ~static_cast<uint32_t>(crypto::PERM::_all), 0u);
+  }
+  EXPECT_EQ(uuids.size(), 6u);
+
+  EXPECT_EQ(named[0]["perm"].get<uint32_t>(), static_cast<uint32_t>(crypto::PERM::_all));  // unknown bits masked
+  EXPECT_EQ(named[1]["perm"].get<uint32_t>(), static_cast<uint32_t>(crypto::PERM::_default));  // not a number
+  EXPECT_EQ(named[2]["perm"].get<uint32_t>(), static_cast<uint32_t>(crypto::PERM::_default));  // negative
+  EXPECT_EQ(named[3]["perm"].get<uint32_t>(), static_cast<uint32_t>(crypto::PERM::_default));  // not an integer
+  EXPECT_EQ(named[4]["perm"].get<uint32_t>(), elevated);
+  EXPECT_EQ(named[5]["perm"].get<uint32_t>(), static_cast<uint32_t>(crypto::PERM::_default));
+  EXPECT_NE(named[0]["uuid"], named[1]["uuid"]);
+
+  EXPECT_TRUE(has_warning(r, "default permission"));
+  EXPECT_TRUE(has_warning(r, "skipped"));
+  EXPECT_TRUE(has_warning(r, "new one"));
+  EXPECT_TRUE(has_warning(r, "review them"));
+}
+
+TEST_F(ConfigImportTest, ConfFileWithByteOrderMarkKeepsItsFirstKey) {
+  populate_source();
+  write(src / "sunshine.conf", "\xEF\xBB\xBF" "sunshine_name = Bom PC\nlog_path = sunshine.log\n");
+  options_t o;
+  o.apps = o.clients = false;
+  auto r = import_from(src, dst, o);
+  ASSERT_TRUE(r.ok) << r.error;
+
+  const auto conf = read(dst / "sunshine.conf");
+  EXPECT_EQ(conf.find("\xEF\xBB\xBF"), std::string::npos);
+  EXPECT_NE(conf.find("sunshine_name = Bom PC"), std::string::npos);
 }

@@ -7,12 +7,14 @@
 
 // standard includes
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <format>
 #include <mutex>
 #include <set>
 #include <string>
+#include <system_error>
 #include <utility>
 
 // lib includes
@@ -97,6 +99,10 @@ namespace nvhttp {
           return 1;
         });
       }
+
+      // With peer verification enabled OpenSSL rejects session resumption unless a session id context is set
+      static constexpr unsigned char session_id_context[] = "nvhttp";
+      SSL_CTX_set_session_id_context(context.native_handle(), session_id_context, sizeof(session_id_context) - 1);
     }
 
     // This is Server<HTTPS>::accept() with SSL validation support added
@@ -215,17 +221,79 @@ namespace nvhttp {
     return commands;
   }
 
-  void save_state() {
+  /**
+   * @brief Check the textual form of a UUID (8-4-4-4-12 hexadecimal digits).
+   */
+  bool is_valid_uuid_string(const std::string &value) {
+    if (value.size() != 36) {
+      return false;
+    }
+    for (std::size_t i = 0; i < value.size(); ++i) {
+      if (i == 8 || i == 13 || i == 18 || i == 23) {
+        if (value[i] != '-') {
+          return false;
+        }
+      } else if (!std::isxdigit(static_cast<unsigned char>(value[i]))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * @brief Read a permission mask from a stored client record.
+   * @param el Client record.
+   * @param missing_value Value used when the record has no `perm` key.
+   * @return The permission mask limited to known bits; an unusable value yields the default permissions.
+   */
+  PERM read_stored_perm(const nlohmann::json &el, const PERM missing_value) {
+    if (!el.contains("perm")) {
+      return missing_value;
+    }
+
+    const auto &value = el.at("perm");
+    std::uint64_t raw = 0;
+    if (value.is_number_unsigned()) {
+      raw = value.get<std::uint64_t>();
+    } else if (value.is_number_integer() && value.get<std::int64_t>() >= 0) {
+      raw = static_cast<std::uint64_t>(value.get<std::int64_t>());
+    } else if (value.is_string() && !value.get_ref<const std::string &>().empty() && value.get_ref<const std::string &>().size() <= 10 &&
+               std::ranges::all_of(value.get_ref<const std::string &>(), [](const char c) {
+                 return c >= '0' && c <= '9';
+               })) {
+      raw = std::stoull(value.get<std::string>());
+    } else {
+      BOOST_LOG(warning) << "Ignoring an unusable permission value in the client list, using the default permissions"sv;
+      return PERM::_default;
+    }
+
+    if (raw > 0xFFFFFFFFull) {
+      BOOST_LOG(warning) << "Ignoring an out of range permission value in the client list, using the default permissions"sv;
+      return PERM::_default;
+    }
+    return static_cast<PERM>(static_cast<std::uint32_t>(raw)) & PERM::_all;
+  }
+
+  /**
+   * @brief Persist the paired clients and the host unique id.
+   * @return `true` when the state file was written completely.
+   * @details The data is written to a temporary file first and moved over the state file, so an
+   * interrupted write cannot leave a truncated state file behind.
+   */
+  bool save_state() {
     std::lock_guard client_lock(client_auth_mutex);
     nlohmann::json root = nlohmann::json::object();
-    // If the state file exists, try to read it.
+    // If the state file exists, keep its other keys.
     if (fs::exists(config::nvhttp.file_state)) {
       try {
         std::ifstream in(config::nvhttp.file_state);
         in >> root;
+        if (!root.is_object()) {
+          root = nlohmann::json::object();
+        }
       } catch (std::exception &e) {
-        BOOST_LOG(error) << "Couldn't read "sv << config::nvhttp.file_state << ": "sv << e.what();
-        return;
+        BOOST_LOG(warning) << "Couldn't read "sv << config::nvhttp.file_state << ", it will be replaced: "sv << e.what();
+        root = nlohmann::json::object();
       }
     }
 
@@ -240,24 +308,12 @@ namespace nvhttp {
     nlohmann::json named_cert_nodes = nlohmann::json::array();
 
     std::unordered_set<std::string> unique_certs;
-    std::unordered_map<std::string, int> name_counts;
 
     for (auto &named_cert_p : client.named_devices) {
       // Only add each unique certificate once.
       if (unique_certs.insert(named_cert_p->cert).second) {
         nlohmann::json named_cert_node = nlohmann::json::object();
-        std::string base_name = named_cert_p->name;
-        // Remove any pending id suffix (e.g., " (2)") if present.
-        size_t pos = base_name.find(" (");
-        if (pos != std::string::npos) {
-          base_name = base_name.substr(0, pos);
-        }
-        int count = name_counts[base_name]++;
-        std::string final_name = base_name;
-        if (count > 0) {
-          final_name += " (" + std::to_string(count + 1) + ")";
-        }
-        named_cert_node["name"] = final_name;
+        named_cert_node["name"] = named_cert_p->name;
         named_cert_node["cert"] = named_cert_p->cert;
         named_cert_node["uuid"] = named_cert_p->uuid;
         named_cert_node["display_mode"] = named_cert_p->display_mode;
@@ -290,13 +346,64 @@ namespace nvhttp {
 
     root["root"]["named_devices"] = named_cert_nodes;
 
+    const std::string temp_path = config::nvhttp.file_state + ".tmp";
     try {
-      std::ofstream out(config::nvhttp.file_state);
-      out << root.dump(4);  // Pretty-print with an indent of 4 spaces.
+      {
+        std::ofstream out(temp_path, std::ios::binary | std::ios::trunc);
+        out << root.dump(4);  // Pretty-print with an indent of 4 spaces.
+        out.flush();
+        if (!out.good()) {
+          throw std::runtime_error("write failed");
+        }
+      }
+
+      std::error_code ec;
+      fs::rename(temp_path, config::nvhttp.file_state, ec);
+      if (ec) {
+        throw std::runtime_error(ec.message());
+      }
     } catch (std::exception &e) {
       BOOST_LOG(error) << "Couldn't write "sv << config::nvhttp.file_state << ": "sv << e.what();
-      return;
+      std::error_code ec;
+      fs::remove(temp_path, ec);
+      return false;
     }
+
+    return true;
+  }
+
+  /**
+   * @brief Rebuild the trusted certificate list from the in-memory client list.
+   * @note client_auth_mutex must be held.
+   */
+  void rebuild_cert_chain_unlocked() {
+    cert_chain.clear();
+    for (auto &named_cert : client_root.named_devices) {
+      cert_chain.add(named_cert);
+    }
+  }
+
+  /**
+   * @brief Move an unusable state file out of the way so that a new one can be written.
+   */
+  void quarantine_state_file() {
+    const auto stamp = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    const std::string target = config::nvhttp.file_state + ".corrupt-" + std::to_string(stamp);
+    std::error_code ec;
+    fs::rename(config::nvhttp.file_state, target, ec);
+    if (ec) {
+      BOOST_LOG(error) << "Couldn't move "sv << config::nvhttp.file_state << " aside: "sv << ec.message();
+    } else {
+      BOOST_LOG(error) << "The state file is damaged, it was moved to "sv << target;
+    }
+  }
+
+  /**
+   * @brief Set a new random host unique id.
+   */
+  void generate_unique_id() {
+    http::uuid = uuid_util::uuid_t::generate();
+    http::unique_id = http::uuid.string();
   }
 
   void load_state() {
@@ -313,29 +420,44 @@ namespace nvhttp {
       in >> tree;
     } catch (std::exception &e) {
       BOOST_LOG(error) << "Couldn't read "sv << config::nvhttp.file_state << ": "sv << e.what();
+      // Continue as if there was no state file: the host needs a unique id and must be able to save new pairings
+      quarantine_state_file();
+      if (!is_valid_uuid_string(http::unique_id)) {
+        generate_unique_id();
+      }
       return;
     }
 
-    // Check that the file contains a "root.uniqueid" value.
-    if (!tree.contains("root") || !tree["root"].contains("uniqueid")) {
-      http::uuid = uuid_util::uuid_t::generate();
-      http::unique_id = http::uuid.string();
+    // Check that the file contains a usable "root.uniqueid" value.
+    if (!tree.is_object() || !tree.contains("root") || !tree["root"].is_object()) {
+      if (!is_valid_uuid_string(http::unique_id)) {
+        generate_unique_id();
+      }
       return;
     }
 
-    std::string uid = tree["root"]["uniqueid"];
-    http::uuid = uuid_util::uuid_t::parse(uid);
-    http::unique_id = uid;
+    const nlohmann::json &root = tree["root"];
+    if (root.contains("uniqueid") && root["uniqueid"].is_string() && is_valid_uuid_string(root["uniqueid"].get<std::string>())) {
+      std::string uid = root["uniqueid"].get<std::string>();
+      http::uuid = uuid_util::uuid_t::parse(uid);
+      http::unique_id = uid;
+    } else {
+      BOOST_LOG(warning) << "The state file has no valid host unique id, a new one is generated"sv;
+      generate_unique_id();
+    }
 
-    nlohmann::json root = tree["root"];
     client_t client;  // Local client to load into
 
     // Import from the old format if available.
-    if (root.contains("devices")) {
+    if (root.contains("devices") && root["devices"].is_array()) {
       for (auto &device_node : root["devices"]) {
         // For each device, if there is a "certs" array, add a named certificate.
-        if (device_node.contains("certs")) {
+        if (device_node.is_object() && device_node.contains("certs") && device_node["certs"].is_array()) {
           for (auto &el : device_node["certs"]) {
+            if (!el.is_string() || !crypto::x509(el.get<std::string>())) {
+              BOOST_LOG(warning) << "Skipping an unusable certificate in the client list"sv;
+              continue;
+            }
             auto named_cert_p = std::make_shared<crypto::named_cert_t>();
             named_cert_p->name = "";
             named_cert_p->cert = el.get<std::string>();
@@ -352,21 +474,32 @@ namespace nvhttp {
     }
 
     // Import from the new format.
-    if (root.contains("named_devices")) {
+    if (root.contains("named_devices") && root["named_devices"].is_array()) {
       for (auto &el : root["named_devices"]) {
-        auto named_cert_p = std::make_shared<crypto::named_cert_t>();
-        named_cert_p->name = el.value("name", "");
-        named_cert_p->cert = el.value("cert", "");
-        named_cert_p->uuid = el.value("uuid", "");
-        named_cert_p->display_mode = el.value("display_mode", "");
-        named_cert_p->perm = (PERM)(util::get_non_string_json_value<uint32_t>(el, "perm", (uint32_t)PERM::_all)) & PERM::_all;
-        named_cert_p->enable_legacy_ordering = el.value("enable_legacy_ordering", true);
-        named_cert_p->allow_client_commands = el.value("allow_client_commands", true);
-        named_cert_p->always_use_virtual_display = el.value("always_use_virtual_display", false);
-        // Load command entries for "do" and "undo" keys.
-        named_cert_p->do_cmds = extract_command_entries(el, "do");
-        named_cert_p->undo_cmds = extract_command_entries(el, "undo");
-        client.named_devices.emplace_back(named_cert_p);
+        try {
+          if (!el.is_object()) {
+            throw std::invalid_argument("entry is not an object");
+          }
+
+          auto named_cert_p = std::make_shared<crypto::named_cert_t>();
+          named_cert_p->name = el.value("name", "");
+          named_cert_p->cert = el.value("cert", "");
+          if (named_cert_p->cert.empty() || !crypto::x509(named_cert_p->cert)) {
+            throw std::invalid_argument("entry has no usable certificate");
+          }
+          named_cert_p->uuid = el.value("uuid", "");
+          named_cert_p->display_mode = el.value("display_mode", "");
+          named_cert_p->perm = read_stored_perm(el, PERM::_all);
+          named_cert_p->enable_legacy_ordering = el.value("enable_legacy_ordering", true);
+          named_cert_p->allow_client_commands = el.value("allow_client_commands", true);
+          named_cert_p->always_use_virtual_display = el.value("always_use_virtual_display", false);
+          // Load command entries for "do" and "undo" keys.
+          named_cert_p->do_cmds = extract_command_entries(el, "do");
+          named_cert_p->undo_cmds = extract_command_entries(el, "undo");
+          client.named_devices.emplace_back(named_cert_p);
+        } catch (const std::exception &e) {
+          BOOST_LOG(warning) << "Skipping an unusable entry of the client list: "sv << e.what();
+        }
       }
     }
 
@@ -379,22 +512,42 @@ namespace nvhttp {
     client_root = client;
   }
 
-  void add_authorized_client(const p_named_cert_t& named_cert_p) {
+  /**
+   * @brief Persist the client list and reload it (the reload rebuilds the trusted certificate list).
+   * @note client_auth_mutex must be held.
+   * @return `false` when the client list could not be saved; the in-memory list stays authoritative.
+   */
+  bool commit_clients_unlocked() {
+    if (!save_state()) {
+      rebuild_cert_chain_unlocked();
+      return false;
+    }
+    load_state();
+    return true;
+  }
+
+  bool add_authorized_client(const p_named_cert_t& named_cert_p) {
     std::lock_guard client_lock(client_auth_mutex);
     client_t &client = client_root;
     client.named_devices.push_back(named_cert_p);
+
+    if (!config::sunshine.flags[config::flag::FRESH_STATE]) {
+      if (!commit_clients_unlocked()) {
+        // A pairing that cannot be stored would be lost on restart: do not accept it
+        std::erase(client.named_devices, named_cert_p);
+        rebuild_cert_chain_unlocked();
+        return false;
+      }
+    } else {
+      // load_state() rebuilds the trust list; without persisted state add the client directly
+      cert_chain.add(const_cast<p_named_cert_t &>(named_cert_p));
+    }
 
 #if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
     system_tray::update_tray_paired(named_cert_p->name);
 #endif
 
-    if (!config::sunshine.flags[config::flag::FRESH_STATE]) {
-      save_state();
-      load_state();
-    } else {
-      // load_state() rebuilds the trust list; without persisted state add the client directly
-      cert_chain.add(const_cast<p_named_cert_t &>(named_cert_p));
-    }
+    return true;
   }
 
   std::shared_ptr<rtsp_stream::launch_session_t> make_launch_session(bool host_audio, bool input_only, const args_t &args, const crypto::named_cert_t* named_cert_p) {
@@ -407,7 +560,7 @@ namespace nvhttp {
       auto rikey = util::from_hex_vec(get_arg(args, "rikey"), true);
       if (rikey.size() != 16) {
         // AES-128: a shorter key would make the cipher read past the buffer
-        throw std::invalid_argument("rikey must be 16 bytes");
+        throw std::invalid_argument("Invalid rikey");
       }
       std::copy(rikey.cbegin(), rikey.cend(), std::back_inserter(launch_session->gcm_key));
 
@@ -516,6 +669,23 @@ namespace nvhttp {
   }
 
   /**
+   * @brief Create a launch session, reporting rejected client parameters instead of throwing.
+   * @param error Receives the reason when no session is returned.
+   */
+  std::shared_ptr<rtsp_stream::launch_session_t> make_launch_session_checked(bool host_audio, bool input_only, const args_t &args, const crypto::named_cert_t *named_cert_p, std::string &error) {
+    try {
+      auto launch_session = make_launch_session(host_audio, input_only, args, named_cert_p);
+      if (!launch_session) {
+        error = "Invalid display mode";
+      }
+      return launch_session;
+    } catch (const std::invalid_argument &e) {
+      error = e.what();
+      return nullptr;
+    }
+  }
+
+  /**
    * @brief Write a completed response to the client waiting for PIN approval.
    * @param sess Pairing session that owns the waiting response.
    * @param tree XML response body to write.
@@ -525,13 +695,16 @@ namespace nvhttp {
     std::ostringstream data;
     pt::write_xml(data, tree);
 
+    // The flag is set after writing so that the response carries a Content-Length: the client
+    // then does not depend on the connection teardown to find the end of the body
+    const SimpleWeb::CaseInsensitiveMultimap close_header {{"Connection", "close"}};
     auto &response = sess.async_insert_pin.response;
     if (response.has_left() && response.left()) {
+      response.left()->write(data.str(), close_header);
       response.left()->close_connection_after_response = true;
-      response.left()->write(data.str());
     } else if (response.has_right() && response.right()) {
+      response.right()->write(data.str(), close_header);
       response.right()->close_connection_after_response = true;
-      response.right()->write(data.str());
     } else {
       return false;
     }
@@ -830,8 +1003,6 @@ namespace nvhttp {
     bool same_hash = hash.size() == sess.clienthash.size() && CRYPTO_memcmp(hash.data(), sess.clienthash.data(), hash.size()) == 0;
     auto verify = crypto::verify256(crypto::x509(client.cert), secret, sign);
     if (same_hash && verify) {
-      tree.put("root.paired", 1);
-
       auto named_cert_p = std::make_shared<crypto::named_cert_t>();
       named_cert_p->name = client.name;
       for (char& c : named_cert_p->name) {
@@ -842,6 +1013,15 @@ namespace nvhttp {
       named_cert_p->uuid = uuid_util::uuid_t::generate().string();
       // If the device is the first one paired with the server, assign full permission.
       std::lock_guard client_lock(client_auth_mutex);
+
+      // Keep the names of paired clients distinguishable: a repeated name gets a counter suffix
+      const std::string base_name = named_cert_p->name;
+      for (int counter = 2; std::ranges::any_of(client_root.named_devices, [&](const auto &other) {
+             return other->name == named_cert_p->name;
+           }); ++counter) {
+        named_cert_p->name = base_name + " (" + std::to_string(counter) + ")";
+      }
+
       if (client_root.named_devices.empty()) {
         named_cert_p->perm = PERM::_all;
       } else {
@@ -852,7 +1032,12 @@ namespace nvhttp {
       named_cert_p->allow_client_commands = true;
       named_cert_p->always_use_virtual_display = false;
 
-      add_authorized_client(named_cert_p);
+      if (add_authorized_client(named_cert_p)) {
+        tree.put("root.paired", 1);
+      } else {
+        tree.put("root.paired", 0);
+        BOOST_LOG(error) << "Pair attempt failed: the client list could not be saved"sv;
+      }
     } else {
       tree.put("root.paired", 0);
       BOOST_LOG(warning) << "Pair attempt failed due to same_hash: " << same_hash << ", verify: " << verify;
@@ -875,22 +1060,25 @@ namespace nvhttp {
     static auto constexpr to_string = "NONE"sv;
   };
 
-  inline crypto::named_cert_t* get_verified_cert(req_https_t request) {
-    auto cached = (crypto::named_cert_t*)request->userp.get();
+  crypto::named_cert_t* resolve_verified_cert(std::shared_ptr<void> &userp) {
+    auto cached = (crypto::named_cert_t*)userp.get();
 
     // The certificate was verified when the connection was opened. A kept-alive connection can
     // outlive the pairing, so make sure the client is still paired on every request.
+    // Client records are never modified once published: edits and reloads replace them.
     std::lock_guard client_lock(client_auth_mutex);
-    for (auto &cert_p : client_root.named_devices) {
-      if (cert_p.get() == cached) {
-        return cached;
+    if (cached) {
+      for (auto &cert_p : client_root.named_devices) {
+        if (cert_p.get() == cached) {
+          return cached;
+        }
       }
-    }
-    // The record may have been replaced by a state reload: look the client up again
-    for (auto &cert_p : client_root.named_devices) {
-      if (cert_p->uuid == cached->uuid && cert_p->cert == cached->cert) {
-        request->userp = cert_p;
-        return cert_p.get();
+      // The record may have been replaced by an edit or a state reload: look the client up again
+      for (auto &cert_p : client_root.named_devices) {
+        if (cert_p->uuid == cached->uuid && cert_p->cert == cached->cert) {
+          userp = cert_p;
+          return cert_p.get();
+        }
       }
     }
 
@@ -901,6 +1089,10 @@ namespace nvhttp {
       return record;
     }();
     return const_cast<crypto::named_cert_t *>(&revoked);
+  }
+
+  inline crypto::named_cert_t* get_verified_cert(req_https_t request) {
+    return resolve_verified_cert(request->userp);
   }
 
   template <class T>
@@ -1135,6 +1327,10 @@ namespace nvhttp {
     }
   }
 
+  void extend_pair_session_deadline(pair_session_t &sess, const std::chrono::steady_clock::time_point now) {
+    sess.async_insert_pin.expires_at = std::max(sess.async_insert_pin.expires_at, now + PAIRING_POST_PIN_TIMEOUT);
+  }
+
   bool pin(const std::string_view pairing_id, std::string pin, std::string name) {
     if (!is_valid_pairing_id(pairing_id) || !is_valid_pairing_pin(pin) || !is_valid_pairing_name(name)) {
       return false;
@@ -1152,8 +1348,12 @@ namespace nvhttp {
     auto &sess = sess_it->second;
     pt::ptree tree;
     getservercert(sess, tree, pin);
-    if (!sess.failed && !name.empty()) {
-      sess.client.name = std::move(name);
+    if (!sess.failed) {
+      // The overall limit only covers the wait for the PIN; the remaining phases get their own window
+      extend_pair_session_deadline(sess, std::chrono::steady_clock::now());
+      if (!name.empty()) {
+        sess.client.name = std::move(name);
+      }
     }
 
     // Answer the request that has been waiting for the PIN
@@ -1530,11 +1730,12 @@ namespace nvhttp {
     }
 
     host_audio = util::from_view(get_arg(args, "localAudioPlayMode"));
-    auto launch_session = make_launch_session(host_audio, is_input_only, args, named_cert_p);
+    std::string launch_error;
+    auto launch_session = make_launch_session_checked(host_audio, is_input_only, args, named_cert_p, launch_error);
     if (!launch_session) {
       tree.put("root.resume", 0);
       tree.put("root.<xmlattr>.status_code", 400);
-      tree.put("root.<xmlattr>.status_message", "Invalid display mode");
+      tree.put("root.<xmlattr>.status_message", launch_error);
 
       return;
     }
@@ -1695,11 +1896,12 @@ namespace nvhttp {
     if (no_active_sessions && args.find("localAudioPlayMode"s) != std::end(args)) {
       host_audio = util::from_view(get_arg(args, "localAudioPlayMode"));
     }
-    auto launch_session = make_launch_session(host_audio, false, args, named_cert_p);
+    std::string launch_error;
+    auto launch_session = make_launch_session_checked(host_audio, false, args, named_cert_p, launch_error);
     if (!launch_session) {
       tree.put("root.resume", 0);
       tree.put("root.<xmlattr>.status_code", 400);
-      tree.put("root.<xmlattr>.status_message", "Invalid display mode");
+      tree.put("root.<xmlattr>.status_message", launch_error);
 
       return;
     }
@@ -2053,9 +2255,11 @@ namespace nvhttp {
     http_server.config.address = net::af_to_any_address_string(address_family);
     http_server.config.port = port_http;
     // Unauthenticated port: only small GET requests (serverinfo, pairing) are expected
-    // (timeout_content stays at its default: a pairing request waits on its connection until the
-    // PIN is entered in the Web UI)
+    // (a pairing request waits on its connection until the PIN is entered in the Web UI, so the
+    // connection timeout must be longer than PAIRING_SESSION_TIMEOUT)
     http_server.config.max_request_streambuf_size = 256 * 1024;
+    http_server.config.timeout_content = std::chrono::duration_cast<std::chrono::seconds>(PAIRING_SESSION_TIMEOUT).count() + 30;
+    https_server.config.timeout_content = http_server.config.timeout_content;
 
     auto accept_and_run = [&](auto *http_server) {
       try {
@@ -2106,12 +2310,17 @@ namespace nvhttp {
 
   void
   erase_all_clients() {
-    std::lock_guard client_lock(client_auth_mutex);
-    client_t client;
-    client_root = client;
-    cert_chain.clear();
-    save_state();
-    load_state();
+    {
+      std::lock_guard client_lock(client_auth_mutex);
+      client_t client;
+      client_root = client;
+      cert_chain.clear();
+      commit_clients_unlocked();
+    }
+
+    // Stop the streams of the removed clients outside the lock: stopping can take a while and the
+    // TLS verification of new connections needs the same lock
+    rtsp_stream::terminate_sessions();
   }
 
   void stop_session(stream::session_t& session, bool graceful) {
@@ -2159,53 +2368,115 @@ namespace nvhttp {
 
     std::lock_guard client_lock(client_auth_mutex);
     client_t &client = client_root;
-    auto it = client.named_devices.begin();
-    for (; it != client.named_devices.end(); ++it) {
-      auto named_cert_p = *it;
-      if (named_cert_p->uuid == uuid) {
-        named_cert_p->name = name;
-        named_cert_p->display_mode = display_mode;
-        named_cert_p->perm = newPerm;
-        named_cert_p->do_cmds = do_cmds;
-        named_cert_p->undo_cmds = undo_cmds;
-        named_cert_p->enable_legacy_ordering = enable_legacy_ordering;
-        named_cert_p->allow_client_commands = allow_client_commands;
-        named_cert_p->always_use_virtual_display = always_use_virtual_display;
-        save_state();
-        return true;
+    for (auto &slot : client.named_devices) {
+      if (slot->uuid != uuid) {
+        continue;
       }
+
+      // Records are immutable once published (other threads read them without the lock):
+      // publish a modified copy instead of editing the shared record
+      auto previous = slot;
+      auto updated = std::make_shared<crypto::named_cert_t>(*previous);
+      updated->name = name;
+      updated->display_mode = display_mode;
+      updated->perm = newPerm;
+      updated->do_cmds = do_cmds;
+      updated->undo_cmds = undo_cmds;
+      updated->enable_legacy_ordering = enable_legacy_ordering;
+      updated->allow_client_commands = allow_client_commands;
+      updated->always_use_virtual_display = always_use_virtual_display;
+      slot = updated;
+
+      if (!save_state()) {
+        slot = previous;
+        rebuild_cert_chain_unlocked();
+        return false;
+      }
+      // New connections must be bound to the new record
+      rebuild_cert_chain_unlocked();
+      return true;
     }
 
     return false;
   }
 
-  bool unpair_client(const std::string_view uuid) {
-    bool removed = false;
+  std::shared_ptr<const crypto::named_cert_t> get_client(const std::string_view uuid) {
     std::lock_guard client_lock(client_auth_mutex);
-    client_t &client = client_root;
-    for (auto it = client.named_devices.begin(); it != client.named_devices.end();) {
-      if ((*it)->uuid == uuid) {
-        it = client.named_devices.erase(it);
-        removed = true;
-      } else {
-        ++it;
+    for (auto &named_cert_p : client_root.named_devices) {
+      if (named_cert_p->uuid == uuid) {
+        return named_cert_p;
       }
     }
+    return nullptr;
+  }
 
-    save_state();
-    load_state();
+  bool unpair_client(const std::string_view uuid) {
+    bool removed = false;
+    bool now_empty = false;
+    {
+      std::lock_guard client_lock(client_auth_mutex);
+      client_t &client = client_root;
+      for (auto it = client.named_devices.begin(); it != client.named_devices.end();) {
+        if ((*it)->uuid == uuid) {
+          it = client.named_devices.erase(it);
+          removed = true;
+        } else {
+          ++it;
+        }
+      }
 
+      commit_clients_unlocked();
+      now_empty = client_root.named_devices.empty();
+    }
+
+    // Stopping the session and the app can take seconds: do it without holding the client lock,
+    // which the TLS verification of new connections needs
     if (removed) {
       auto session = rtsp_stream::find_session(uuid);
       if (session) {
         stop_session(*session, true);
       }
 
-      if (client.named_devices.empty()) {
+      if (now_empty) {
         proc::proc.terminate();
       }
     }
 
     return removed;
   }
+
+#ifdef SUNSHINE_TESTS
+  namespace test_access {
+    void reset() {
+      {
+        std::lock_guard lock(map_id_sess_mutex);
+        map_id_sess.clear();
+        one_time_pin.clear();
+        otp_passphrase.clear();
+        otp_device_name.clear();
+        otp_failures = 0;
+      }
+      std::lock_guard client_lock(client_auth_mutex);
+      client_root = client_t {};
+      cert_chain.clear();
+    }
+
+    bool add_client(const crypto::p_named_cert_t &named_cert_p) {
+      return add_authorized_client(named_cert_p);
+    }
+
+    std::size_t client_count() {
+      std::lock_guard client_lock(client_auth_mutex);
+      return client_root.named_devices.size();
+    }
+
+    bool save() {
+      return save_state();
+    }
+
+    void load() {
+      load_state();
+    }
+  }  // namespace test_access
+#endif
 }  // namespace nvhttp
