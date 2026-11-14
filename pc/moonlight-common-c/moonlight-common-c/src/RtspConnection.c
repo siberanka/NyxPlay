@@ -3,6 +3,8 @@
 
 #define RTSP_CONNECT_TIMEOUT_SEC 10
 #define RTSP_RECEIVE_TIMEOUT_SEC 15
+#define RTSP_TOTAL_RECEIVE_TIMEOUT_SEC (RTSP_RECEIVE_TIMEOUT_SEC * 2)
+#define RTSP_POLL_INTERVAL_MS 100
 #define RTSP_RETRY_DELAY_MS 500
 #define MAX_RTSP_RESPONSE_SIZE (1024 * 1024)
 
@@ -445,6 +447,8 @@ static bool transactRtspMessageTcp(PRTSP_MESSAGE request, PRTSP_MESSAGE response
     // Read the response until the server closes the connection
     offset = 0;
     responseBufferSize = 0;
+    uint64_t receiveDeadline = PltGetMillis() + (RTSP_TOTAL_RECEIVE_TIMEOUT_SEC * 1000);
+    uint64_t lastDataTime = PltGetMillis();
     for (;;) {
         struct pollfd pfd;
 
@@ -466,11 +470,21 @@ static bool transactRtspMessageTcp(PRTSP_MESSAGE request, PRTSP_MESSAGE response
 
         pfd.fd = sock;
         pfd.events = POLLIN;
-        err = pollSockets(&pfd, 1, RTSP_RECEIVE_TIMEOUT_SEC * 1000);
+        err = pollSockets(&pfd, 1, RTSP_POLL_INTERVAL_MS);
         if (err == 0) {
-            *error = ETIMEDOUT;
-            Limelog("RTSP request timed out\n");
-            goto Exit;
+            // Check for interruption, the idle timeout and the overall deadline between polls
+            uint64_t now = PltGetMillis();
+            if (ConnectionInterrupted) {
+                *error = -1;
+                Limelog("RTSP request interrupted\n");
+                goto Exit;
+            }
+            if (now - lastDataTime >= RTSP_RECEIVE_TIMEOUT_SEC * 1000 || now >= receiveDeadline) {
+                *error = ETIMEDOUT;
+                Limelog("RTSP request timed out\n");
+                goto Exit;
+            }
+            continue;
         }
         else if (err < 0) {
             *error = LastSocketError();
@@ -497,6 +511,13 @@ static bool transactRtspMessageTcp(PRTSP_MESSAGE request, PRTSP_MESSAGE response
             }
       
             offset += err;
+            lastDataTime = PltGetMillis();
+
+            if (lastDataTime >= receiveDeadline) {
+                *error = ETIMEDOUT;
+                Limelog("RTSP response exceeded the total receive time\n");
+                goto Exit;
+            }
         }
     }
 

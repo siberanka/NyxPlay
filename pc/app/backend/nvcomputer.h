@@ -44,6 +44,9 @@ public:
 
     explicit NvComputer(QSettings& settings);
 
+    // Host IDs are used to build cache paths, so only a strict safe charset is accepted
+    static bool isValidUuid(const QString& uuid);
+
     void
     setRemoteAddress(QHostAddress);
 

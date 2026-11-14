@@ -40,16 +40,21 @@ private:
             return false;
         }
 
-        NvComputer newState(http, serverInfo);
+        try {
+            NvComputer newState(http, serverInfo);
 
-        // Ensure the machine that responded is the one we intended to contact
-        if (m_Computer->uuid != newState.uuid) {
-            qInfo() << "Found unexpected PC" << newState.name << "looking for" << m_Computer->name;
+            // Ensure the machine that responded is the one we intended to contact
+            if (m_Computer->uuid != newState.uuid) {
+                qInfo() << "Found unexpected PC" << newState.name << "looking for" << m_Computer->name;
+                return false;
+            }
+
+            changed = m_Computer->update(newState);
+            return true;
+        } catch (...) {
+            // Malformed serverinfo
             return false;
         }
-
-        changed = m_Computer->update(newState);
-        return true;
     }
 
     bool updateAppList(QNetworkAccessManager* nam, bool& changed)
@@ -180,6 +185,11 @@ ComputerManager::ComputerManager(StreamingPreferences* prefs)
     for (int i = 0; i < hosts; i++) {
         settings.setArrayIndex(i);
         NvComputer* computer = new NvComputer(settings);
+        if (!NvComputer::isValidUuid(computer->uuid)) {
+            // Never use an invalid persisted ID to build cache paths
+            delete computer;
+            continue;
+        }
         m_KnownHosts[computer->uuid] = computer;
         m_LastSerializedHosts[computer->uuid] = *computer;
     }
@@ -853,7 +863,15 @@ private:
         }
 
         // Create initial newComputer using HTTP serverinfo with no pinned cert
-        NvComputer* newComputer = new NvComputer(http, serverInfo);
+        NvComputer* newComputer;
+        try {
+            newComputer = new NvComputer(http, serverInfo);
+        } catch (...) {
+            if (!m_Mdns) {
+                emit computerAddCompleted(false, false);
+            }
+            return;
+        }
         http.setTrueUid(!newComputer->isNvidiaServerSoftware);
 
         // Check if we have a record of this host UUID to pull the pinned cert
@@ -875,8 +893,16 @@ private:
             }
 
             // Update the polled computer with the HTTPS information
-            NvComputer httpsComputer(http, serverInfo);
-            newComputer->update(httpsComputer);
+            try {
+                NvComputer httpsComputer(http, serverInfo);
+                newComputer->update(httpsComputer);
+            } catch (...) {
+                delete newComputer;
+                if (!m_Mdns) {
+                    emit computerAddCompleted(false, false);
+                }
+                return;
+            }
         }
 
         // Update addresses depending on the context

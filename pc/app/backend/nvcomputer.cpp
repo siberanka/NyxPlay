@@ -6,6 +6,7 @@
 #include <QHostInfo>
 #include <QNetworkInterface>
 #include <QNetworkProxy>
+#include <QRegularExpression>
 
 #define SER_NAME "hostname"
 #define SER_UUID "uuid"
@@ -22,6 +23,13 @@
 #define SER_SRVCERT "srvcert"
 #define SER_CUSTOMNAME "customname"
 #define SER_NVIDIASOFTWARE "nvidiasw"
+
+bool NvComputer::isValidUuid(const QString& uuid)
+{
+    // Letters, digits and hyphens only, so the ID can never act as a path
+    static const QRegularExpression uuidRegex(QRegularExpression::anchoredPattern("[A-Za-z0-9-]{1,64}"));
+    return uuidRegex.match(uuid).hasMatch();
+}
 
 NvComputer::NvComputer(QSettings& settings)
 {
@@ -138,6 +146,10 @@ NvComputer::NvComputer(NvHTTP& http, QString serverInfo)
     }
 
     this->uuid = NvHTTP::getXmlString(serverInfo, "uniqueid");
+    if (!isValidUuid(this->uuid)) {
+        // Treat a malformed ID like a missing mandatory field
+        throw GfeHttpResponseException(599, "");
+    }
     QString newMacString = NvHTTP::getXmlString(serverInfo, "mac");
     if (newMacString != "00:00:00:00:00:00") {
         QStringList macOctets = newMacString.split(':');
