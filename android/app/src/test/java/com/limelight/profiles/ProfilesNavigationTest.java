@@ -1,7 +1,6 @@
 package com.limelight.profiles;
 
 import android.content.Intent;
-import android.widget.ImageButton;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.content.Context;
@@ -63,9 +62,6 @@ public class ProfilesNavigationTest {
         com.limelight.computers.ComputerManagerService.ComputerManagerBinder binder = mock(com.limelight.computers.ComputerManagerService.ComputerManagerBinder.class);
         org.robolectric.Shadows.shadowOf((android.app.Application) ctx)
                 .setComponentNameAndServiceForBindService(cn, binder);
-
-        // Apply an AppCompat theme required by ProfilesActivity
-        // ApplicationProvider.getApplicationContext().setTheme(R.style.SettingsTheme);
     }
 
     @Test
@@ -74,7 +70,7 @@ public class ProfilesNavigationTest {
         ActivityController<PcView> controller = Robolectric.buildActivity(PcView.class).setup();
         PcView pcView = controller.get();
 
-        ImageButton btn = pcView.findViewById(R.id.profilesButton);
+        android.view.View btn = pcView.findViewById(R.id.profilesButton);
         assertNotNull("profilesButton not found", btn);
 
         btn.performClick();
@@ -94,7 +90,7 @@ public class ProfilesNavigationTest {
         ActivityController<AppView> controller = Robolectric.buildActivity(AppView.class, intent).setup();
         AppView appView = controller.get();
 
-        ImageButton btn = appView.findViewById(R.id.profilesButton);
+        android.view.View btn = appView.findViewById(R.id.profilesButton);
         assertNotNull("profilesButton not found in AppView", btn);
 
         btn.performClick();

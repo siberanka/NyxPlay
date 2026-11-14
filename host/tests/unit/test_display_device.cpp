@@ -220,6 +220,7 @@ INSTANTIATE_TEST_SUITE_P(
     std::make_pair(std::make_tuple(refresh_rate_option_e::disabled, "invalid_refresh_rate"s), no_refresh_rate_tag_t {}),
     //---- Automatic cases ----
     std::make_pair(std::make_tuple(refresh_rate_option_e::automatic, client_fps_t {60}), rational_t {60, 1}),
+    std::make_pair(std::make_tuple(refresh_rate_option_e::automatic, client_fps_t {1}), rational_t {1, 1}),
     std::make_pair(std::make_tuple(refresh_rate_option_e::automatic, "60"s), rational_t {0, 1}),
     std::make_pair(std::make_tuple(refresh_rate_option_e::automatic, "59.9885"s), rational_t {0, 1}),
     std::make_pair(std::make_tuple(refresh_rate_option_e::automatic, client_fps_t {-1}), failed_to_parse_refresh_rate_tag_t {}),
@@ -268,7 +269,7 @@ TEST_P(ParseRefreshRateOption, IntegrationTest) {
   rtsp_stream::launch_session_t session {};
   if (const auto *client_refresh_rate {std::get_if<client_fps_t>(&input_refresh_rate)}; client_refresh_rate) {
     video_config.dd.manual_refresh_rate = {};
-    session.fps = *client_refresh_rate;
+    session.fps = *client_refresh_rate * 1000;  // session.fps carries Hz * 1000
   } else {
     video_config.dd.manual_refresh_rate = std::get<std::string>(input_refresh_rate);
     session.fps = {};
@@ -485,7 +486,7 @@ namespace {
         video_config.dd.refresh_rate_option = disabled;
       } else if (const auto *auto_fps {std::get_if<auto_value_t<fps_t>>(&input_fps)}; auto_fps) {
         video_config.dd.refresh_rate_option = automatic;
-        session.fps = auto_fps->value;
+        session.fps = auto_fps->value * 1000;  // session.fps carries Hz * 1000
       } else {
         const auto [manual_fps] = std::get<manual_value_t<fps_t>>(input_fps);
         video_config.dd.refresh_rate_option = manual;
@@ -509,3 +510,33 @@ namespace {
     }
   }
 }  // namespace
+
+namespace {
+  // session.fps carries Hz * 1000.
+  std::optional<display_device::FloatingPoint> parse_auto_refresh_rate(const int session_fps, const remap_entries_t &entries) {
+    config::video_t video_config {};
+    video_config.dd.configuration_option = config_option_e::verify_only;
+    video_config.dd.refresh_rate_option = refresh_rate_option_e::automatic;
+    video_config.dd.mode_remapping = entries;
+
+    rtsp_stream::launch_session_t session {};
+    session.fps = session_fps;
+
+    const auto result {display_device::parse_configuration(video_config, session)};
+    return std::get<display_device::SingleDisplayConfiguration>(result).m_refresh_rate;
+  }
+}  // namespace
+
+TEST(DisplayModeRemappingFps, FractionalClientFpsIsReduced) {
+  const remap_entries_t no_entries {};
+  EXPECT_EQ(parse_auto_refresh_rate(59940, no_entries), std::make_optional(display_device::FloatingPoint {rational_t {2997, 50}}));
+  EXPECT_EQ(parse_auto_refresh_rate(1000, no_entries), std::make_optional(display_device::FloatingPoint {rational_t {1, 1}}));
+}
+
+TEST(DisplayModeRemappingFps, RequestedFpsMatchesOnlyTheSameRate) {
+  const remap_entries_t entries {
+    .refresh_rate_only = {{"", "60", "", "120"}}
+  };
+  EXPECT_EQ(parse_auto_refresh_rate(60000, entries), std::make_optional(display_device::FloatingPoint {rational_t {120, 1}}));
+  EXPECT_EQ(parse_auto_refresh_rate(59940, entries), std::make_optional(display_device::FloatingPoint {rational_t {2997, 50}}));
+}

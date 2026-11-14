@@ -56,7 +56,7 @@ public class SimpleStartupTest {
         // Test application onCreate which initializes ProfilesManager
         // After the fix, this should no longer crash
         try {
-            ArtemisApplication app = new ArtemisApplication();
+            ArtemisApplication app = (ArtemisApplication) ApplicationProvider.getApplicationContext();
             app.onCreate();
 
             // Should now work without crashing
@@ -66,7 +66,7 @@ public class SimpleStartupTest {
 
             LimeLog.info("SUCCESS: Application startup no longer crashes!");
         } catch (Exception e) {
-            fail("Application onCreate should not crash after fix: " + e.getMessage());
+            throw new AssertionError("Application onCreate should not crash after fix: " + e, e);
         }
     }
 
