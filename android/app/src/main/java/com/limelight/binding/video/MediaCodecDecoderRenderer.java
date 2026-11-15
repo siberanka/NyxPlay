@@ -23,7 +23,6 @@ import com.limelight.utils.Stereo3DRenderer;
 import com.limelight.utils.TrafficStatsHelper;
 
 import android.annotation.SuppressLint;
-import android.util.LongSparseArray;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
@@ -55,7 +54,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     public void setForceTightThresholds(boolean v) { this.forceTightThresholds = v; }
     // Toggle at runtime if needed
     // Decode latency tracking: map PTS(us) -> enqueue time (ns)
-    private final LongSparseArray<Long> enqueueNsByPtsUs = new LongSparseArray<>();
+    private final PtsTimestampTracker enqueueNsByPtsUs = new PtsTimestampTracker();
 
     // When preferLowerDelays=true we use this configurable timeout (µs) for output dequeue.
 // When preferLowerDelays=false we force 0µs (non-blocking, latest-frame rendering).
@@ -84,9 +83,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     // Update stats using real decode time: enqueue->dequeue, instead of uptime - PTS
     private void updateDecodeLatencyStats(long presentationTimeUs) {
-        Long enqNs = enqueueNsByPtsUs.get(presentationTimeUs);
-        if (enqNs != null) {
-            enqueueNsByPtsUs.delete(presentationTimeUs);
+        long enqNs = enqueueNsByPtsUs.remove(presentationTimeUs);
+        if (enqNs >= 0) {
             long decMs = (System.nanoTime() - enqNs) / 1_000_000L;
             if (decMs >= 0 && decMs < 1000) {
                 activeWindowVideoStats.decoderTimeMs += decMs;
@@ -575,28 +573,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     }
 
     private void configureAndStartDecoder(MediaFormat format) {
+        // Timestamps of frames queued to a previous codec instance will never be output
+        enqueueNsByPtsUs.clear();
+
         // Set HDR metadata if present
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            if (currentHdrMetadata != null) {
-                ByteBuffer hdrStaticInfo = ByteBuffer.allocate(25).order(ByteOrder.LITTLE_ENDIAN);
-                ByteBuffer hdrMetadata = ByteBuffer.wrap(currentHdrMetadata).order(ByteOrder.LITTLE_ENDIAN);
-
-                // Create a HDMI Dynamic Range and Mastering InfoFrame as defined by CTA-861.3
-                hdrStaticInfo.put((byte) 0); // Metadata type
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // RX
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // RY
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // GX
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // GY
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // BX
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // BY
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // White X
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // White Y
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // Max mastering luminance
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // Min mastering luminance
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // Max content luminance
-                hdrStaticInfo.putShort(hdrMetadata.getShort()); // Max frame average luminance
-
-                hdrStaticInfo.rewind();
+            // A missing or short metadata array is ignored rather than applied
+            ByteBuffer hdrStaticInfo = HdrStaticInfo.build(currentHdrMetadata);
+            if (hdrStaticInfo != null) {
                 format.setByteBuffer(MediaFormat.KEY_HDR_STATIC_INFO, hdrStaticInfo);
             }
             else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -802,7 +786,23 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         this.videoFormat = format;
         this.refreshRate = redrawRate;
 
+        // Without a usable Surface the codec would run blind, so fail early instead
+        if (renderTarget == null || !renderTarget.isValid()) {
+            LimeLog.warning("No valid Surface available for the video decoder");
+            return -6;
+        }
+
         return initializeDecoder(false);
+    }
+
+    // Called when the decoder cannot be brought back (for example because the Surface is
+    // gone). The stream cannot continue without video, so let the listener end the session.
+    private void abandonCodecRecovery() {
+        stopping = true;
+        codecRecoveryType.set(CR_RECOVERY_TYPE_NONE);
+        if (crashListener != null) {
+            crashListener.notifyDecoderUnrecoverable();
+        }
     }
 
     // All threads that interact with the MediaCodec instance must call this function regularly!
@@ -862,8 +862,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                         e.printStackTrace();
 
                         // Our Surface is probably invalid, so just stop
-                        stopping = true;
-                        codecRecoveryType.set(CR_RECOVERY_TYPE_NONE);
+                        abandonCodecRecovery();
                     } catch (IllegalStateException e) {
                         e.printStackTrace();
 
@@ -885,8 +884,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                         e.printStackTrace();
 
                         // Our Surface is probably invalid, so just stop
-                        stopping = true;
-                        codecRecoveryType.set(CR_RECOVERY_TYPE_NONE);
+                        abandonCodecRecovery();
                     } catch (IllegalStateException e) {
                         e.printStackTrace();
 
@@ -899,7 +897,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 // throw away the old decoder and reinitialize a new one from scratch.
                 if (codecRecoveryType.get() == CR_RECOVERY_TYPE_RESET) {
                     LimeLog.warning("Trying to recreate decoder after CodecException");
-                    videoDecoder.release();
+                    if (videoDecoder != null) {
+                        try {
+                            videoDecoder.release();
+                        } catch (RuntimeException ignored) {}
+                        videoDecoder = null;
+                    }
 
                     try {
                         int err = initializeDecoder(true);
@@ -911,8 +914,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                         e.printStackTrace();
 
                         // Our Surface is probably invalid, so just stop
-                        stopping = true;
-                        codecRecoveryType.set(CR_RECOVERY_TYPE_NONE);
+                        abandonCodecRecovery();
                     } catch (IllegalStateException e) {
                         // If we failed to recover after all of these attempts, just crash
                         if (!reportedCrash) {
@@ -1207,7 +1209,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 double ewmaJitterNs            = periodNs * 0.1;
 
                 BufferInfo info = new BufferInfo();
-                long lastOutputNs = System.nanoTime();
                 while (!stopping) {
                     /* LATEST_ONLY_LOW_LATENCY */
                     if (!preferLowerDelays) {
@@ -1475,23 +1476,6 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                         doCodecRecoveryIfRequired(CR_FLAG_RENDER_THREAD);
                     }
                 }
-
-                /* WATCHDOG_C2_SLEEP */
-                try {
-                    final long __nowNs = System.nanoTime();
-                    if (__nowNs - lastOutputNs > 1_200_000_000L) { // ~1.2s without output → likely C2 sleep
-                        LimeLog.warning("Decoder watchdog: no output >1.2s, flushing codec to recover...");
-                        try {
-                            videoDecoder.flush();
-                        } catch (Throwable ignored) {}
-                        try {
-                            android.os.Bundle __poke = new android.os.Bundle();
-                            __poke.putInt("priority", 0);
-                            videoDecoder.setParameters(__poke);
-                        } catch (Throwable ignored) {}
-                        lastOutputNs = __nowNs;
-                    }
-                } catch (Throwable ignored) {}
             }
         };
         rendererThread.setName("Video - Renderer (MediaCodec)");
@@ -1629,21 +1613,30 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
 
         // Wait for the renderer thread to shut down
-        try {
-            rendererThread.join();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+        if (rendererThread != null) {
+            try {
+                rendererThread.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
 
-            // InterruptedException clears the thread's interrupt status. Since we can't
-            // handle that here, we will re-interrupt the thread to set the interrupt
-            // status back to true.
-            Thread.currentThread().interrupt();
+                // InterruptedException clears the thread's interrupt status. Since we can't
+                // handle that here, we will re-interrupt the thread to set the interrupt
+                // status back to true.
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
     @Override
     public void cleanup() {
-        videoDecoder.release();
+        // The decoder may already be gone if recovery gave up
+        MediaCodec decoder = videoDecoder;
+        if (decoder != null) {
+            try {
+                decoder.release();
+            } catch (RuntimeException ignored) {}
+            videoDecoder = null;
+        }
     }
 
     @Override
@@ -1685,7 +1678,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                     timestampUs, codecFlags);
 
             // Track enqueue time for this PTS
-            try { enqueueNsByPtsUs.put(timestampUs, System.nanoTime()); } catch (Throwable ignored) {}
+            enqueueNsByPtsUs.put(timestampUs, System.nanoTime());
 
             // We need a new buffer now
             nextInputBufferIndex = -1;

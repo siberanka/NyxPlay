@@ -396,13 +396,71 @@ static bool isRtspConnectionResetError(int error) {
 #endif
 }
 
-// Only requests that can be repeated without side effects are retried
+// Only requests that can be repeated without side effects are retried. SETUP is included
+// because the host answers a repeated SETUP for the same stream the same way as the first.
 static bool isRtspRequestIdempotent(PRTSP_MESSAGE request) {
     const char* command = request->message.request.command;
     return command != NULL &&
            (!strcmp(command, "OPTIONS") ||
             !strcmp(command, "DESCRIBE") ||
             !strcmp(command, "SETUP"));
+}
+
+// Plain (unencrypted) RTSP responses have no framing of their own, so a response that was cut
+// off by a connection reset can only be recognised by its header terminator and Content-length.
+static bool isPlaintextRtspResponseComplete(const char* data, int length) {
+    static const char name[] = "content-length:";
+    const int nameLen = (int)sizeof(name) - 1;
+    int headerEnd = -1;
+    int pos;
+
+    for (int i = 0; i + 3 < length; i++) {
+        if (data[i] == '\r' && data[i + 1] == '\n' && data[i + 2] == '\r' && data[i + 3] == '\n') {
+            headerEnd = i + 4;
+            break;
+        }
+    }
+    if (headerEnd < 0) {
+        // The headers themselves are incomplete
+        return false;
+    }
+
+    // Look for a Content-length header at the start of one of the header lines
+    for (pos = 0; pos + nameLen < headerEnd; ) {
+        int match = 1;
+        for (int j = 0; j < nameLen; j++) {
+            char c = data[pos + j];
+            if (c >= 'A' && c <= 'Z') {
+                c = (char)(c + ('a' - 'A'));
+            }
+            if (c != name[j]) {
+                match = 0;
+                break;
+            }
+        }
+
+        if (match) {
+            long long expected = 0;
+            int k = pos + nameLen;
+            while (k < headerEnd && (data[k] == ' ' || data[k] == '\t')) {
+                k++;
+            }
+            while (k < headerEnd && data[k] >= '0' && data[k] <= '9' && expected < 0x7FFFFFFFLL) {
+                expected = expected * 10 + (data[k] - '0');
+                k++;
+            }
+            return (long long)(length - headerEnd) >= expected;
+        }
+
+        // Advance to the start of the next header line
+        while (pos + 1 < headerEnd && !(data[pos] == '\r' && data[pos + 1] == '\n')) {
+            pos++;
+        }
+        pos += 2;
+    }
+
+    // No Content-length header, so the headers are all there is to verify
+    return true;
 }
 
 // Send RTSP message and get response over TCP. If noResponseData is not NULL, it is set to
@@ -529,8 +587,10 @@ static bool transactRtspMessageTcpOnce(PRTSP_MESSAGE request, PRTSP_MESSAGE resp
             *error = LastSocketError();
             Limelog("Failed to read RTSP response: %d\n", *error);
             if (offset > 0 && isRtspConnectionResetError(*error) &&
+                    (encryptedRtspEnabled || isPlaintextRtspResponseComplete(responseBuffer, offset)) &&
                     unsealRtspMessage(responseBuffer, offset, response)) {
-                // The host reset the connection after sending a complete response
+                // The host reset the connection after sending a complete response. Encrypted
+                // responses are length checked while unsealing; plain ones are checked above.
                 ret = true;
                 goto Exit;
             }

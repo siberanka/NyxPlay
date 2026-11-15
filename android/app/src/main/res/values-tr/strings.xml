@@ -10,6 +10,7 @@
     <string name="conn_error_title">Bağlantı Hatası</string>
     <string name="conn_starting">Başlatılıyor</string>
     <string name="conn_error_msg">Başlatma başarısız</string>
+    <string name="conn_error_rtsp_reset">Yayın başlatılırken bilgisayar bağlantıyı kapattı. Tekrar deneyin; sorun sürerse bilgisayarı yeniden başlatın.</string>
     <string name="summary_audio_config_list">Ev-sinema sistemleri için 5.1 yada 7.1 surround sesi etkinleştir</string>
     <string name="title_checkbox_host_audio">Sesleri bilgisayarda oynat</string>
     <string name="suffix_seekbar_bitrate_mbps">Mbps</string>

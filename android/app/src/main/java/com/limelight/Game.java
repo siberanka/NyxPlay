@@ -338,6 +338,11 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             if (commitTextQueue.isEmpty()) {
                 return;
             }
+            if (!connected) {
+                // Nothing is listening any more
+                commitTextQueue.clear();
+                return;
+            }
             String chunk = commitTextQueue.poll();
             if (conn != null) {
                 conn.sendUtf8Text(chunk);
@@ -697,6 +702,20 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                         tombstonePrefs.edit().putInt("CrashCount", tombstonePrefs.getInt("CrashCount", 0) + 1).commit();
                         reportedCrash = true;
                     }
+
+                    @Override
+                    public void notifyDecoderUnrecoverable() {
+                        runOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed() || displayedFailureDialog) {
+                                return;
+                            }
+                            displayedFailureDialog = true;
+                            LimeLog.severe("Video decoder could not be recovered");
+                            stopConnection();
+                            Dialog.displayDialog(Game.this, getResources().getString(R.string.conn_error_title),
+                                    getResources().getString(R.string.video_decoder_init_failed), true);
+                        });
+                    }
                 },
                 tombstonePrefs.getInt("CrashCount", 0),
                 connMgr.isActiveNetworkMetered(),
@@ -965,13 +984,21 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
         streamContainer.setOnSurfaceAvailable(() -> {
             if (!attemptedConnection) {
+                Surface surface = streamContainer.getSurface();
+                if (isFinishing() || isDestroyed() || surface == null || !surface.isValid()) {
+                    LimeLog.info("Surface is not usable yet, not starting connection");
+                    return;
+                }
+
                 LimeLog.info("Surface is available, starting connection...");
                 attemptedConnection = true;
 
-                // Der Decoder erhält die jeweils aktive Oberfläche vom Container
-                decoderRenderer.setRenderTarget(streamContainer.getSurface());
+                // The decoder renders to the surface that is currently active in the container
+                decoderRenderer.setRenderTarget(surface);
 
-                // Starten Sie die NvConnection
+                // From here on leaving the activity has to stop the pending connection
+                connecting = true;
+
                 conn.start(new AndroidAudioRenderer(Game.this, prefConfig.playHostAudio),
                         decoderRenderer, Game.this);
             }
@@ -1836,8 +1863,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             unbindService(usbDriverServiceConnection);
         }
 
+        commitTextHandler.removeCallbacksAndMessages(null);
+
         // Destroy the capture provider
-        inputCaptureProvider.destroy();
+        if (inputCaptureProvider != null) {
+            inputCaptureProvider.destroy();
+        }
         streamContainer.onDestroy();
     }
 
@@ -3589,7 +3620,9 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
             connecting = connected = false;
             updatePipAutoEnter();
 
-            controllerHandler.stop();
+            if (controllerHandler != null) {
+                controllerHandler.stop();
+            }
 
             // Update GameManager state to indicate we're no longer in game
             UiHelper.notifyStreamEnded(this);
@@ -3618,18 +3651,31 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
     @Override
     public boolean stageFailed(final String stage, final int portFlags, final int errorCode) {
+        if (isFinishing() || isDestroyed()) {
+            return false;
+        }
+
         // Perform a connection test if the failure could be due to a blocked port
-        // This does network I/O, so don't do it on the main thread.
-        final int portTestResult = MoonBridge.testClientConnectivity(ServerHelper.CONNECTION_TEST_SERVER, 443, portFlags);
+        // This does network I/O, so don't do it on the main thread. Without any port to
+        // check there is nothing the test could report.
+        final int portTestResult = portFlags != 0 ?
+                MoonBridge.testClientConnectivity(ServerHelper.CONNECTION_TEST_SERVER, 443, portFlags) : 0;
 
         if (errorCode == 0 && portFlags != 0 && (portTestResult == MoonBridge.ML_TEST_RESULT_INCONCLUSIVE || portTestResult == 0)) {
-            spinner.setMessage(getResources().getString(R.string.unlocking_or_starting));
+            final SpinnerDialog currentSpinner = spinner;
+            if (currentSpinner != null) {
+                runOnUiThread(() -> currentSpinner.setMessage(getResources().getString(R.string.unlocking_or_starting)));
+            }
             return true;
         }
 
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+
                 if (spinner != null) {
                     spinner.dismiss();
                     spinner = null;
@@ -3647,6 +3693,13 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
                     String dialogText = getResources().getString(R.string.conn_error_msg) + " " + stage +" (error "+errorCode+")";
 
+                    // A reset while the stream is being negotiated is not a blocked port
+                    boolean hostResetDuringRtsp = stage.toLowerCase(java.util.Locale.ROOT).contains("rtsp") &&
+                            isConnectionResetError(errorCode);
+                    if (hostResetDuringRtsp) {
+                        dialogText += "\n\n" + getResources().getString(R.string.conn_error_rtsp_reset);
+                    }
+
                     switch (errorCode) {
                         case 403: {
                             dialogText += "\n\n" + getResources().getString(R.string.error_msg_permission_denied) + " (" + getResources().getString(R.string.permission_launch_app) + ")";
@@ -3661,7 +3714,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                         }
                     }
 
-                    if (portFlags != 0) {
+                    if (portFlags != 0 && !hostResetDuringRtsp) {
                         dialogText += "\n\n" + getResources().getString(R.string.check_ports_msg) + "\n" +
                                 MoonBridge.stringifyPortFlags(portFlags, "\n");
                     }
@@ -3677,6 +3730,23 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         });
 
         return false;
+    }
+
+    // errno values (Linux and Windows) for a peer reset, abort, broken pipe, timeout or oversized message
+    private static boolean isConnectionResetError(int errorCode) {
+        switch (errorCode) {
+            case 104: // ECONNRESET
+            case 103: // ECONNABORTED
+            case 32:  // EPIPE
+            case 110: // ETIMEDOUT
+            case 90:  // EMSGSIZE
+            case 10054: // WSAECONNRESET
+            case 10053: // WSAECONNABORTED
+            case 10060: // WSAETIMEDOUT
+                return true;
+            default:
+                return false;
+        }
     }
 
     private void finishSecondScreen() {
@@ -3697,20 +3767,32 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         // Perform a connection test if the failure could be due to a blocked port
         // This does network I/O, so don't do it on the main thread.
         final int portFlags = MoonBridge.getPortFlagsFromTerminationErrorCode(errorCode);
-        final int portTestResult = MoonBridge.testClientConnectivity(ServerHelper.CONNECTION_TEST_SERVER,443, portFlags);
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        final int portTestResult = portFlags != 0 ?
+                MoonBridge.testClientConnectivity(ServerHelper.CONNECTION_TEST_SERVER, 443, portFlags) : 0;
 
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+
                 // Let the display go to sleep now
                 getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
                 // Stop processing controller input
-                controllerHandler.stop();
+                if (controllerHandler != null) {
+                    controllerHandler.stop();
+                }
                 timerHandler.removeCallbacksAndMessages(null);
 
                 // Ungrab input
-                setInputGrabState(false);
+                if (inputCaptureProvider != null) {
+                    setInputGrabState(false);
+                }
 
                 if (!displayedFailureDialog) {
                     displayedFailureDialog = true;
@@ -4085,7 +4167,8 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
         if (!surfaceCreated) {
-            throw new IllegalStateException("Surface destroyed before creation!");
+            LimeLog.warning("Surface destroyed before creation");
+            return;
         }
 
         if (attemptedConnection) {
@@ -4587,15 +4670,12 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         if (!prefConfig.enableCommitText || conn == null) {
             return false;
         }
-        // Send backspace events for deleted preceding characters
-        if (beforeLength > 0) {
+        // Send backspace events for deleted preceding characters and delete events for
+        // the characters after the cursor
+        if (beforeLength > 0 || afterLength > 0) {
             flushPendingCommitText();
-            beforeLength = Math.min(beforeLength, MAX_IME_DELETE_REPEAT);
-            short backspaceCode = keyboardTranslator.translate(KeyEvent.KEYCODE_DEL, 0, -1);
-            for (int i = 0; i < beforeLength; i++) {
-                conn.sendKeyboardInput(backspaceCode, com.limelight.nvstream.input.KeyboardPacket.KEY_DOWN, (byte)0, (byte)0);
-                conn.sendKeyboardInput(backspaceCode, com.limelight.nvstream.input.KeyboardPacket.KEY_UP, (byte)0, (byte)0);
-            }
+            sendKeyRepeated(KeyEvent.KEYCODE_DEL, beforeLength);
+            sendKeyRepeated(KeyEvent.KEYCODE_FORWARD_DEL, afterLength);
         }
         return true;
     }

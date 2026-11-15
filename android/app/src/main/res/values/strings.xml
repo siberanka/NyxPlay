@@ -116,6 +116,7 @@
     <string name="conn_starting">Starting</string>
     <string name="conn_error_title">Connection Error</string>
     <string name="conn_error_msg">Failed to start</string>
+    <string name="conn_error_rtsp_reset">The host closed the connection while the stream was starting. Try again; if it keeps happening, restart the host.</string>
     <string name="conn_terminated_title">Connection Terminated</string>
     <string name="conn_terminated_msg">The connection was terminated.</string>
     <string name="error_code_prefix">Error code:</string>

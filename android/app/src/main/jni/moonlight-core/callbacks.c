@@ -53,6 +53,26 @@ void JniEnvKeyInit(void) {
     pthread_key_create(&JniEnvKey, DetachThread);
 }
 
+// Detaches the calling thread after an unrecoverable callback failure. The cached JNIEnv in the
+// TLS slot is cleared as well so a later callback on this thread cannot reuse the stale pointer.
+static void DetachThreadAndForgetEnv(void) {
+    (*JVM)->DetachCurrentThread(JVM);
+
+    pthread_once(&JniEnvKeyInitOnce, JniEnvKeyInit);
+    pthread_setspecific(JniEnvKey, NULL);
+}
+
+// Returns true (after logging and clearing it) if the last call into Java left an exception
+// pending. Used for callbacks where the native side must keep running its own cleanup.
+static bool CallFailed(JNIEnv* env) {
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+        return true;
+    }
+    return false;
+}
+
 JNIEnv* GetThreadEnv(void) {
     JNIEnv* env;
 
@@ -120,7 +140,21 @@ int BridgeDrSetup(int videoFormat, int width, int height, int redrawRate, void* 
     }
 
     // Use a 32K frame buffer that will increase if needed
-    DecodedFrameBuffer = (*env)->NewGlobalRef(env, (*env)->NewByteArray(env, 32768));
+    jbyteArray localBuffer = (*env)->NewByteArray(env, 32768);
+    if (localBuffer == NULL) {
+        (*env)->ExceptionClear(env);
+        (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeDrCleanupMethod);
+        CallFailed(env);
+        return -1;
+    }
+
+    DecodedFrameBuffer = (*env)->NewGlobalRef(env, localBuffer);
+    (*env)->DeleteLocalRef(env, localBuffer);
+    if (DecodedFrameBuffer == NULL) {
+        (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeDrCleanupMethod);
+        CallFailed(env);
+        return -1;
+    }
 
     return 0;
 }
@@ -129,20 +163,26 @@ void BridgeDrStart(void) {
     JNIEnv* env = GetThreadEnv();
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeDrStartMethod);
+    CallFailed(env);
 }
 
 void BridgeDrStop(void) {
     JNIEnv* env = GetThreadEnv();
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeDrStopMethod);
+    CallFailed(env);
 }
 
 void BridgeDrCleanup(void) {
     JNIEnv* env = GetThreadEnv();
 
-    (*env)->DeleteGlobalRef(env, DecodedFrameBuffer);
+    if (DecodedFrameBuffer != NULL) {
+        (*env)->DeleteGlobalRef(env, DecodedFrameBuffer);
+        DecodedFrameBuffer = NULL;
+    }
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeDrCleanupMethod);
+    CallFailed(env);
 }
 
 int BridgeDrSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
@@ -186,7 +226,7 @@ int BridgeDrSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
                                               (jlong)decodeUnit->receiveTimeMs, (jlong)decodeUnit->enqueueTimeMs);
             if ((*env)->ExceptionCheck(env)) {
                 // We will crash here
-                (*JVM)->DetachCurrentThread(JVM);
+                DetachThreadAndForgetEnv();
                 return DR_OK;
             }
             else if (ret != DR_OK) {
@@ -207,7 +247,7 @@ int BridgeDrSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
                                        (jlong)decodeUnit->receiveTimeMs, (jlong)decodeUnit->enqueueTimeMs);
     if ((*env)->ExceptionCheck(env)) {
         // We will crash here
-        (*JVM)->DetachCurrentThread(JVM);
+        DetachThreadAndForgetEnv();
         return DR_OK;
     }
     else {
@@ -234,11 +274,27 @@ int BridgeArInit(int audioConfiguration, POPUS_MULTISTREAM_CONFIGURATION opusCon
                                                   &err);
         if (Decoder == NULL) {
             (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeArCleanupMethod);
+            CallFailed(env);
             return -1;
         }
 
         // We know ahead of time what the buffer size will be for decoded audio, so pre-allocate it
-        DecodedAudioBuffer = (*env)->NewGlobalRef(env, (*env)->NewShortArray(env, opusConfig->channelCount * opusConfig->samplesPerFrame));
+        jshortArray localBuffer = (*env)->NewShortArray(env, opusConfig->channelCount * opusConfig->samplesPerFrame);
+        if (localBuffer != NULL) {
+            DecodedAudioBuffer = (*env)->NewGlobalRef(env, localBuffer);
+            (*env)->DeleteLocalRef(env, localBuffer);
+        }
+        else {
+            (*env)->ExceptionClear(env);
+        }
+
+        if (DecodedAudioBuffer == NULL) {
+            opus_multistream_decoder_destroy(Decoder);
+            Decoder = NULL;
+            (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeArCleanupMethod);
+            CallFailed(env);
+            return -1;
+        }
     }
 
     return err;
@@ -248,28 +304,42 @@ void BridgeArStart(void) {
     JNIEnv* env = GetThreadEnv();
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeArStartMethod);
+    CallFailed(env);
 }
 
 void BridgeArStop(void) {
     JNIEnv* env = GetThreadEnv();
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeArStopMethod);
+    CallFailed(env);
 }
 
 void BridgeArCleanup() {
     JNIEnv* env = GetThreadEnv();
 
-    opus_multistream_decoder_destroy(Decoder);
+    if (Decoder != NULL) {
+        opus_multistream_decoder_destroy(Decoder);
+        Decoder = NULL;
+    }
 
-    (*env)->DeleteGlobalRef(env, DecodedAudioBuffer);
+    if (DecodedAudioBuffer != NULL) {
+        (*env)->DeleteGlobalRef(env, DecodedAudioBuffer);
+        DecodedAudioBuffer = NULL;
+    }
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeArCleanupMethod);
+    CallFailed(env);
 }
 
 void BridgeArDecodeAndPlaySample(char* sampleData, int sampleLength) {
     JNIEnv* env = GetThreadEnv();
 
     jshort* decodedData = (*env)->GetPrimitiveArrayCritical(env, DecodedAudioBuffer, NULL);
+    if (decodedData == NULL) {
+        // Out of memory; drop this sample
+        (*env)->ExceptionClear(env);
+        return;
+    }
 
     int decodeLen = opus_multistream_decode(Decoder,
                                             (const unsigned char*)sampleData,
@@ -284,7 +354,7 @@ void BridgeArDecodeAndPlaySample(char* sampleData, int sampleLength) {
         (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeArPlaySampleMethod, DecodedAudioBuffer);
         if ((*env)->ExceptionCheck(env)) {
             // We will crash here
-            (*JVM)->DetachCurrentThread(JVM);
+            DetachThreadAndForgetEnv();
         }
     }
     else {
@@ -297,24 +367,28 @@ void BridgeClStageStarting(int stage) {
     JNIEnv* env = GetThreadEnv();
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClStageStartingMethod, stage);
+    CallFailed(env);
 }
 
 void BridgeClStageComplete(int stage) {
     JNIEnv* env = GetThreadEnv();
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClStageCompleteMethod, stage);
+    CallFailed(env);
 }
 
 void BridgeClStageFailed(int stage, int errorCode) {
     JNIEnv* env = GetThreadEnv();
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClStageFailedMethod, stage, errorCode);
+    CallFailed(env);
 }
 
 void BridgeClConnectionStarted(void) {
     JNIEnv* env = GetThreadEnv();
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClConnectionStartedMethod);
+    CallFailed(env);
 }
 
 void BridgeClConnectionTerminated(int errorCode) {
@@ -323,7 +397,7 @@ void BridgeClConnectionTerminated(int errorCode) {
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClConnectionTerminatedMethod, errorCode);
     if ((*env)->ExceptionCheck(env)) {
         // We will crash here
-        (*JVM)->DetachCurrentThread(JVM);
+        DetachThreadAndForgetEnv();
     }
 }
 
@@ -336,7 +410,7 @@ void BridgeClRumble(unsigned short controllerNumber, unsigned short lowFreqMotor
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClRumbleMethod, controllerNumber, (short)lowFreqMotor, (short)highFreqMotor);
     if ((*env)->ExceptionCheck(env)) {
         // We will crash here
-        (*JVM)->DetachCurrentThread(JVM);
+        DetachThreadAndForgetEnv();
     }
 }
 
@@ -346,7 +420,7 @@ void BridgeClConnectionStatusUpdate(int connectionStatus) {
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClConnectionStatusUpdateMethod, connectionStatus);
     if ((*env)->ExceptionCheck(env)) {
         // We will crash here
-        (*JVM)->DetachCurrentThread(JVM);
+        DetachThreadAndForgetEnv();
         return;
     }
 }
@@ -369,13 +443,15 @@ void BridgeClSetHdrMode(bool enabled) {
     }
 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClSetHdrModeMethod, enabled, hdrMetadataByteArray);
-    if ((*env)->ExceptionCheck(env)) {
-        // We will crash here
-        (*JVM)->DetachCurrentThread(JVM);
-    }
 
+    // Release the local reference before any exception handling detaches the thread
     if (hdrMetadataByteArray != NULL) {
         (*env)->DeleteLocalRef(env, hdrMetadataByteArray);
+    }
+
+    if ((*env)->ExceptionCheck(env)) {
+        // We will crash here
+        DetachThreadAndForgetEnv();
     }
 }
 
@@ -388,7 +464,7 @@ void BridgeClRumbleTriggers(unsigned short controllerNumber, unsigned short left
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClRumbleTriggersMethod, controllerNumber, (short)leftTrigger, (short)rightTrigger);
     if ((*env)->ExceptionCheck(env)) {
         // We will crash here
-        (*JVM)->DetachCurrentThread(JVM);
+        DetachThreadAndForgetEnv();
     }
 }
 
@@ -398,7 +474,7 @@ void BridgeClSetMotionEventState(uint16_t controllerNumber, uint8_t motionType, 
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClSetMotionEventStateMethod, controllerNumber, motionType, reportRateHz);
     if ((*env)->ExceptionCheck(env)) {
         // We will crash here
-        (*JVM)->DetachCurrentThread(JVM);
+        DetachThreadAndForgetEnv();
     }
 }
 
@@ -409,7 +485,7 @@ void BridgeClSetControllerLED(uint16_t controllerNumber, uint8_t r, uint8_t g, u
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClSetControllerLEDMethod, controllerNumber, (jbyte)r, (jbyte)g, (jbyte)b);
     if ((*env)->ExceptionCheck(env)) {
         // We will crash here
-        (*JVM)->DetachCurrentThread(JVM);
+        DetachThreadAndForgetEnv();
     }
 }
 
@@ -420,7 +496,7 @@ void BridgeClSetTextInputState(bool active, uint8_t flags) {
     (*env)->CallStaticVoidMethod(env, GlobalBridgeClass, BridgeClSetTextInputStateMethod, active, (jbyte)flags);
     if ((*env)->ExceptionCheck(env)) {
         // We will crash here
-        (*JVM)->DetachCurrentThread(JVM);
+        DetachThreadAndForgetEnv();
     }
 }
 
