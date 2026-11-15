@@ -69,7 +69,7 @@ public class SpinnerDialog implements Runnable,OnCancelListener {
     public void run() {
 
         // If we're dying, don't bother doing anything
-        if (activity.isFinishing()) {
+        if (activity.isFinishing() || activity.isDestroyed()) {
             return;
         }
 

@@ -47,6 +47,8 @@ public class AddComputerManually extends AppCompatActivity {
     private ComputerManagerService.ComputerManagerBinder managerBinder;
     private final LinkedBlockingQueue<String> computersToAdd = new LinkedBlockingQueue<>();
     private Thread addThread;
+    private volatile boolean destroyed;
+    private boolean serviceBound;
     private final ServiceConnection serviceConnection = new ServiceConnection() {
         public void onServiceConnected(ComponentName className, final IBinder binder) {
             managerBinder = ((ComputerManagerService.ComputerManagerBinder)binder);
@@ -127,6 +129,11 @@ public class AddComputerManually extends AppCompatActivity {
         boolean invalidReply = false;
         int portTestResult;
 
+        // Nothing is shown for an activity that is going away
+        if (destroyed || isFinishing()) {
+            return;
+        }
+
         SpinnerDialog dialog = SpinnerDialog.displayDialog(this, getResources().getString(R.string.title_add_pc),
             getResources().getString(R.string.msg_add_pc), false);
 
@@ -180,6 +187,11 @@ public class AddComputerManually extends AppCompatActivity {
 
         dialog.dismiss();
 
+        // The activity may have been closed while the request was running; its result is dropped
+        if (destroyed || isFinishing()) {
+            return;
+        }
+
         if (invalidInput) {
             Dialog.displayDialog(this, getResources().getString(R.string.conn_error_title), getResources().getString(R.string.addpc_unknown_host), false);
         }
@@ -203,6 +215,10 @@ public class AddComputerManually extends AppCompatActivity {
             AddComputerManually.this.runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
+                    if (destroyed) {
+                        return;
+                    }
+
                     Toast.makeText(AddComputerManually.this, getResources().getString(R.string.addpc_success), Toast.LENGTH_LONG).show();
 
                     if (!isFinishing()) {
@@ -232,6 +248,10 @@ public class AddComputerManually extends AppCompatActivity {
     }
 
     private void startAddThread() {
+        if (destroyed) {
+            return;
+        }
+
         addThread = new Thread() {
             @Override
             public void run() {
@@ -280,8 +300,13 @@ public class AddComputerManually extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
 
-        if (managerBinder != null) {
-            joinAddThread();
+        destroyed = true;
+        joinAddThread();
+        Dialog.closeDialogs();
+        SpinnerDialog.closeDialogs(this);
+
+        if (serviceBound) {
+            serviceBound = false;
             unbindService(serviceConnection);
         }
     }
@@ -367,7 +392,7 @@ public class AddComputerManually extends AppCompatActivity {
         });
 
         // Bind to the ComputerManager service
-        bindService(new Intent(AddComputerManually.this,
+        serviceBound = bindService(new Intent(AddComputerManually.this,
                     ComputerManagerService.class), serviceConnection, Service.BIND_AUTO_CREATE);
 
 

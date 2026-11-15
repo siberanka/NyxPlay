@@ -63,13 +63,6 @@ public class AddComputerManuallyDeepLinkTest {
         shadowOf(Looper.getMainLooper()).idle();
     }
 
-    // The latest question shown to the user. Progress dialogs of an add that a previous test
-    // left running in the background are not questions.
-    private static AlertDialog confirmationDialog() {
-        AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
-        return dialog instanceof android.app.ProgressDialog ? null : dialog;
-    }
-
     private ActivityController<AddComputerManually> open(String uri) {
         Application app = ApplicationProvider.getApplicationContext();
         Intent intent = new Intent(app, AddComputerManually.class);
@@ -128,7 +121,7 @@ public class AddComputerManuallyDeepLinkTest {
     public void linkWithoutQueryPrefillsTheHostAndDoesNotAsk() {
         ActivityController<AddComputerManually> c = open("art://10.0.2.2:57989");
 
-        assertNull(confirmationDialog());
+        assertNull(ShadowAlertDialog.getLatestAlertDialog());
         TextView host = c.get().findViewById(R.id.hostTextView);
         assertEquals("10.0.2.2:57989", host.getText().toString());
     }
@@ -137,7 +130,7 @@ public class AddComputerManuallyDeepLinkTest {
     public void ipv6LinkPrefillsTheHost() {
         ActivityController<AddComputerManually> c = open("art://[::1]");
 
-        assertNull(confirmationDialog());
+        assertNull(ShadowAlertDialog.getLatestAlertDialog());
         TextView host = c.get().findViewById(R.id.hostTextView);
         assertEquals("[::1]", host.getText().toString());
     }
