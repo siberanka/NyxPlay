@@ -34,6 +34,17 @@ CenteredGridView {
         // Setup signals on CM
         ComputerManager.computerAddCompleted.connect(addComplete)
 
+        // One-time notices about the saved hosts (see IdentityManager)
+        var notice = StreamingPreferences.takeStartupNotice()
+        if (notice === "import") {
+            noticeDialog.text = qsTr("Your hosts and settings were imported from an existing Moonlight installation. Each host must be paired once with NyxPlay before you can stream.")
+            noticeDialog.open()
+        }
+        else if (notice === "repair") {
+            noticeDialog.text = qsTr("The saved client identity could not be used on this computer or account, so a new one was created. Please pair each of your hosts again.")
+            noticeDialog.open()
+        }
+
         // Highlight the first item if a gamepad is connected
         if (currentIndex === -1 && SdlGamepadKeyNavigation.getConnectedGamepads() > 0) {
             currentIndex = 0
@@ -292,6 +303,11 @@ CenteredGridView {
         // Using Setup-Guide here instead of Troubleshooting because it's likely that users
         // will arrive here by forgetting to enable GameStream or not forwarding ports.
         helpUrl: "https://github.com/siberanka/NyxPlay"
+    }
+
+    NavigableMessageDialog {
+        id: noticeDialog
+        standardButtons: Dialog.Ok
     }
 
     NavigableMessageDialog {

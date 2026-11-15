@@ -241,6 +241,16 @@
 <context>
     <name>PcView</name>
     <message>
+        <location filename="../gui/PcView.qml" line="33"/>
+        <source>Your hosts and settings were imported from an existing Moonlight installation. Each host must be paired once with NyxPlay before you can stream.</source>
+        <translation>Ana bilgisayarlarınız ve ayarlarınız mevcut bir Moonlight kurulumundan içe aktarıldı. Yayın yapmadan önce her ana bilgisayarın NyxPlay ile bir kez eşleştirilmesi gerekir.</translation>
+    </message>
+    <message>
+        <location filename="../gui/PcView.qml" line="37"/>
+        <source>The saved client identity could not be used on this computer or account, so a new one was created. Please pair each of your hosts again.</source>
+        <translation>Kayıtlı istemci kimliği bu bilgisayarda veya hesapta kullanılamadığı için yeni bir kimlik oluşturuldu. Lütfen ana bilgisayarlarınızın her birini yeniden eşleştirin.</translation>
+    </message>
+    <message>
         <location filename="../gui/PcView.qml" line="21"/>
         <source>Computers</source>
         <translation>Bilgisayarlar</translation>

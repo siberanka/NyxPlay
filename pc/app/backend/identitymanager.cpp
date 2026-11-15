@@ -1,5 +1,6 @@
 #include "identitymanager.h"
 #include "utils.h"
+#include "identitystore.h"
 
 #include <QDebug>
 
@@ -101,7 +102,7 @@ void IdentityManager::createCredentials(QSettings& settings)
     }
 
     settings.setValue(SER_CERT, m_CachedPemCert);
-    settings.setValue(SER_KEY, m_CachedPrivateKey);
+    IdentityStore::save(settings, m_CachedPrivateKey);
 
     qInfo() << "Wrote new identity credentials to settings";
 }
@@ -111,9 +112,22 @@ IdentityManager::IdentityManager()
     QSettings settings;
 
     m_CachedPemCert = settings.value(SER_CERT).toByteArray();
-    m_CachedPrivateKey = settings.value(SER_KEY).toByteArray();
+    IdentityStore::Result stored = IdentityStore::load(settings);
+    m_CachedPrivateKey = stored.key;
 
-    if (m_CachedPemCert.isEmpty() || m_CachedPrivateKey.isEmpty()) {
+    if (stored.status == IdentityStore::Status::Undecryptable) {
+        // The stored key belongs to another Windows user or machine. Start a
+        // new identity and make every saved host ask for pairing again.
+        qWarning() << "The saved client identity cannot be decrypted on this system";
+        m_CachedPemCert.clear();
+        m_CachedPrivateKey.clear();
+        settings.remove(SER_UNIQUEID);
+        createCredentials(settings);
+        int hosts = IdentityStore::clearHostPairings(settings);
+        IdentityStore::setStartupNotice(settings, "repair");
+        qInfo() << "Created a new client identity;" << hosts << "saved host(s) need to be paired again";
+    }
+    else if (m_CachedPemCert.isEmpty() || m_CachedPrivateKey.isEmpty()) {
         qInfo() << "No existing credentials found";
         createCredentials(settings);
     }

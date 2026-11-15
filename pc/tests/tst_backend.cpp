@@ -2,6 +2,8 @@
 
 #include "backend/nvhttp.h"
 #include "backend/nvcomputer.h"
+#include "backend/identitystore.h"
+#include "backend/moonlightimport.h"
 
 static QString wrap(const QString& body, int status = 200)
 {
@@ -158,6 +160,309 @@ private slots:
     }
 };
 
+class IdentityStoreTest : public QObject
+{
+    Q_OBJECT
+
+private:
+    static QByteArray samplePem()
+    {
+        return "-----BEGIN PRIVATE KEY-----\nQUJDREVGR0hJSktMTU5PUA==\n-----END PRIVATE KEY-----\n";
+    }
+
+private slots:
+    void roundTrip()
+    {
+#ifdef Q_OS_WIN
+        QByteArray blob = IdentityStore::protect(samplePem());
+        QVERIFY(!blob.isEmpty());
+        QVERIFY(!blob.contains("PRIVATE KEY"));
+        QCOMPARE(IdentityStore::unprotect(blob), samplePem());
+#else
+        QVERIFY(IdentityStore::protect(samplePem()).isEmpty());
+#endif
+    }
+
+    void tamperedBlobIsRejected()
+    {
+#ifdef Q_OS_WIN
+        QByteArray blob = IdentityStore::protect(samplePem());
+        QVERIFY(!blob.isEmpty());
+        blob[blob.size() / 2] = blob[blob.size() / 2] ^ 0x5A;
+        QVERIFY(IdentityStore::unprotect(blob).isEmpty());
+        QVERIFY(IdentityStore::unprotect(QByteArray("not a protected value")).isEmpty());
+#endif
+    }
+
+    void saveThenLoad()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings s(dir.filePath("a.ini"), QSettings::IniFormat);
+
+        QCOMPARE(IdentityStore::load(s).status, IdentityStore::Status::Missing);
+
+        IdentityStore::save(s, samplePem());
+        IdentityStore::Result r = IdentityStore::load(s);
+        QCOMPARE(r.status, IdentityStore::Status::Loaded);
+        QCOMPARE(r.key, samplePem());
+#ifdef Q_OS_WIN
+        QVERIFY(!s.contains(IdentityStore::KEY_PLAIN));
+        QVERIFY(s.contains(IdentityStore::KEY_PROTECTED));
+#endif
+    }
+
+    void plainKeyIsMigrated()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QString path = dir.filePath("b.ini");
+        {
+            QSettings s(path, QSettings::IniFormat);
+            s.setValue(IdentityStore::KEY_PLAIN, samplePem());
+        }
+
+        QSettings s(path, QSettings::IniFormat);
+        IdentityStore::Result r = IdentityStore::load(s);
+        QCOMPARE(r.key, samplePem());
+#ifdef Q_OS_WIN
+        QCOMPARE(r.status, IdentityStore::Status::Migrated);
+        s.sync();
+        QVERIFY(!s.contains(IdentityStore::KEY_PLAIN));
+
+        // The stored file no longer contains the key material
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QVERIFY(!f.readAll().contains("PRIVATE KEY"));
+        f.close();
+
+        // And the migrated value loads again
+        QCOMPARE(IdentityStore::load(s).key, samplePem());
+#else
+        QCOMPARE(r.status, IdentityStore::Status::Loaded);
+#endif
+    }
+
+    void undecryptableValueIsReported()
+    {
+#ifdef Q_OS_WIN
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings s(dir.filePath("c.ini"), QSettings::IniFormat);
+        s.setValue(IdentityStore::KEY_PROTECTED, QByteArray("value from another machine"));
+        IdentityStore::Result r = IdentityStore::load(s);
+        QCOMPARE(r.status, IdentityStore::Status::Undecryptable);
+        QVERIFY(r.key.isEmpty());
+#endif
+    }
+
+    void clearsPinnedCertificatesOnly()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings s(dir.filePath("d.ini"), QSettings::IniFormat);
+        s.beginWriteArray("hosts");
+        for (int i = 0; i < 2; i++) {
+            s.setArrayIndex(i);
+            s.setValue("uuid", QString("host-%1").arg(i));
+            s.setValue("hostname", QString("PC %1").arg(i));
+            s.setValue("srvcert", QByteArray("CERT"));
+        }
+        s.endArray();
+
+        QCOMPARE(IdentityStore::clearHostPairings(s), 2);
+
+        QCOMPARE(s.beginReadArray("hosts"), 2);
+        for (int i = 0; i < 2; i++) {
+            s.setArrayIndex(i);
+            QVERIFY(s.value("srvcert").toByteArray().isEmpty());
+            QCOMPARE(s.value("uuid").toString(), QString("host-%1").arg(i));
+            QCOMPARE(s.value("hostname").toString(), QString("PC %1").arg(i));
+        }
+        s.endArray();
+
+        QCOMPARE(IdentityStore::clearHostPairings(s), 0);
+    }
+
+    void noticeIsReturnedOnce()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings s(dir.filePath("e.ini"), QSettings::IniFormat);
+        QVERIFY(IdentityStore::takeStartupNotice(s).isEmpty());
+        IdentityStore::setStartupNotice(s, "repair");
+        QCOMPARE(IdentityStore::takeStartupNotice(s), QString("repair"));
+        QVERIFY(IdentityStore::takeStartupNotice(s).isEmpty());
+    }
+};
+
+class FakeImportSource : public ImportSource
+{
+public:
+    QList<QVariantMap> hostList;
+    QVariantMap prefs;
+
+    QList<QVariantMap> hosts() const override { return hostList; }
+    QVariantMap preferences() const override { return prefs; }
+};
+
+class MoonlightImportTest : public QObject
+{
+    Q_OBJECT
+
+private:
+    static QVariantMap goodHost(const QString& uuid)
+    {
+        QVariantMap h;
+        h["uuid"] = uuid;
+        h["hostname"] = "Desktop";
+        h["mac"] = QByteArray("\x01\x02\x03\x04\x05\x06", 6);
+        h["localaddress"] = "192.168.1.20";
+        h["localport"] = 47989;
+        h["manualaddress"] = "host.example.com";
+        h["srvcert"] = QByteArray("CERT");
+        h["apps"] = "ignored";
+        return h;
+    }
+
+private slots:
+    void importsHostsWithoutPairingState()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings dest(dir.filePath("f.ini"), QSettings::IniFormat);
+        QVERIFY(MoonlightImport::isNeeded(dest));
+
+        FakeImportSource src;
+        src.hostList << goodHost("ABC-123") << goodHost("DEF-456");
+        MoonlightImport::Result r = MoonlightImport::run(dest, src);
+        QCOMPARE(r.hostsImported, 2);
+        QCOMPARE(r.hostsSkipped, 0);
+
+        QCOMPARE(dest.beginReadArray("hosts"), 2);
+        dest.setArrayIndex(0);
+        QCOMPARE(dest.value("uuid").toString(), QString("ABC-123"));
+        QCOMPARE(dest.value("hostname").toString(), QString("Desktop"));
+        QCOMPARE(dest.value("mac").toByteArray().size(), 6);
+        QCOMPARE(dest.value("localaddress").toString(), QString("192.168.1.20"));
+        QCOMPARE(dest.value("localport").toInt(), 47989);
+        QVERIFY(!dest.contains("srvcert"));
+        QVERIFY(!dest.contains("apps"));
+        dest.endArray();
+
+        QVERIFY(!MoonlightImport::isNeeded(dest));
+    }
+
+    void neverCopiesIdentity()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings dest(dir.filePath("g.ini"), QSettings::IniFormat);
+
+        FakeImportSource src;
+        src.hostList << goodHost("ABC-123");
+        src.prefs["key"] = "-----BEGIN PRIVATE KEY-----";
+        src.prefs["certificate"] = "-----BEGIN CERTIFICATE-----";
+        src.prefs["uniqueid"] = "deadbeef";
+        src.prefs["fps"] = 90;
+        MoonlightImport::Result r = MoonlightImport::run(dest, src);
+        QCOMPARE(r.preferencesImported, 1);
+
+        QVERIFY(!dest.contains("key"));
+        QVERIFY(!dest.contains("certificate"));
+        QVERIFY(!dest.contains("uniqueid"));
+        QCOMPARE(dest.value("fps").toInt(), 90);
+    }
+
+    void skipsMalformedEntries()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings dest(dir.filePath("h.ini"), QSettings::IniFormat);
+
+        FakeImportSource src;
+        QVariantMap badUuid = goodHost("../evil");
+        QVariantMap noAddress = goodHost("NOADDR");
+        noAddress.remove("localaddress");
+        noAddress.remove("manualaddress");
+        QVariantMap badPort = goodHost("BADPORT");
+        badPort["localport"] = 99999;
+        QVariantMap badAddr = goodHost("BADADDR");
+        badAddr["localaddress"] = "a b\\c";
+        badAddr.remove("manualaddress");
+        src.hostList << badUuid << noAddress << goodHost("DUP") << goodHost("DUP")
+                     << badPort << badAddr << goodHost("OK-1");
+
+        MoonlightImport::Result r = MoonlightImport::run(dest, src);
+        QCOMPARE(r.hostsImported, 3); // DUP, BADPORT (port dropped), OK-1
+        QCOMPARE(r.hostsSkipped, 4);
+
+        QCOMPARE(dest.beginReadArray("hosts"), 3);
+        dest.setArrayIndex(1);
+        QCOMPARE(dest.value("uuid").toString(), QString("BADPORT"));
+        QVERIFY(!dest.contains("localport"));
+        dest.endArray();
+    }
+
+    void rejectsOutOfRangePreferences()
+    {
+        QVariantMap raw;
+        raw["width"] = 99999999;
+        raw["height"] = "abc";
+        raw["fps"] = 120;
+        raw["bitrate"] = -5;
+        raw["audiocfg"] = 7;
+        raw["hdr"] = "true";
+        raw["vsync"] = "maybe";
+        raw["unknownkey"] = 1;
+
+        QVariantMap out = MoonlightImport::sanitizePreferences(raw);
+        QCOMPARE(out.size(), 2);
+        QCOMPARE(out.value("fps").toInt(), 120);
+        QCOMPARE(out.value("hdr").toBool(), true);
+    }
+
+    void doneFlagSetEvenWhenNothingImported()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings dest(dir.filePath("i.ini"), QSettings::IniFormat);
+
+        FakeImportSource src;
+        src.hostList << goodHost("../evil");
+        MoonlightImport::Result r = MoonlightImport::run(dest, src);
+        QCOMPARE(r.hostsImported, 0);
+        QVERIFY(!MoonlightImport::isNeeded(dest));
+        QCOMPARE(dest.beginReadArray("hosts"), 0);
+        dest.endArray();
+    }
+
+    void notNeededWhenHostsExist()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings dest(dir.filePath("j.ini"), QSettings::IniFormat);
+        dest.beginWriteArray("hosts");
+        dest.setArrayIndex(0);
+        dest.setValue("uuid", "X");
+        dest.endArray();
+        QVERIFY(!MoonlightImport::isNeeded(dest));
+    }
+
+    void doesNotOverwriteExistingPreferences()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings dest(dir.filePath("k.ini"), QSettings::IniFormat);
+        dest.setValue("fps", 30);
+
+        FakeImportSource src;
+        src.prefs["fps"] = 144;
+        MoonlightImport::run(dest, src);
+        QCOMPARE(dest.value("fps").toInt(), 30);
+    }
+};
+
 template <typename T>
 static int runSuite(int argc, char** argv)
 {
@@ -184,6 +489,8 @@ int main(int argc, char** argv)
     status |= runSuite<AppListParseTest>(argc, argv);
     status |= runSuite<NetworkErrorTest>(argc, argv);
     status |= runSuite<UuidTest>(argc, argv);
+    status |= runSuite<IdentityStoreTest>(argc, argv);
+    status |= runSuite<MoonlightImportTest>(argc, argv);
     return status;
 }
 

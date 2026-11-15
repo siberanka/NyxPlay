@@ -16,7 +16,7 @@ win32 {
         INCLUDEPATH += $$PWD/../libs/windows/include/x64
     }
     INCLUDEPATH += $$PWD/../libs/windows/include
-    LIBS += -llibssl -llibcrypto ws2_32.lib winmm.lib
+    LIBS += -llibssl -llibcrypto crypt32.lib ws2_32.lib winmm.lib
     CONFIG(release, debug|release): LIBS += -L$$MOONLIGHT_COMMON_C_DIR/release -lmoonlight-common-c
     else: LIBS += -L$$MOONLIGHT_COMMON_C_DIR/debug -lmoonlight-common-c
 }
@@ -31,6 +31,8 @@ SOURCES += \
     ../app/backend/nvaddress.cpp \
     ../app/backend/nvcomputer.cpp \
     ../app/backend/identitymanager.cpp \
+    ../app/backend/identitystore.cpp \
+    ../app/backend/moonlightimport.cpp \
     ../app/settings/compatfetcher.cpp \
     ../app/path.cpp
 
@@ -40,5 +42,7 @@ HEADERS += \
     ../app/backend/nvaddress.h \
     ../app/backend/nvcomputer.h \
     ../app/backend/identitymanager.h \
+    ../app/backend/identitystore.h \
+    ../app/backend/moonlightimport.h \
     ../app/settings/compatfetcher.h \
     ../app/path.h

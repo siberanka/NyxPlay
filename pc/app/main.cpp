@@ -54,6 +54,7 @@
 #include "gui/appmodel.h"
 #include "backend/autoupdatechecker.h"
 #include "backend/computermanager.h"
+#include "backend/moonlightimport.h"
 #include "backend/systemproperties.h"
 #include "streaming/session.h"
 #include "settings/streamingpreferences.h"
@@ -765,6 +766,10 @@ int main(int argc, char *argv[])
     if (!qgetenv("XDG_CURRENT_DESKTOP").contains("KDE")) {
         SDL_SetHint("SDL_VIDEO_WAYLAND_MODE_SCALING", "aspect");
     }
+
+    // Bring over hosts and settings from an existing Moonlight installation on
+    // the first run; this must happen before the preferences are loaded.
+    MoonlightImport::runAtStartup();
 
     QGuiApplication app(argc, argv);
 

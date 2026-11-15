@@ -1,5 +1,6 @@
 #include "streamingpreferences.h"
 #include "utils.h"
+#include "backend/identitystore.h"
 
 #include <QSettings>
 #include <QTranslator>
@@ -418,4 +419,10 @@ int StreamingPreferences::getDefaultBitrate(int width, int height, int fps, bool
     }
 
     return qRound(resolutionFactor * frameRateFactor) * 1000;
+}
+
+QString StreamingPreferences::takeStartupNotice()
+{
+    QSettings settings;
+    return IdentityStore::takeStartupNotice(settings);
 }

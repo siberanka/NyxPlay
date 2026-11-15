@@ -50,7 +50,7 @@ win32 {
     }
 
     INCLUDEPATH += $$PWD/../libs/windows/include
-    LIBS += ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib
+    LIBS += ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib crypt32.lib
 }
 macx:!disable-prebuilts {
     !exists($$PWD/../libs/mac) {
@@ -171,6 +171,8 @@ SOURCES += \
     main.cpp \
     backend/computerseeker.cpp \
     backend/identitymanager.cpp \
+    backend/identitystore.cpp \
+    backend/moonlightimport.cpp \
     backend/nvcomputer.cpp \
     backend/nvhttp.cpp \
     backend/nvpairingmanager.cpp \
@@ -215,6 +217,8 @@ HEADERS += \
     utils.h \
     backend/computerseeker.h \
     backend/identitymanager.h \
+    backend/identitystore.h \
+    backend/moonlightimport.h \
     backend/nvcomputer.h \
     backend/nvhttp.h \
     backend/nvpairingmanager.h \

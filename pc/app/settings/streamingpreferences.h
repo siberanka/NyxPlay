@@ -160,6 +160,9 @@ public:
 
     Q_INVOKABLE bool retranslate();
 
+    // Returns and clears a one-time startup notice code ("import", "repair")
+    Q_INVOKABLE QString takeStartupNotice();
+
     // Directly accessible members for preferences
     int width;
     int height;
