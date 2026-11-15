@@ -303,6 +303,15 @@ namespace rtsp_stream {
         return;
       }
 
+      // The tag only proves that the sender has the key. A message that was recorded earlier carries a valid tag
+      // as well, so every launch accepts each sequence number once and in increasing order.
+      if (!rtsp_accept_sequence(*socket->session, seq)) {
+        BOOST_LOG(warning) << "RTSP: rejecting encrypted message with sequence number "sv << seq << " that is not newer than the last one of launch session "sv << socket->session->id;
+
+        respond(socket->sock, *socket->session, nullptr, 400, "BAD REQUEST", 0, {});
+        return;
+      }
+
       msg_t req {new msg_t::element_type {}};
       if (auto status = parseRtspMessage(req.get(), (char *) plaintext.data(), plaintext.size())) {
         BOOST_LOG(error) << "Malformed RTSP message: ["sv << status << ']';
@@ -538,7 +547,17 @@ namespace rtsp_stream {
 
       auto launch_session {launch_slot.pending()};
       if (launch_session) {
-        if (socket_t::open_connections.load() >= socket_t::MAX_OPEN_CONNECTIONS) {
+        boost::system::error_code peer_ec;
+        auto peer = socket->sock.remote_endpoint(peer_ec);
+
+        if (peer_ec) {
+          BOOST_LOG(debug) << "RTSP peer is gone: "sv << peer_ec.message();
+          socket->close_now();
+        } else if (!rtsp_peer_allowed(*launch_session, peer.address())) {
+          // Unencrypted RTSP of a launch belongs to the client that started it
+          BOOST_LOG(warning) << "Refusing RTSP connection from ["sv << peer_address_key(peer.address()) << "], the unencrypted launch session "sv << launch_session->id << " belongs to another address"sv;
+          socket->close_now();
+        } else if (socket_t::open_connections.load() >= socket_t::MAX_OPEN_CONNECTIONS) {
           BOOST_LOG(warning) << "Refusing RTSP connection, too many open connections"sv;
           socket->close_now();
         } else {
@@ -860,6 +879,53 @@ namespace rtsp_stream {
 
   void launch_slot_t::release_announce(launch_session_t &launch_session) {
     launch_session.announced = false;
+  }
+
+  std::string peer_address_key(const boost::asio::ip::address &address) {
+    auto normalized = net::normalize_address(address);
+    if (normalized.is_v6()) {
+      // Link-local addresses carry the interface in the scope id, it is not part of the peer
+      auto v6 = normalized.to_v6();
+      v6.scope_id(0);
+      return v6.to_string();
+    }
+
+    return normalized.to_string();
+  }
+
+  bool rtsp_peer_allowed(const launch_session_t &launch_session, const boost::asio::ip::address &peer) {
+    if (launch_session.rtsp_cipher) {
+      // Only the launching client has the key, a message from any address has to prove it
+      return true;
+    }
+
+    return !launch_session.remote_address.empty() && launch_session.remote_address == peer_address_key(peer);
+  }
+
+  bool rtsp_accept_sequence(launch_session_t &launch_session, std::uint32_t sequence) {
+    auto last = launch_session.rtsp_last_sequence.load();
+    while (sequence > last) {
+      if (launch_session.rtsp_last_sequence.compare_exchange_weak(last, sequence)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  bool plaintext_rtsp_allowed(int mode, const boost::asio::ip::address &client) {
+    switch (mode) {
+      case config::RTSP_PLAINTEXT_ALWAYS:
+        return true;
+      case config::RTSP_PLAINTEXT_LAN_ONLY:
+        {
+          auto nettype = net::from_address(peer_address_key(client));
+          return nettype == net::net_e::PC || nettype == net::net_e::LAN;
+        }
+      default:
+        // Never, and any value that is not known
+        return false;
+    }
   }
 
   bool launch_session_raise(std::shared_ptr<launch_session_t> launch_session) {
@@ -1441,6 +1507,13 @@ namespace rtsp_stream {
     if (!pending || pending->id != session.id) {
       BOOST_LOG(warning) << "Rejecting ANNOUNCE from ["sv << remote_address << "], launch session "sv << session.id << " is no longer pending"sv;
       respond(sock, session, &option, 409, "Conflict", req->sequenceNumber, {});
+      return;
+    }
+
+    // Neither the first nor a repeated ANNOUNCE of an unencrypted launch may come from another address
+    if (!rtsp_peer_allowed(session, remote_endpoint.address())) {
+      BOOST_LOG(warning) << "Rejecting ANNOUNCE from ["sv << remote_address << "], the unencrypted launch session "sv << session.id << " belongs to another address"sv;
+      respond(sock, session, &option, 403, "Forbidden", req->sequenceNumber, {});
       return;
     }
 

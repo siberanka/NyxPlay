@@ -214,7 +214,7 @@
         }
       },
       created() {
-        fetch("/api/config")
+        fetch("./api/config")
           .then((r) => r.json())
           .then((r) => {
             this.platform = r.platform;

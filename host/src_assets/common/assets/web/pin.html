@@ -470,6 +470,12 @@
           ).innerHTML = `<div class="alert alert-warning" role="alert">${this.i18n.t('pin.pending_multiple')}</div>`;
           return;
         }
+        if (this.pendingPairings.length === 0 && !this.selectedPairing) {
+          document.querySelector(
+            "#status"
+          ).innerHTML = `<div class="alert alert-warning" role="alert">${this.i18n.t('pin.pending_none')}</div>`;
+          return;
+        }
         let b = JSON.stringify({pin: pin, name: name, pairing_id: this.selectedPairing || undefined});
         fetch("./api/pin", {
           credentials: 'include',
@@ -492,10 +498,11 @@
 
               alert(this.i18n.t('pin.pair_success_check_perm'));
             } else {
-              const several = Array.isArray(response.pairings) && response.pairings.length > 1;
-              document.querySelector(
-                "#status"
-              ).innerHTML = `<div class="alert alert-danger" role="alert">${this.i18n.t(several ? 'pin.pending_multiple' : 'pin.pair_failure')}</div>`;
+              const several = this.pendingPairings.length > 1 && !this.selectedPairing;
+              const status = document.querySelector("#status");
+              status.innerHTML = `<div class="alert alert-danger" role="alert"></div>`;
+              // Text from the server is shown as text, never as markup
+              status.firstChild.textContent = several ? this.i18n.t('pin.pending_multiple') : (response.error || this.i18n.t('pin.pair_failure'));
             }
             this.refreshPendingPairings();
           });
@@ -514,7 +521,7 @@
         .then(resp => resp.json())
         .then(resp => {
           if (!resp.status) {
-            this.otpMessage = resp.message
+            this.otpMessage = resp.error || resp.message
             this.otpStatus = 'danger'
             return
           }
@@ -647,7 +654,7 @@
           if (resp.status) {
             this.refreshClients();
           } else {
-            throw new Error(resp.message);
+            throw new Error(resp.error || resp.message);
           }
         })
         .catch(err => {

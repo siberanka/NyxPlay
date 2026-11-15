@@ -165,6 +165,10 @@ namespace config {
   constexpr int ENCRYPTION_MODE_OPPORTUNISTIC = 1;  // Use video encryption if available, but stream without it if not supported
   constexpr int ENCRYPTION_MODE_MANDATORY = 2;  // Always use video encryption and refuse clients that can't encrypt
 
+  constexpr int RTSP_PLAINTEXT_NEVER = 0;  // Refuse launches that use unencrypted RTSP
+  constexpr int RTSP_PLAINTEXT_LAN_ONLY = 1;  // Accept unencrypted RTSP only for clients on a local network
+  constexpr int RTSP_PLAINTEXT_ALWAYS = 2;  // Accept unencrypted RTSP from any client
+
   struct stream_t {
     std::chrono::milliseconds ping_timeout;
 
@@ -175,6 +179,9 @@ namespace config {
     // Video encryption settings for LAN and WAN streams
     int lan_encryption_mode;
     int wan_encryption_mode;
+
+    // Which launches may use RTSP without encryption (legacy clients)
+    int rtsp_plaintext;
   };
 
   struct nvhttp_t {

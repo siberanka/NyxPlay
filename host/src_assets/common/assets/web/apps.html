@@ -670,7 +670,7 @@
         .then(r => r.json())
         .then((r) => {
           if (!r.status) {
-            alert(this.$t("apps.reorder_failed") + r.error);
+            alert(this.$t("apps.reorder_failed") + ((r && r.error) || ''));
           }
         })
         .finally(() => {
@@ -721,7 +721,7 @@
           .then(r => r.json())
           .then(r => {
             if (!r.status) {
-              alert(this.$t('apps.launch_failed') + r.error);
+              alert(this.$t('apps.launch_failed') + ((r && r.error) || ''));
             }
           })
           .finally(() => {
@@ -743,7 +743,7 @@
           .then((r) => r.json())
           .then((r) => {
             if (!r.status) {
-              alert("apps.close_failed")
+              alert(this.$t('apps.close_failed') + (r && r.error ? ' ' + r.error : ''))
             }
           })
           .finally(() => {
@@ -787,7 +787,7 @@
           }).then((r) => r.json())
           .then((r) => {
             if (!r.status) {
-              alert("Delete failed! " + r.error);
+              alert(this.$t('apps.delete_failed') + ((r && r.error) || ''));
             }
           })
           .finally(() => {
@@ -931,8 +931,8 @@
         }).then((r) => r.json())
         .then((r) => {
           if (!r.status) {
-            alert(this.$t('apps.save_failed') + r.error);
-            throw new Error(`App save failed: ${r.error}`);
+            alert(this.$t('apps.save_failed') + ((r && r.error) || ''));
+            throw new Error(`App save failed: ${(r && r.error) || ''}`);
           }
         })
         .then(() => {

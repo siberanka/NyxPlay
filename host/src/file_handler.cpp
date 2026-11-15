@@ -53,4 +53,35 @@ namespace file_handler {
 
     return 0;
   }
+
+  int write_file_atomic(const char *path, const std::string_view &contents) {
+    namespace fs = std::filesystem;
+
+    const fs::path target {path};
+    fs::path temp = target;
+    temp += ".tmp";
+
+    std::error_code ec;
+    {
+      std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+      if (!out.is_open()) {
+        return -1;
+      }
+      out.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+      out.flush();
+      if (!out.good()) {
+        out.close();
+        fs::remove(temp, ec);
+        return -1;
+      }
+    }
+
+    // The rename replaces the target in one step: readers see the old or the new file, never a partial one
+    fs::rename(temp, target, ec);
+    if (ec) {
+      fs::remove(temp, ec);
+      return -1;
+    }
+    return 0;
+  }
 }  // namespace file_handler

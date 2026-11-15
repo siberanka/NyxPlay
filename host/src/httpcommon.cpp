@@ -86,8 +86,11 @@ namespace http {
     outputTree["salt"] = salt;
     outputTree["password"] = util::hex(crypto::hash(password + salt)).to_string();
     try {
-      std::ofstream out(file);
-      out << outputTree.dump(4);  // Pretty-print with an indent of 4 spaces.
+      // Replace the file in one step: a failed write keeps the previous credentials intact
+      if (file_handler::write_file_atomic(file.c_str(), outputTree.dump(4)) != 0) {  // Pretty-print with an indent of 4 spaces.
+        BOOST_LOG(error) << "error writing to the credentials file, perhaps try this again as an administrator?"sv;
+        return -1;
+      }
     } catch (std::exception &e) {
       BOOST_LOG(error) << "error writing to the credentials file, perhaps try this again as an administrator? Details: "sv << e.what();
       return -1;
@@ -180,7 +183,7 @@ namespace http {
     return 0;
   }
 
-  bool download_file(const std::string &url, const std::string &file, long ssl_version) {
+  bool download_file(const std::string &url, const std::string &file, long ssl_version, long timeout_seconds) {
     // sonar complains about weak ssl and tls versions; however sonar cannot detect the fix
     CURL *curl = curl_easy_init();  // NOSONAR
     if (!curl) {
@@ -209,7 +212,7 @@ namespace http {
     // Never follow other schemes (file://, ftp:// ...) and bound the transfer time and size
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, (curl_off_t) 64 * 1024 * 1024);
 #ifdef _WIN32
     curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);

@@ -94,6 +94,9 @@
     <div class="alert alert-success my-4" v-if="restarted">
       <b>{{ $t('_common.success') }}</b> {{ $t('config.restart_note') }}
     </div>
+    <div class="alert alert-danger my-4" v-if="saveError">
+      <b>{{ $t('_common.error') }}</b> {{ $t('config.save_failed', { error: saveError }) }}
+    </div>
     <div class="mb-3 buttons">
       <button class="btn btn-primary" @click="save">{{ $t('_common.save') }}</button>
       <button class="btn btn-success mx-2" @click="apply" v-if="saved && !restarted">{{ $t('_common.apply') }}</button>
@@ -134,6 +137,7 @@
         platform: "",
         saved: false,
         restarted: false,
+        saveError: null,
         config: null,
         currentTab: "general",
         vdisplayStatus: "1",
@@ -225,6 +229,7 @@
               "external_ip": "",
               "lan_encryption_mode": 0,
               "wan_encryption_mode": 1,
+              "rtsp_plaintext": 1,
               "ping_timeout": 10000,
             },
           },
@@ -431,6 +436,7 @@
       save() {
         this.saved = false;
         this.restarted = false;
+        this.saveError = null;
 
         // create a temp copy of this.config to use for the post request
         let config = this.serialize();
@@ -463,9 +469,13 @@
             this.saved = true
             return this.saved
           }
-          else {
-            return false
-          }
+          return r.json().catch(() => ({})).then((body) => {
+            this.saveError = (body && body.error) || `HTTP ${r.status}`;
+            return false;
+          });
+        }).catch((e) => {
+          this.saveError = e.message;
+          return false;
         });
       },
       apply() {

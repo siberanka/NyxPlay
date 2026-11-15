@@ -6,12 +6,16 @@
 
 // standard includes
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <list>
 #include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
+
+// lib includes
+#include <boost/asio/ip/address.hpp>
 
 // local includes
 #include "crypto.h"
@@ -37,6 +41,12 @@ namespace rtsp_stream {
 
     std::string av_ping_payload;
     uint32_t control_connect_data;
+
+    /// Normalised address of the client that called /launch or /resume. Unencrypted RTSP is only served to it.
+    std::string remote_address;
+
+    /// Highest sequence number accepted on an encrypted RTSP message of this launch.
+    std::atomic<std::uint32_t> rtsp_last_sequence {0};
 
     std::string device_name;
     std::string unique_id;
@@ -115,6 +125,33 @@ namespace rtsp_stream {
     mutable std::mutex _mutex;
     std::shared_ptr<launch_session_t> _pending;
   };
+
+  /**
+   * @brief Textual form of a peer address used to compare the peers of a launch.
+   * @details IPv4-mapped IPv6 addresses become IPv4 addresses and the scope id of a link-local address is dropped.
+   */
+  std::string peer_address_key(const boost::asio::ip::address &address);
+
+  /**
+   * @brief Check whether a peer may speak RTSP for the launch session.
+   * @details An encrypted launch is not bound to an address: every message has to carry a valid tag under the key of
+   *          the launch, which only the launching client has. An unencrypted launch is only served to the address
+   *          that called /launch, a launch that has no recorded address is served to nobody.
+   */
+  bool rtsp_peer_allowed(const launch_session_t &launch_session, const boost::asio::ip::address &peer);
+
+  /**
+   * @brief Check the sequence number of an authenticated encrypted RTSP message.
+   * @details The number has to be larger than every number accepted before for the launch, a captured message
+   *          can not be delivered a second time. The number is recorded when it is accepted.
+   */
+  bool rtsp_accept_sequence(launch_session_t &launch_session, std::uint32_t sequence);
+
+  /**
+   * @brief Check whether the rtsp_plaintext option allows an unencrypted launch for the client address.
+   * @param mode One of config::RTSP_PLAINTEXT_*.
+   */
+  bool plaintext_rtsp_allowed(int mode, const boost::asio::ip::address &client);
 
   /**
    * @brief Queue a launch session for the RTSP handshake.

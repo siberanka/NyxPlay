@@ -669,6 +669,29 @@ namespace nvhttp {
   }
 
   /**
+   * @brief Tie the launch session to the client that requested it.
+   * @details An unencrypted RTSP launch is refused when the rtsp_plaintext option does not allow it for the client.
+   *          Otherwise it is bound to the client address, RTSP from any other address is refused. An encrypted
+   *          launch is authenticated by its key and keeps working when the RTSP connections leave from another
+   *          address than the launch request (carrier NAT, VPN, dual-stack fallback).
+   * @return false when the launch has to be refused.
+   */
+  bool bind_rtsp_peer(rtsp_stream::launch_session_t &launch_session, const boost::asio::ip::address &client) {
+    launch_session.remote_address = rtsp_stream::peer_address_key(client);
+
+    if (launch_session.rtsp_cipher) {
+      return true;
+    }
+
+    if (!rtsp_stream::plaintext_rtsp_allowed(config::stream.rtsp_plaintext, client)) {
+      BOOST_LOG(warning) << "Rejecting launch with unencrypted RTSP from ["sv << launch_session.remote_address << "], see the rtsp_plaintext option"sv;
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
    * @brief Create a launch session, reporting rejected client parameters instead of throwing.
    * @param error Receives the reason when no session is returned.
    */
@@ -1763,6 +1786,14 @@ namespace nvhttp {
       return;
     }
 
+    if (!bind_rtsp_peer(*launch_session, request->remote_endpoint().address())) {
+      tree.put("root.<xmlattr>.status_code", 403);
+      tree.put("root.<xmlattr>.status_message", "Unencrypted RTSP is not allowed for this host");
+      tree.put("root.gamesession", 0);
+
+      return;
+    }
+
     bool no_active_sessions = rtsp_stream::session_count() == 0;
 
     if (is_input_only) {
@@ -1968,6 +1999,14 @@ namespace nvhttp {
       tree.put("root.<xmlattr>.status_code", 403);
       tree.put("root.<xmlattr>.status_message", "Encryption is mandatory for this host but unsupported by the client");
       tree.put("root.gamesession", 0);
+
+      return;
+    }
+
+    if (!bind_rtsp_peer(*launch_session, request->remote_endpoint().address())) {
+      tree.put("root.resume", 0);
+      tree.put("root.<xmlattr>.status_code", 403);
+      tree.put("root.<xmlattr>.status_message", "Unencrypted RTSP is not allowed for this host");
 
       return;
     }

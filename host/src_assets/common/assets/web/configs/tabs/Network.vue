@@ -145,6 +145,17 @@ const effectivePort = computed(() => +config.value?.port ?? defaultMoonlightPort
       <div class="form-text">{{ $t('config.wan_encryption_mode_desc') }}</div>
     </div>
 
+    <!-- Unencrypted RTSP -->
+    <div class="mb-3">
+      <label for="rtsp_plaintext" class="form-label">{{ $t('config.rtsp_plaintext') }}</label>
+      <select id="rtsp_plaintext" class="form-select" v-model="config.rtsp_plaintext">
+        <option value="0">{{ $t('config.rtsp_plaintext_0') }}</option>
+        <option value="1">{{ $t('config.rtsp_plaintext_1') }}</option>
+        <option value="2">{{ $t('config.rtsp_plaintext_2') }}</option>
+      </select>
+      <div class="form-text">{{ $t('config.rtsp_plaintext_desc') }}</div>
+    </div>
+
     <!-- Ping Timeout -->
     <div class="mb-3">
       <label for="ping_timeout" class="form-label">{{ $t('config.ping_timeout') }}</label>

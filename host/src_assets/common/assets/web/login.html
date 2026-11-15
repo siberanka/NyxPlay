@@ -23,12 +23,8 @@
           </div>
           <div class="mb-2">
             <label for="passwordInput" class="form-label">{{ $t('_common.password') }}</label>
-            <input type="password" class="form-control" id="passwordInput" autocomplete="password"
+            <input type="password" class="form-control" id="passwordInput" autocomplete="current-password"
               v-model="passwordData.password" required />
-          </div>
-          <div class="mb-3 form-check">
-            <label for="savePassword" class="form-check-label">{{ $t('login.save_password') }}</label>
-            <input type="checkbox" class="form-check-input" id="savePassword" v-model="savePassword"/>
           </div>
           <button type="submit" class="btn btn-primary w-100 mb-2" v-bind:disabled="loading">
             {{ $t('welcome.login') }}
@@ -55,31 +51,22 @@
       const error = ref('');
       const success = ref(false);
       const loading = ref(false);
-      const savePassword = ref(false);
 
       const data = {
         error,
         success,
         loading,
-        savePassword,
         passwordData: {
           username: '',
           password: ''
         }
       }
 
-      const savedPasswordStr = localStorage.getItem('login')
-      if (savedPasswordStr) {
-        try {
-          const { username, password } = JSON.parse(savedPasswordStr);
-          savePassword.value = true;
-          data.passwordData = {
-            username,
-            password
-          }
-        } catch (e) {
-          console.error('Reading saved password failed!', e);
-        }
+      // Earlier versions kept the password in the browser: remove what may still be stored
+      try {
+        localStorage.removeItem('login')
+      } catch (e) {
+        // storage is not available: nothing to remove
       }
 
       return data
@@ -88,9 +75,6 @@
       login() {
         this.error = null;
         this.loading = true;
-        if (!this.savePassword) {
-          localStorage.removeItem('login')
-        }
         fetch("./api/login", {
           headers: {
             'Content-Type': 'application/json'
@@ -101,9 +85,6 @@
           this.loading = false;
           if (res.status === 200) {
             this.success = true;
-            if (this.savePassword) {
-              localStorage.setItem('login', JSON.stringify(this.passwordData));
-            }
             const url = new URL(window.location);
             const redirectUrl = url.searchParams.get('redir');
             const hash = url.hash;
@@ -114,13 +95,17 @@
             }
           } else {
             if (res.status === 401) {
-              throw new Error('Please check your username and password')
+              throw new Error(this.$t('login.err_credentials'))
+            } else if (res.status === 429) {
+              const wait = parseInt(res.headers.get('Retry-After'), 10);
+              throw new Error(wait > 0 ? this.$t('login.err_throttled_wait', { seconds: wait }) : this.$t('login.err_throttled'))
             } else {
-              throw new Error(`Server returned ${res.status}`);
+              throw new Error(this.$t('login.err_server', { status: res.status }));
             }
           }
         }).catch((e) => {
-          this.error = `Login failed: ${e.message}`;
+          this.loading = false;
+          this.error = e.message;
         });
       },
     },

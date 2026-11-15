@@ -537,6 +537,8 @@ namespace config {
 
     ENCRYPTION_MODE_NEVER,  // lan_encryption_mode
     ENCRYPTION_MODE_OPPORTUNISTIC,  // wan_encryption_mode
+
+    RTSP_PLAINTEXT_LAN_ONLY,  // rtsp_plaintext
   };
 
   nvhttp_t nvhttp {
@@ -1245,6 +1247,7 @@ namespace config {
 
     int_between_f(vars, "lan_encryption_mode", stream.lan_encryption_mode, {0, 2});
     int_between_f(vars, "wan_encryption_mode", stream.wan_encryption_mode, {0, 2});
+    int_between_f(vars, "rtsp_plaintext", stream.rtsp_plaintext, {0, 2});
 
     path_f(vars, "file_apps", stream.file_apps);
     int_between_f(vars, "fec_percentage", stream.fec_percentage, {1, 100});

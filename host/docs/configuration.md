@@ -1965,6 +1965,49 @@ editing the `conf` file in a text editor. Use the examples as reference.
     </tr>
 </table>
 
+### rtsp_plaintext
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Clients that report a core version of 0 (very old Moonlight builds) start the stream with an unencrypted
+            RTSP handshake. Current clients encrypt the handshake with the key of the launch and are not affected by
+            this option. An unencrypted launch is always tied to the address of the client that requested it: RTSP
+            connections from any other address are refused, and so is a repeated announce from another address.
+            @note{The encryption modes above control the encryption of the video and audio streams, they do not change
+            how the RTSP handshake is protected.}
+            @warning{Allowing unencrypted RTSP from the Internet lets anyone on the path of the client read and
+            modify the handshake.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            1
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            rtsp_plaintext = 1
+            @endcode</td>
+    </tr>
+    <tr>
+        <td rowspan="3">Choices</td>
+        <td>0</td>
+        <td>unencrypted RTSP is never accepted, clients that cannot encrypt the handshake are refused</td>
+    </tr>
+    <tr>
+        <td>1</td>
+        <td>unencrypted RTSP is accepted only from clients on the local network (loopback, private, link-local and shared address ranges)</td>
+    </tr>
+    <tr>
+        <td>2</td>
+        <td>unencrypted RTSP is accepted from any network</td>
+    </tr>
+</table>
+
 ### ping_timeout
 
 <table>

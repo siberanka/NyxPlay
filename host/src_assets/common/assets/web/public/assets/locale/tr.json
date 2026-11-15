@@ -216,6 +216,8 @@
     "dd_hdr_option": "HDR",
     "dd_hdr_option_auto": "İstemci tarafından talep edildiği şekilde HDR modunu açma/kapatma (varsayılan)",
     "dd_hdr_option_disabled": "HDR ayarlarını değiştirmeyin",
+    "dd_manual_refresh_rate": "Elle yenileme hızı",
+    "dd_manual_resolution": "Elle çözünürlük",
     "dd_mode_remapping": "Ekran modu yeniden eşleme",
     "dd_mode_remapping_add": "Yeniden eşleme girişi ekle",
     "dd_mode_remapping_desc_1": "İstenen çözünürlüğü ve/veya yenileme hızını başka değerlere değiştirmek için yeniden eşleme girişlerini belirtin.",
@@ -251,6 +253,8 @@
     "double_refreshrate_desc": "Sanal ekran oluştururken istenen yenileme hızını iki katına çıkarır; yayınlanan yenileme hızı aynı kalır. Bazı sistemlerde takılma sorununu azaltabilir.",
     "ds4_back_as_touchpad_click": "Geri/Seçimi Dokunmatik Yüzeye Eşle Tıklama",
     "ds4_back_as_touchpad_click_desc": "DS4 emülasyonunu zorlarken, Geri/Seç'i Dokunmatik Yüzey Tıklaması ile eşleyin",
+    "ds5_inputtino_randomize_mac": "Kumanda MAC adresini rastgele belirle",
+    "ds5_inputtino_randomize_mac_desc": "Oluşturulan sanal kumandanın MAC adresini rastgele belirler. Yalnızca Linux'ta, PS5 tarzı kumanda olarak oluşturulan oyun kumandaları için geçerlidir.",
     "enable_discovery": "Otomatik Keşfi Etkinleştir",
     "enable_discovery_desc": "Devre dışı bırakıldığında eşleştirme için istemcide sunucu IP adresini elle girmeniz gerekir.",
     "enable_input_only_mode": "Yalnızca Giriş Modunu Etkinleştir",
@@ -312,6 +316,8 @@
     "virtual_display_driver_desc": "Bu bilgisayardaki başka bir yayın sunucusunun (örneğin Apollo) SudoVDA üzerinde tam denetimi koruması gerekiyorsa veya yalıtılmış test kurulumları için kapatın. Kapalıyken sanal ekran özellikleri kullanılamaz.",
     "keep_sink_default": "Sanal ses çıkışını varsayılan tut",
     "keep_sink_default_desc": "Seçilen sanal ses çıkışının varsayılan olarak zorlanıp zorlanmayacağı (sunucu ses çıkışı devre dışıyken etkilidir).",
+    "keybindings": "Tuş atamaları",
+    "keybindings_desc": "İstemci tuş kodlarını farklı ana bilgisayar tuş kodlarıyla eşleştirir. Eşleştirmeler çiftler halinde bir liste olarak verilir, örneğin [0x10,0xA0,0x11,0xA2]. Bu seçeneği yapılandırma dosyasında düzenleyin.",
     "key_repeat_delay": "Tuş Tekrarlama Gecikmesi",
     "key_repeat_delay_desc": "Tuşların kendilerini ne kadar hızlı tekrarlayacaklarını kontrol edin. Tuşları tekrarlamadan önce milisaniye cinsinden ilk gecikme.",
     "key_repeat_frequency": "Anahtar Tekrarlama Sıklığı",
@@ -386,6 +392,7 @@
     "origin_web_ui_allowed_lan": "Yalnızca LAN'da bulunanlar Web UI'ye erişebilir",
     "origin_web_ui_allowed_pc": "Web kullanıcı arayüzüne yalnızca localhost erişebilir",
     "origin_web_ui_allowed_wan": "Web UI'ye herkes erişebilir",
+    "output_name": "Ekran çıkışı",
     "output_name_desc_unix": "NyxPlay Host başlangıcı sırasında, algılanan ekranların listesini görmelisiniz. Not: Parantez içindeki id değerini kullanmanız gerekir.",
     "output_name_desc_windows": "Yakalama için kullanılacak bir ekranı manuel olarak belirleyin. Ayarlanmamışsa, birincil ekran yakalanır. Not: Yukarıda bir GPU belirttiyseniz, bu ekranın o GPU'ya bağlı olması gerekir. Uygun değerler aşağıdaki komut kullanılarak bulunabilir:",
     "output_name_unix": "Ekran numarası",
@@ -465,6 +472,11 @@
     "wan_encryption_mode_1": "Desteklenen istemciler için etkin (varsayılan)",
     "wan_encryption_mode_2": "Tüm müşteriler için gereklidir",
     "wan_encryption_mode_desc": "Bu, İnternet üzerinden akış yaparken şifrelemenin ne zaman kullanılacağını belirler. Şifreleme, özellikle daha az güçlü ana bilgisayarlarda ve istemcilerde akış performansını düşürebilir.",
+    "rtsp_plaintext": "Şifresiz RTSP",
+    "rtsp_plaintext_0": "Asla (RTSP'yi şifreleyemeyen istemcileri reddet)",
+    "rtsp_plaintext_1": "Yalnızca yerel ağ (varsayılan)",
+    "rtsp_plaintext_2": "Her ağdan izin ver",
+    "rtsp_plaintext_desc": "Eski istemciler yayını şifrelenmemiş bir RTSP el sıkışmasıyla başlatır. Böyle bir başlatma her zaman onu başlatan istemcinin adresine bağlanır. Bu seçenek, başlatmanın hiç kabul edilip edilmeyeceğini belirler. Güncel istemciler el sıkışmayı şifreler ve bundan etkilenmez.",
     "dd_config_label": "Cihaz yapılandırması",
     "dd_wa_hdr_toggle_desc": "Akış için sanal görüntüleme cihazı kullanırken, yanlış HDR rengi görüntüleyebilir. Bu seçenek etkinleştirildiğinde, NyxPlay Host bu sorunu hafifletmeye çalışacaktır.",
     "dd_wa_hdr_toggle": "HDR için yüksek kontrastlı geçici çözümü etkinleştirin",
@@ -481,10 +493,15 @@
     "min_fps_factor": "Minimum FPS Faktörü",
     "min_fps_factor_desc": "NyxPlay Host, kareler arasındaki minimum süreyi hesaplamak için bu faktörü kullanacaktır. Bu değeri biraz artırmak, çoğunlukla statik içerik akışı yaparken yardımcı olabilir. Daha yüksek değerler daha fazla bant genişliği tüketecektir.",
     "res_fps_desc": "NyxPlay Host tarafından ilan edilen ekran modları. Moonlight-nx (Switch) gibi Moonlight'ın bazı sürümleri, istenen çözünürlüklerin ve fps'nin desteklendiğinden emin olmak için bu listelere güvenir. Bu ayar, ekran akışının Moonlight'a nasıl gönderildiğini değiştirmez.",
-    "resolutions": "İlan Edilen Kararlar"
+    "resolutions": "İlan Edilen Kararlar",
+    "save_failed": "Yapılandırma kaydedilemedi: {error}"
   },
   "login": {
-    "save_password": "Şifreyi Hatırla"
+    "save_password": "Şifreyi Hatırla",
+    "err_credentials": "Kullanıcı adınızı ve şifrenizi kontrol edin",
+    "err_throttled": "Çok fazla giriş denemesi yapıldı. Lütfen daha sonra tekrar deneyin.",
+    "err_throttled_wait": "Çok fazla giriş denemesi yapıldı. {seconds} saniye sonra tekrar deneyin.",
+    "err_server": "Sunucu beklenmeyen bir yanıt verdi ({status})."
   },
   "index": {
     "description": "NyxPlay Host, Moonlight için kendi kendine barındırılan bir oyun akışı sunucusudur.",
@@ -516,7 +533,15 @@
     "new_creds": "Yeni Kimlik Bilgileri",
     "new_username_desc": "Belirtilmezse, kullanıcı adı değişmez",
     "password_change": "Şifre Değişikliği",
-    "success_msg": "Şifre başarıyla değiştirildi! Bu sayfa yakında yeniden yüklenecek, tarayıcınız sizden yeni kimlik bilgilerinizi isteyecektir."
+    "success_msg": "Şifre başarıyla değiştirildi! Bu sayfa yakında yeniden yüklenecek, tarayıcınız sizden yeni kimlik bilgilerinizi isteyecektir.",
+    "err_invalid_current": "Güncel kullanıcı adı veya şifre hatalı.",
+    "err_mismatch": "Yeni şifreler eşleşmiyor.",
+    "err_invalid_username": "Kullanıcı adı boş veya 64 karakterden uzun.",
+    "err_too_short": "Yeni şifre en az 8 karakter uzunluğunda olmalıdır.",
+    "err_save_failed": "Kimlik bilgileri kaydedilemedi. Yapılandırma klasörünün izinlerini kontrol edin.",
+    "err_cross_origin": "İstek bu sayfadan gelmediği için reddedildi. Sayfayı yenileyip tekrar deneyin.",
+    "err_network": "Sunucuya ulaşılamadı.",
+    "err_server": "Sunucu bir hata döndürdü ({status})."
   },
   "permissions": {
     "input_controller": "Oyun Kumandası Girişi",

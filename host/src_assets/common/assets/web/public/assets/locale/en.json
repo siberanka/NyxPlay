@@ -471,10 +471,20 @@
     "wan_encryption_mode": "WAN Encryption Mode",
     "wan_encryption_mode_1": "Enabled for supported clients (default)",
     "wan_encryption_mode_2": "Required for all clients",
-    "wan_encryption_mode_desc": "This determines when encryption will be used when streaming over the Internet. Encryption can reduce streaming performance, particularly on less powerful hosts and clients."
+    "wan_encryption_mode_desc": "This determines when encryption will be used when streaming over the Internet. Encryption can reduce streaming performance, particularly on less powerful hosts and clients.",
+    "rtsp_plaintext": "Unencrypted RTSP",
+    "rtsp_plaintext_0": "Never (refuse clients that cannot encrypt RTSP)",
+    "rtsp_plaintext_1": "Local network only (default)",
+    "rtsp_plaintext_2": "Allow from any network",
+    "rtsp_plaintext_desc": "Older clients start the stream without an encrypted RTSP handshake. Such a launch is always tied to the address of the client that started it. This option decides whether it is accepted at all. Current clients encrypt the handshake and are not affected.",
+    "save_failed": "Could not save the configuration: {error}"
   },
   "login": {
-    "save_password": "Remember Password"
+    "save_password": "Remember Password",
+    "err_credentials": "Please check your username and password",
+    "err_throttled": "Too many login attempts. Try again later.",
+    "err_throttled_wait": "Too many login attempts. Try again in {seconds} seconds.",
+    "err_server": "The server returned an unexpected answer ({status})."
   },
   "index": {
     "description": "NyxPlay Host is a self-hosted game stream host for Moonlight.",
@@ -506,7 +516,15 @@
     "new_creds": "New Credentials",
     "new_username_desc": "If not specified, the username will not change",
     "password_change": "Password Change",
-    "success_msg": "Password has been changed successfully! This page will reload soon, your browser will ask you for the new credentials."
+    "success_msg": "Password has been changed successfully! This page will reload soon, your browser will ask you for the new credentials.",
+    "err_invalid_current": "The current username or password is incorrect.",
+    "err_mismatch": "The new passwords do not match.",
+    "err_invalid_username": "The username is empty or longer than 64 characters.",
+    "err_too_short": "The new password must be at least 8 characters long.",
+    "err_save_failed": "The credentials could not be saved. Check the permissions of the configuration folder.",
+    "err_cross_origin": "The request was rejected because it did not come from this page. Reload the page and try again.",
+    "err_network": "The server could not be reached.",
+    "err_server": "The server returned an error ({status})."
   },
   "permissions": {
     "input_controller": "Controller Input",

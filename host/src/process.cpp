@@ -1328,7 +1328,11 @@ namespace proc {
         }
 
         // Iterate over each application in the "apps" array.
+        // One malformed entry must not hide the other apps
+        std::size_t app_entry = 0;
         for (auto &app_node : tree["apps"]) {
+          ++app_entry;
+          try {
           proc::ctx_t ctx;
           ctx.idx = std::to_string(i);
           ctx.uuid = app_node.at("uuid");
@@ -1441,9 +1445,13 @@ namespace proc {
           ctx.detached = std::move(detached);
 
           apps.emplace_back(std::move(ctx));
+          } catch (const std::exception &app_error) {
+            BOOST_LOG(warning) << "Skipping invalid app #"sv << app_entry << " in apps.json: "sv << app_error.what();
+          }
         }
 
-        fail_count = 0;
+        // When every entry was unusable the fallback entry below keeps the host usable
+        fail_count = (apps.empty() && app_entry > 0) ? 1 : 0;
       } catch (std::exception &e) {
         BOOST_LOG(error) << "Error happened during app loading: "sv << e.what();
 
