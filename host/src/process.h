@@ -13,6 +13,8 @@
 #endif
 
 // standard includes
+#include <atomic>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -118,10 +120,7 @@ namespace proc {
   public:
     KITTY_DEFAULT_CONSTR_MOVE_THROW(proc_t)
 
-    std::string display_name;
     std::string initial_display;
-    std::string mode_changed_display;
-    bool initial_hdr = false;
     bool virtual_display = false;
     bool allow_client_commands = false;
 
@@ -154,7 +153,21 @@ namespace proc {
     void pause();
     void terminate(bool immediate = false, bool needs_refresh = true);
 
+    /// Name of the display that is streamed. Safe to call from any thread.
+    std::string get_display_name() const;
+    void set_display_name(std::string name);
+
   private:
+    // Leaf lock of the streamed display name, the capture threads and the app launch share it.
+    mutable movable_mutex_t _display_lock;
+    std::string _display_name;
+
+    // Guards the HDR state below. The HDR reset runs on its own thread, terminate() cancels it.
+    movable_mutex_t _hdr_lock;
+    std::shared_ptr<std::atomic<bool>> _hdr_cancel;
+    std::string mode_changed_display;
+    bool initial_hdr = false;
+
     // The app state is used by the HTTPS, control, RTSP and web UI threads. Public members hold this lock,
     // it is recursive because terminate() is reached from running() and pause().
     movable_mutex_t _lock;

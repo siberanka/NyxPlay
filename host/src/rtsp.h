@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <list>
+#include <map>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -131,6 +132,48 @@ namespace rtsp_stream {
    * @details IPv4-mapped IPv6 addresses become IPv4 addresses and the scope id of a link-local address is dropped.
    */
   std::string peer_address_key(const boost::asio::ip::address &address);
+
+  /**
+   * @brief Key used to count the connections of a peer.
+   * @details Like peer_address_key(), but IPv6 addresses are grouped by their /64 prefix, a single host or
+   *          subscriber usually controls the whole prefix.
+   */
+  std::string peer_group_key(const boost::asio::ip::address &address);
+
+  /**
+   * @brief Bounds the number of open RTSP connections, in total and per peer group.
+   * @details The count is taken when a connection is attached to a pending launch and returned when the
+   *          connection object is destroyed, so every close path gives the slot back.
+   */
+  class connection_limiter_t {
+  public:
+    connection_limiter_t(int max_total, int max_per_peer, int max_per_launch_peer):
+        _max_total {max_total},
+        _max_per_peer {max_per_peer},
+        _max_per_launch_peer {max_per_launch_peer} {
+    }
+
+    /**
+     * @param group_key Result of peer_group_key().
+     * @param launching_peer true when the peer is the client of the pending launch, it gets a larger allowance.
+     * @return true when the connection was counted.
+     */
+    bool try_acquire(const std::string &group_key, bool launching_peer);
+
+    void release(const std::string &group_key);
+
+    int total() const;
+
+    int count(const std::string &group_key) const;
+
+  private:
+    mutable std::mutex _mutex;
+    std::map<std::string, int> _per_peer;
+    int _total = 0;
+    int _max_total;
+    int _max_per_peer;
+    int _max_per_launch_peer;
+  };
 
   /**
    * @brief Check whether a peer may speak RTSP for the launch session.

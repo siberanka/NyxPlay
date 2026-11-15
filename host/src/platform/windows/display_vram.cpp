@@ -4,6 +4,7 @@
  */
 // standard includes
 #include <cmath>
+#include <filesystem>
 
 // platform includes
 #include <d3dcompiler.h>
@@ -374,6 +375,9 @@ namespace platf::dxgi {
 
     return blob_t {compiled_p};
   }
+
+  /// Set once every shader has been compiled. Without them no GPU capture device can convert frames.
+  static bool shaders_ready = false;
 
   blob_t compile_pixel_shader(LPCSTR file) {
     return compile_shader(file, "main_ps", "ps_5_0");
@@ -1184,7 +1188,10 @@ namespace platf::dxgi {
         BOOST_LOG(error) << "Failed to get new pointer shape [0x"sv << util::hex(status).to_string_view() << ']';
 
         // The duplication is gone after a device loss, recreate it
-        if (status == DXGI_ERROR_DEVICE_REMOVED || status == DXGI_ERROR_DEVICE_RESET || status == DXGI_ERROR_ACCESS_LOST) {
+        if (status == DXGI_ERROR_ACCESS_LOST) {
+          return capture_e::reinit;
+        }
+        if ((status == DXGI_ERROR_DEVICE_REMOVED || status == DXGI_ERROR_DEVICE_RESET) && device_loss_recoverable()) {
           return capture_e::reinit;
         }
         return capture_e::error;
@@ -1565,6 +1572,11 @@ namespace platf::dxgi {
   }
 
   int display_ddup_vram_t::init(const ::video::config_t &config, const std::string &display_name) {
+    if (!shaders_ready) {
+      BOOST_LOG(error) << "GPU capture is unavailable because the shaders were not loaded"sv;
+      return -1;
+    }
+
     if (display_base_t::init(config, display_name) || dup.init(this, config)) {
       return -1;
     }
@@ -1708,6 +1720,11 @@ namespace platf::dxgi {
   }
 
   int display_wgc_vram_t::init(const ::video::config_t &config, const std::string &display_name) {
+    if (!shaders_ready) {
+      BOOST_LOG(error) << "GPU capture is unavailable because the shaders were not loaded"sv;
+      return -1;
+    }
+
     if (display_base_t::init(config, display_name) || dup.init(this, config)) {
       return -1;
     }
@@ -1940,7 +1957,14 @@ namespace platf::dxgi {
   }
 
   int init() {
+    shaders_ready = false;
+
     BOOST_LOG(info) << "Compiling shaders..."sv;
+
+    if (!std::filesystem::is_directory(std::filesystem::path {SUNSHINE_SHADERS_DIR})) {
+      BOOST_LOG(error) << "Shader directory ["sv << SUNSHINE_SHADERS_DIR << "] not found, start the host from its installation folder"sv;
+      return -1;
+    }
 
 #define compile_vertex_shader_helper(x) \
   if (!(x##_hlsl = compile_vertex_shader(SUNSHINE_SHADERS_DIR "/" #x ".hlsl"))) \
@@ -1976,6 +2000,7 @@ namespace platf::dxgi {
     compile_vertex_shader_helper(cursor_vs);
 
     BOOST_LOG(info) << "Compiled shaders"sv;
+    shaders_ready = true;
 
 #undef compile_vertex_shader_helper
 #undef compile_pixel_shader_helper

@@ -281,6 +281,12 @@ namespace platf::dxgi {
   };
 
   /**
+   * @brief Record a lost GPU device and decide whether capture may be reinitialized.
+   * @return true when fewer than 5 device losses happened during the last 10 seconds.
+   */
+  bool device_loss_recoverable();
+
+  /**
    * Display duplicator that uses the DirectX Desktop Duplication API.
    */
   class duplication_t {

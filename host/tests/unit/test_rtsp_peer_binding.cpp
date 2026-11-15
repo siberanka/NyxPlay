@@ -209,3 +209,88 @@ TEST(RtspPlaintextOption, UnknownValueIsTreatedAsNever) {
   EXPECT_FALSE(rtsp_stream::plaintext_rtsp_allowed(3, addr("192.168.1.5")));
   EXPECT_FALSE(rtsp_stream::plaintext_rtsp_allowed(99, addr("127.0.0.1")));
 }
+
+TEST(RtspConnectionLimit, GroupsIpv6ByPrefix) {
+  EXPECT_EQ(rtsp_stream::peer_group_key(addr("2001:db8:1:2::1")), rtsp_stream::peer_group_key(addr("2001:db8:1:2:ffff::9")));
+  EXPECT_NE(rtsp_stream::peer_group_key(addr("2001:db8:1:2::1")), rtsp_stream::peer_group_key(addr("2001:db8:1:3::1")));
+  EXPECT_EQ(rtsp_stream::peer_group_key(addr("::ffff:192.168.1.5")), "192.168.1.5");
+  EXPECT_NE(rtsp_stream::peer_group_key(addr("192.168.1.5")), rtsp_stream::peer_group_key(addr("192.168.1.6")));
+}
+
+TEST(RtspConnectionLimit, RefusesTheConnectionAfterThePerPeerCap) {
+  rtsp_stream::connection_limiter_t limiter {64, 3, 4};
+
+  EXPECT_TRUE(limiter.try_acquire("a", false));
+  EXPECT_TRUE(limiter.try_acquire("a", false));
+  EXPECT_TRUE(limiter.try_acquire("a", false));
+  EXPECT_FALSE(limiter.try_acquire("a", false));
+  EXPECT_EQ(limiter.count("a"), 3);
+
+  // Another address is not affected
+  EXPECT_TRUE(limiter.try_acquire("b", false));
+  EXPECT_EQ(limiter.total(), 4);
+}
+
+TEST(RtspConnectionLimit, LaunchingPeerGetsOneMore) {
+  rtsp_stream::connection_limiter_t limiter {64, 3, 4};
+
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_TRUE(limiter.try_acquire("a", true)) << i;
+  }
+  EXPECT_FALSE(limiter.try_acquire("a", true));
+  EXPECT_EQ(limiter.count("a"), 4);
+}
+
+TEST(RtspConnectionLimit, GlobalCapAppliesToAllPeers) {
+  rtsp_stream::connection_limiter_t limiter {5, 3, 4};
+
+  for (auto key : {"a", "a", "a", "b", "b"}) {
+    EXPECT_TRUE(limiter.try_acquire(key, false));
+  }
+  EXPECT_FALSE(limiter.try_acquire("c", false));
+  EXPECT_FALSE(limiter.try_acquire("c", true));
+  EXPECT_EQ(limiter.total(), 5);
+}
+
+TEST(RtspConnectionLimit, ReleasedSlotsReturnToZero) {
+  rtsp_stream::connection_limiter_t limiter {64, 3, 4};
+
+  for (int i = 0; i < 3; ++i) {
+    ASSERT_TRUE(limiter.try_acquire("a", false));
+  }
+  ASSERT_FALSE(limiter.try_acquire("a", false));
+
+  for (int i = 0; i < 3; ++i) {
+    limiter.release("a");
+  }
+  EXPECT_EQ(limiter.count("a"), 0);
+  EXPECT_EQ(limiter.total(), 0);
+
+  // Extra or unknown releases do not drive the counters negative
+  limiter.release("a");
+  limiter.release("never");
+  EXPECT_EQ(limiter.total(), 0);
+  EXPECT_TRUE(limiter.try_acquire("a", false));
+}
+
+TEST(RtspConnectionLimit, ConcurrentUseKeepsTheCaps) {
+  rtsp_stream::connection_limiter_t limiter {64, 3, 4};
+  std::atomic<int> granted {0};
+  std::vector<std::thread> threads;
+
+  for (int t = 0; t < 8; ++t) {
+    threads.emplace_back([&]() {
+      for (int i = 0; i < 100; ++i) {
+        if (limiter.try_acquire("a", false)) {
+          ++granted;
+        }
+      }
+    });
+  }
+  for (auto &thread : threads) {
+    thread.join();
+  }
+
+  EXPECT_EQ(granted.load(), 3);
+  EXPECT_EQ(limiter.count("a"), 3);
+}

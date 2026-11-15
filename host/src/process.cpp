@@ -350,13 +350,13 @@ namespace proc {
 
           // Set virtual_display to true when everything went fine
           this->virtual_display = true;
-          this->display_name = platf::to_utf8(vdisplayName);
+          this->set_display_name(platf::to_utf8(vdisplayName));
 
           // When using virtual display, we don't care which display user configured to use.
           // So we always set output_name to the newly created virtual display as a workaround for
           // empty name when probing graphics cards.
 
-          config::video.output_name = display_device::map_display_name(this->display_name);
+          config::video.output_name = display_device::map_display_name(this->get_display_name());
         } else {
           BOOST_LOG(warning) << "Virtual Display creation failed, or cannot get created display name in time!";
         }
@@ -538,11 +538,23 @@ namespace proc {
     _app_launch_time = std::chrono::steady_clock::now();
 
   #ifdef _WIN32
-    auto resetHDRThread = std::thread([this, enable_hdr = launch_session->enable_hdr]{
+    auto hdr_cancel = std::make_shared<std::atomic<bool>>(false);
+    {
+      std::lock_guard hdr_guard {_hdr_lock.mutex};
+      if (_hdr_cancel) {
+        _hdr_cancel->store(true);
+      }
+      _hdr_cancel = hdr_cancel;
+    }
+
+    auto resetHDRThread = std::thread([this, hdr_cancel, enable_hdr = launch_session->enable_hdr]{
       // Windows doesn't seem to be able to set HDR correctly when a display is just connected / changed resolution,
       // so we have tooggle HDR for the virtual display manually after a delay.
       auto retryInterval = 200ms;
       while (is_changing_settings_going_to_fail()) {
+        if (hdr_cancel->load()) {
+          return;
+        }
         if (retryInterval > 2s) {
           BOOST_LOG(warning) << "Restoring HDR settings failed due to retry timeout!";
           return;
@@ -552,7 +564,10 @@ namespace proc {
       }
 
       retryInterval = 200ms;
-      while (this->display_name.empty()) {
+      while (this->get_display_name().empty()) {
+        if (hdr_cancel->load()) {
+          return;
+        }
         if (retryInterval > 2s) {
           BOOST_LOG(warning) << "Not getting current display in time! HDR will not be toggled.";
           return;
@@ -562,8 +577,14 @@ namespace proc {
       }
 
       // We should have got the actual streaming display by now
-      std::string currentDisplay = this->display_name;
+      std::string currentDisplay = this->get_display_name();
       auto currentDisplayW = platf::from_utf8(currentDisplay);
+
+      // The HDR state is changed under the lock, terminate() cancels the reset and waits for it to finish
+      std::lock_guard hdr_guard {_hdr_lock.mutex};
+      if (hdr_cancel->load()) {
+        return;
+      }
 
       initial_hdr = VDISPLAY::getDisplayHDRByName(currentDisplayW.c_str());
 
@@ -799,13 +820,21 @@ namespace proc {
     bool has_run = _app_id > 0;
 
 #ifdef _WIN32
-    // Revert HDR state
-    if (has_run && !mode_changed_display.empty()) {
-      auto displayNameW = platf::from_utf8(mode_changed_display);
-      if (VDISPLAY::setDisplayHDRByName(displayNameW.c_str(), initial_hdr)) {
-        BOOST_LOG(info) << "HDR reverted for display " << mode_changed_display;
-      } else {
-        BOOST_LOG(info) << "HDR revert failed for display " << mode_changed_display;
+    // Revert HDR state, a reset that is still running is cancelled first
+    {
+      std::lock_guard hdr_guard {_hdr_lock.mutex};
+      if (_hdr_cancel) {
+        _hdr_cancel->store(true);
+        _hdr_cancel.reset();
+      }
+
+      if (has_run && !mode_changed_display.empty()) {
+        auto displayNameW = platf::from_utf8(mode_changed_display);
+        if (VDISPLAY::setDisplayHDRByName(displayNameW.c_str(), initial_hdr)) {
+          BOOST_LOG(info) << "HDR reverted for display " << mode_changed_display;
+        } else {
+          BOOST_LOG(info) << "HDR revert failed for display " << mode_changed_display;
+        }
       }
     }
 
@@ -850,9 +879,12 @@ namespace proc {
     _app_id = -1;
     _app_name.clear();
     _app = {};
-    display_name.clear();
+    set_display_name({});
     initial_display.clear();
-    mode_changed_display.clear();
+    {
+      std::lock_guard hdr_guard {_hdr_lock.mutex};
+      mode_changed_display.clear();
+    }
     _launch_session.reset();
     virtual_display = false;
     allow_client_commands = false;
@@ -865,6 +897,16 @@ namespace proc {
     if (needs_refresh) {
       refresh(config::stream.file_apps, false);
     }
+  }
+
+  std::string proc_t::get_display_name() const {
+    std::lock_guard lock {_display_lock.mutex};
+    return _display_name;
+  }
+
+  void proc_t::set_display_name(std::string name) {
+    std::lock_guard lock {_display_lock.mutex};
+    _display_name = std::move(name);
   }
 
   const std::vector<ctx_t> &proc_t::get_apps() const {

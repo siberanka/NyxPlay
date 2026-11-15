@@ -1087,7 +1087,7 @@ namespace video {
    * @param display_names The list of display names to repopulate.
    * @param current_display_index The current display index or -1 if not yet known.
    */
-  void refresh_displays(platf::mem_type_e dev_type, std::vector<std::string> &display_names, int &current_display_index, std::string &preferred_display_name) {
+  void refresh_displays(platf::mem_type_e dev_type, std::vector<std::string> &display_names, int &current_display_index, const std::string &preferred_display_name) {
     // It is possible that the output name may be empty even if it wasn't before (device disconnected) or vice-versa
     const auto output_name { display_device::map_output_name(config::video.output_name) };
     std::string current_display_name = preferred_display_name;
@@ -1178,8 +1178,8 @@ namespace video {
     std::vector<std::string> display_names;
     int display_p = -1;
     std::shared_ptr<platf::display_t> disp;
-    if (!proc::proc.display_name.empty()) {
-      disp = platf::display(encoder.platform_formats->dev_type, proc::proc.display_name, last_config);
+    if (auto streamed_display = proc::proc.get_display_name(); !streamed_display.empty()) {
+      disp = platf::display(encoder.platform_formats->dev_type, streamed_display, last_config);
     }
     if (!disp) {
       // Get all the monitor names now, rather than at boot, to
@@ -1187,7 +1187,7 @@ namespace video {
       refresh_displays(encoder.platform_formats->dev_type, display_names, display_p);
       disp = platf::display(encoder.platform_formats->dev_type, display_names[display_p], last_config);
       if (disp) {
-        proc::proc.display_name = display_names[display_p];
+        proc::proc.set_display_name(display_names[display_p]);
       } else {
         return;
       }
@@ -1385,7 +1385,7 @@ namespace video {
               disp.reset();
 
               // Refresh display names since a display removal might have caused the reinitialization
-              refresh_displays(encoder.platform_formats->dev_type, display_names, display_p, proc::proc.display_name);
+              refresh_displays(encoder.platform_formats->dev_type, display_names, display_p, proc::proc.get_display_name());
 
               // Process any pending display switch with the new list of displays
               if (switch_display_event->peek()) {
@@ -1395,7 +1395,7 @@ namespace video {
               // reset_display() will sleep between retries
               reset_display(disp, encoder.platform_formats->dev_type, display_names[display_p], last_config);
               if (disp) {
-                proc::proc.display_name = display_names[display_p];
+                proc::proc.set_display_name(display_names[display_p]);
                 break;
               }
             }

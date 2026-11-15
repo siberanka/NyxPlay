@@ -772,6 +772,16 @@ namespace nvhttp {
     return address + '\n' + unique_id;
   }
 
+  /**
+   * @brief Group key used to count the pending pairing sessions of a source address.
+   * @details IPv6 addresses count per /64, a subscriber or host can rotate through the whole prefix.
+   */
+  static std::string pairing_address_group(const std::string &address) {
+    boost::system::error_code ec;
+    auto parsed = boost::asio::ip::make_address(address, ec);
+    return ec ? address : rtsp_stream::peer_group_key(parsed);
+  }
+
   pair_session_insert_e insert_pair_session(pair_session_t sess, std::string &pairing_id) {
     std::lock_guard lock(map_id_sess_mutex);
     const auto now = std::chrono::steady_clock::now();
@@ -788,8 +798,9 @@ namespace nvhttp {
       return pair_session_insert_e::FULL;
     }
     // One address must not be able to fill the whole store
+    const auto address_group = pairing_address_group(sess.async_insert_pin.address);
     if (std::ranges::count_if(map_id_sess, [&](const auto &entry) {
-          return entry.second.async_insert_pin.address == sess.async_insert_pin.address;
+          return pairing_address_group(entry.second.async_insert_pin.address) == address_group;
         }) >= static_cast<std::ptrdiff_t>(MAX_PENDING_PAIRING_SESSIONS_PER_ADDRESS)) {
       return pair_session_insert_e::FULL;
     }

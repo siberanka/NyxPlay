@@ -105,6 +105,18 @@ TEST_F(PairingSessionTest, SingleAddressCannotFillTheStore) {
   EXPECT_EQ(nvhttp::insert_pair_session(make_session("other", "192.0.2.99"), id), nvhttp::pair_session_insert_e::ADDED);
 }
 
+TEST_F(PairingSessionTest, Ipv6AddressesOfOnePrefixShareTheCap) {
+  std::string id;
+  for (std::size_t i = 0; i < nvhttp::MAX_PENDING_PAIRING_SESSIONS_PER_ADDRESS; ++i) {
+    ASSERT_EQ(nvhttp::insert_pair_session(make_session("v6a" + std::to_string(i), "2001:db8:1:2::" + std::to_string(i + 1)), id), nvhttp::pair_session_insert_e::ADDED) << i;
+  }
+
+  // A fresh address of the same /64 is counted against the same group
+  EXPECT_EQ(nvhttp::insert_pair_session(make_session("v6extra", "2001:db8:1:2:aaaa::9"), id), nvhttp::pair_session_insert_e::FULL);
+  // Another prefix is independent
+  EXPECT_EQ(nvhttp::insert_pair_session(make_session("v6other", "2001:db8:1:3::1"), id), nvhttp::pair_session_insert_e::ADDED);
+}
+
 TEST_F(PairingSessionTest, SameUniqueIdFromSameAddressReplacesOlderSession) {
   std::string old_id;
   std::string new_id;

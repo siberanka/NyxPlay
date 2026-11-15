@@ -131,7 +131,7 @@ namespace platf::dxgi {
    * @brief Decide whether a lost GPU device may be recovered by reinitializing the capture.
    * @return true when fewer than 5 device losses happened during the last 10 seconds.
    */
-  static bool device_loss_recoverable() {
+  bool device_loss_recoverable() {
     static std::mutex loss_mutex;
     static std::deque<std::chrono::steady_clock::time_point> losses;
 

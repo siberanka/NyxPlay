@@ -278,7 +278,8 @@ namespace audio {
     int samples_per_frame = frame_size * stream.channelCount;
 
     bool audio_lost_logged = false;
-    while (!shutdown_event->peek()) {
+    // The sample queue is stopped when its encoder ended
+    while (!shutdown_event->peek() && samples->running()) {
       std::vector<float> sample_buffer;
       sample_buffer.resize(samples_per_frame);
 

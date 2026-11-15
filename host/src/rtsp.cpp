@@ -99,25 +99,55 @@ namespace rtsp_stream {
 
     ~socket_t() {
       if (counted) {
-        --open_connections;
+        connections().release(group_key);
       }
     }
 
-    /// Number of accepted connections that are attached to a launch session.
-    static inline std::atomic<int> open_connections {0};
-
     /// Upper bound for simultaneous connections attached to a pending launch.
-    static constexpr int MAX_OPEN_CONNECTIONS = 16;
+    static constexpr int MAX_OPEN_CONNECTIONS = 64;
 
-    /// A client has this long to deliver its request.
+    /// Upper bound per peer address (IPv6 grouped by /64).
+    static constexpr int MAX_CONNECTIONS_PER_PEER = 3;
+
+    /// Upper bound for the client whose launch is pending, it may retry while earlier attempts linger.
+    static constexpr int MAX_CONNECTIONS_PER_LAUNCH_PEER = 4;
+
+    /// A connection that has not delivered its first byte within this time is closed.
+    static constexpr auto FIRST_BYTE_TIMEOUT = 3s;
+
+    /// A client has this long to deliver its request once it started sending.
     static constexpr auto REQUEST_TIMEOUT = 10s;
 
     /// Time the peer is given to read the response and close its side.
     static constexpr auto LINGER_TIMEOUT = 2s;
 
-    void count_connection() {
+    static connection_limiter_t &connections() {
+      static connection_limiter_t limiter {MAX_OPEN_CONNECTIONS, MAX_CONNECTIONS_PER_PEER, MAX_CONNECTIONS_PER_LAUNCH_PEER};
+      return limiter;
+    }
+
+    /**
+     * @brief Count the connection for its peer group.
+     * @return false when a limit is reached, the connection is then not counted.
+     */
+    bool count_connection(std::string key, bool launching_peer) {
+      if (!connections().try_acquire(key, launching_peer)) {
+        return false;
+      }
+
+      group_key = std::move(key);
       counted = true;
-      ++open_connections;
+      return true;
+    }
+
+    /**
+     * @brief The first bytes of a request arrived, the request deadline replaces the first byte deadline.
+     */
+    void first_bytes_received() {
+      if (!first_bytes_seen && !closing) {
+        first_bytes_seen = true;
+        arm_deadline(REQUEST_TIMEOUT);
+      }
     }
 
     /**
@@ -234,6 +264,8 @@ namespace rtsp_stream {
         respond(socket->sock, *socket->session, nullptr, 400, "BAD REQUEST", 0, {});
         return;
       }
+
+      socket->first_bytes_received();
 
       auto header = (encrypted_rtsp_header_t *) socket->begin;
       if (!header->is_encrypted()) {
@@ -434,6 +466,8 @@ namespace rtsp_stream {
         return;
       }
 
+      socket->first_bytes_received();
+
       auto fg = util::fail_guard([&socket]() {
         socket->read();
       });
@@ -477,6 +511,8 @@ namespace rtsp_stream {
 
     bool counted = false;
     bool closing = false;
+    bool first_bytes_seen = false;
+    std::string group_key;
 
     char *crlf;
     char *begin = msg_buf.data();
@@ -558,8 +594,8 @@ namespace rtsp_stream {
           // Unencrypted RTSP of a launch belongs to the client that started it
           BOOST_LOG(warning) << "Refusing RTSP connection from ["sv << peer_address_key(peer.address()) << "], the unencrypted launch session "sv << launch_session->id << " belongs to another address"sv;
           socket->close_now();
-        } else if (socket_t::open_connections.load() >= socket_t::MAX_OPEN_CONNECTIONS) {
-          BOOST_LOG(warning) << "Refusing RTSP connection, too many open connections"sv;
+        } else if (!socket->count_connection(peer_group_key(peer.address()), launch_session->remote_address == peer_address_key(peer.address()))) {
+          BOOST_LOG(warning) << "Refusing RTSP connection from ["sv << peer_address_key(peer.address()) << "], too many open connections"sv;
           socket->close_now();
         } else {
           boost::system::error_code opt_ec;
@@ -567,8 +603,7 @@ namespace rtsp_stream {
 
           // Associate the current RTSP session with this socket and start reading
           socket->session = launch_session;
-          socket->count_connection();
-          socket->arm_deadline(socket_t::REQUEST_TIMEOUT);
+          socket->arm_deadline(socket_t::FIRST_BYTE_TIMEOUT);
           socket->read();
         }
       } else {
@@ -892,6 +927,68 @@ namespace rtsp_stream {
     }
 
     return normalized.to_string();
+  }
+
+  std::string peer_group_key(const boost::asio::ip::address &address) {
+    auto normalized = net::normalize_address(address);
+    if (normalized.is_v6()) {
+      // One subscriber or host usually controls a whole /64
+      auto bytes = normalized.to_v6().to_bytes();
+      std::string key = "v6/64:";
+      constexpr char digits[] = "0123456789abcdef";
+      for (int i = 0; i < 8; ++i) {
+        key += digits[bytes[i] >> 4];
+        key += digits[bytes[i] & 0xf];
+      }
+      return key;
+    }
+
+    return normalized.to_string();
+  }
+
+  bool connection_limiter_t::try_acquire(const std::string &group_key, bool launching_peer) {
+    std::lock_guard lg {_mutex};
+
+    if (_total >= _max_total) {
+      return false;
+    }
+
+    auto it = _per_peer.find(group_key);
+    int current = it == _per_peer.end() ? 0 : it->second;
+    if (current >= (launching_peer ? _max_per_launch_peer : _max_per_peer)) {
+      return false;
+    }
+
+    _per_peer[group_key] = current + 1;
+    ++_total;
+    return true;
+  }
+
+  void connection_limiter_t::release(const std::string &group_key) {
+    std::lock_guard lg {_mutex};
+
+    auto it = _per_peer.find(group_key);
+    if (it == _per_peer.end()) {
+      return;
+    }
+
+    if (--it->second <= 0) {
+      _per_peer.erase(it);
+    }
+    if (_total > 0) {
+      --_total;
+    }
+  }
+
+  int connection_limiter_t::total() const {
+    std::lock_guard lg {_mutex};
+    return _total;
+  }
+
+  int connection_limiter_t::count(const std::string &group_key) const {
+    std::lock_guard lg {_mutex};
+    auto it = _per_peer.find(group_key);
+    return it == _per_peer.end() ? 0 : it->second;
   }
 
   bool rtsp_peer_allowed(const launch_session_t &launch_session, const boost::asio::ip::address &peer) {
