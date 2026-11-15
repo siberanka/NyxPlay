@@ -7,6 +7,7 @@
 #include <cstring>
 #include <fstream>
 #include <future>
+#include <mutex>
 #include <optional>
 #include <queue>
 
@@ -2010,6 +2011,43 @@ namespace stream {
     broadcast_shutdown_event->reset();
   }
 
+  int await_ping(const message_queue_t &messages, bool legacy_ping_allowed, std::string_view expected_payload, safe::event_t<bool> &shutdown_event, std::chrono::milliseconds timeout, udp::endpoint &peer) {
+    // The wait is split in short slices so that a stop request ends it quickly
+    constexpr auto slice = 100ms;
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+
+    while (!shutdown_event.peek()) {
+      auto now = std::chrono::steady_clock::now();
+      if (now >= deadline) {
+        break;
+      }
+
+      auto wait = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+      auto msg_opt = messages->pop(std::max(1ms, std::min<std::chrono::milliseconds>(wait, slice)));
+      if (!msg_opt) {
+        continue;
+      }
+
+      TUPLE_2D_REF(recv_peer, msg, *msg_opt);
+      if (msg.find(expected_payload) != std::string::npos) {
+        // Match the new PING payload format
+        BOOST_LOG(debug) << "Received ping [v2] from "sv << recv_peer.address() << ':' << recv_peer.port() << " ["sv << util::hex_vec(msg) << ']';
+      } else if (legacy_ping_allowed && msg == "PING"sv) {
+        // Match the legacy fixed PING payload only if the new type is not supported
+        BOOST_LOG(debug) << "Received ping [v1] from "sv << recv_peer.address() << ':' << recv_peer.port() << " ["sv << util::hex_vec(msg) << ']';
+      } else {
+        BOOST_LOG(debug) << "Received non-ping from "sv << recv_peer.address() << ':' << recv_peer.port() << " ["sv << util::hex_vec(msg) << ']';
+        continue;
+      }
+
+      // Update connection details.
+      peer = recv_peer;
+      return 0;
+    }
+
+    return -1;
+  }
+
   int recv_ping(session_t *session, decltype(broadcast)::ptr_t ref, socket_e type, std::string_view expected_payload, udp::endpoint &peer, std::chrono::milliseconds timeout) {
     auto messages = std::make_shared<message_queue_t::element_type>(30);
     av_session_id_t session_id = std::string {expected_payload};
@@ -2030,36 +2068,15 @@ namespace stream {
       ref->message_queue_queue->raise(type, session_id, nullptr);
     });
 
-    auto start_time = std::chrono::steady_clock::now();
-    auto current_time = start_time;
-
-    while (current_time - start_time < config::stream.ping_timeout) {
-      auto delta_time = current_time - start_time;
-
-      auto msg_opt = messages->pop(config::stream.ping_timeout - delta_time);
-      if (!msg_opt) {
-        break;
-      }
-
-      TUPLE_2D_REF(recv_peer, msg, *msg_opt);
-      if (msg.find(expected_payload) != std::string::npos) {
-        // Match the new PING payload format
-        BOOST_LOG(debug) << "Received ping [v2] from "sv << recv_peer.address() << ':' << recv_peer.port() << " ["sv << util::hex_vec(msg) << ']';
-      } else if (!(session->config.mlFeatureFlags & ML_FF_SESSION_ID_V1) && msg == "PING"sv) {
-        // Match the legacy fixed PING payload only if the new type is not supported
-        BOOST_LOG(debug) << "Received ping [v1] from "sv << recv_peer.address() << ':' << recv_peer.port() << " ["sv << util::hex_vec(msg) << ']';
-      } else {
-        BOOST_LOG(debug) << "Received non-ping from "sv << recv_peer.address() << ':' << recv_peer.port() << " ["sv << util::hex_vec(msg) << ']';
-        current_time = std::chrono::steady_clock::now();
-        continue;
-      }
-
-      // Update connection details.
-      peer = recv_peer;
+    if (await_ping(messages, !(session->config.mlFeatureFlags & ML_FF_SESSION_ID_V1), expected_payload, *session->shutdown_event, config::stream.ping_timeout, peer) == 0) {
       return 0;
     }
 
-    BOOST_LOG(error) << "Initial Ping Timeout"sv;
+    if (session->shutdown_event->peek()) {
+      BOOST_LOG(debug) << "Waiting for the initial ping was cancelled"sv;
+    } else {
+      BOOST_LOG(error) << "Initial Ping Timeout"sv;
+    }
     return -1;
   }
 
@@ -2108,6 +2125,9 @@ namespace stream {
   namespace session {
     std::atomic_uint running_sessions;
 
+    // Serialises the first-start and last-stop callbacks of overlapping sessions
+    std::mutex session_transition_mutex;
+
     state_e state(session_t &session) {
       return session.state.load(std::memory_order_relaxed);
     }
@@ -2118,6 +2138,15 @@ namespace stream {
 
     bool uuid_match(const session_t &session, const std::string_view& uuid) {
       return session.device_uuid == uuid;
+    }
+
+    std::uint32_t launch_id(const session_t &session) {
+      return session.launch_session_id;
+    }
+
+    void drop_client_commands(session_t &session) {
+      session.do_cmds.clear();
+      session.undo_cmds.clear();
     }
 
     bool update_device_info(session_t& session, const std::string& name, const crypto::PERM& newPerm) {
@@ -2158,6 +2187,11 @@ namespace stream {
     }
 
     void join(session_t &session) {
+      // A session that never started, or was joined before, has nothing to wait for
+      if (!session.videoThread.joinable() && !session.audioThread.joinable()) {
+        return;
+      }
+
       // Current Nvidia drivers have a bug where NVENC can deadlock the encoder thread with hardware-accelerated
       // GPU scheduling enabled. If this happens, we will terminate ourselves and the service can restart.
       // The alternative is that Sunshine can never start another session until it's manually restarted.
@@ -2202,6 +2236,7 @@ namespace stream {
       }
 
       // If this is the last session, invoke the platform callbacks
+      std::lock_guard transition_lock {session_transition_mutex};
       if (--running_sessions == 0) {
         bool revert_display_config {config::video.dd.config_revert_on_disconnect};
         if (proc::proc.running()) {
@@ -2222,10 +2257,14 @@ namespace stream {
     }
 
     int start(session_t &session, const std::string &addr_string) {
+      // Stop requests wait until the session is running
+      session.state.store(state_e::STARTING, std::memory_order_release);
+
       session.input = input::alloc(session.mail);
 
       session.broadcast_ref = broadcast.ref();
       if (!session.broadcast_ref) {
+        session.state.store(state_e::STOPPED, std::memory_order_release);
         return -1;
       }
 
@@ -2250,12 +2289,16 @@ namespace stream {
       session.audioThread = std::thread {audioThread, &session};
       session.videoThread = std::thread {videoThread, &session};
 
-      session.state.store(state_e::RUNNING, std::memory_order_relaxed);
+      {
+        std::lock_guard transition_lock {session_transition_mutex};
+        ++running_sessions;
+        session.state.store(state_e::RUNNING, std::memory_order_release);
 
-      // If this is the first session, invoke the platform callbacks
-      if (++running_sessions == 1) {
-        platf::streaming_will_start();
-        proc::proc.resume();
+        // If this is the first session, invoke the platform callbacks
+        if (running_sessions == 1) {
+          platf::streaming_will_start();
+          proc::proc.resume();
+        }
       }
 
       if (!session.do_cmds.empty()) {
@@ -2297,8 +2340,9 @@ namespace stream {
         session->text_input.monitor = text_input::acquire();
       }
 
-      session->do_cmds = std::move(launch_session.client_do_cmds);
-      session->undo_cmds = std::move(launch_session.client_undo_cmds);
+      // Copies: a retried ANNOUNCE of the launch session needs the commands again
+      session->do_cmds = launch_session.client_do_cmds;
+      session->undo_cmds = launch_session.client_undo_cmds;
 
       session->config = config;
 

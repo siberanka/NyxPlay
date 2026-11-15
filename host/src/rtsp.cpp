@@ -10,7 +10,9 @@ extern "C" {
 }
 
 // standard includes
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <format>
 #include <set>
@@ -90,7 +92,97 @@ namespace rtsp_stream {
   public:
     socket_t(boost::asio::io_context &io_context, std::function<void(tcp::socket &sock, launch_session_t &, msg_t &&)> &&handle_data_fn):
         handle_data_fn {std::move(handle_data_fn)},
-        sock {io_context} {
+        sock {io_context},
+        timer {io_context} {
+    }
+
+    ~socket_t() {
+      if (counted) {
+        --open_connections;
+      }
+    }
+
+    /// Number of accepted connections that are attached to a launch session.
+    static inline std::atomic<int> open_connections {0};
+
+    /// Upper bound for simultaneous connections attached to a pending launch.
+    static constexpr int MAX_OPEN_CONNECTIONS = 16;
+
+    /// A client has this long to deliver its request.
+    static constexpr auto REQUEST_TIMEOUT = 10s;
+
+    /// Time the peer is given to read the response and close its side.
+    static constexpr auto LINGER_TIMEOUT = 2s;
+
+    void count_connection() {
+      counted = true;
+      ++open_connections;
+    }
+
+    /**
+     * @brief Close the socket when the timer expires, replacing a previously armed deadline.
+     */
+    void arm_deadline(std::chrono::seconds timeout) {
+      timer.expires_after(timeout);
+      timer.async_wait([self = shared_from_this()](const boost::system::error_code &ec) {
+        if (ec) {
+          // Cancelled or re-armed
+          return;
+        }
+
+        BOOST_LOG(debug) << "RTSP: closing connection after timeout"sv;
+        boost::system::error_code close_ec;
+        self->sock.close(close_ec);
+      });
+    }
+
+    /**
+     * @brief Close the socket immediately.
+     */
+    void close_now() {
+      boost::system::error_code ec;
+      timer.cancel();
+      sock.close(ec);
+    }
+
+    /**
+     * @brief Close the connection without resetting it.
+     * @details The send side is shut down after the response so the peer receives everything and then a FIN.
+     *          Incoming data is read and dropped until the peer closes or a short deadline expires, a close
+     *          with unread data would reset the connection and discard what the peer has not read yet.
+     */
+    void graceful_close() {
+      if (closing) {
+        return;
+      }
+      closing = true;
+
+      if (!sock.is_open()) {
+        boost::system::error_code ec;
+        timer.cancel();
+        return;
+      }
+
+      boost::system::error_code ec;
+      sock.shutdown(boost::asio::socket_base::shutdown_type::shutdown_send, ec);
+      if (ec) {
+        close_now();
+        return;
+      }
+
+      arm_deadline(LINGER_TIMEOUT);
+      drain();
+    }
+
+    void drain() {
+      sock.async_read_some(boost::asio::buffer(drain_buf), [self = shared_from_this()](const boost::system::error_code &ec, std::size_t) {
+        if (ec) {
+          self->close_now();
+          return;
+        }
+
+        self->drain();
+      });
     }
 
     /**
@@ -101,9 +193,7 @@ namespace rtsp_stream {
         BOOST_LOG(error) << "RTSP: read(): Exceeded maximum rtsp packet size: "sv << msg_buf.size();
 
         respond(sock, *session, nullptr, 400, "BAD REQUEST", 0, {});
-
-        boost::system::error_code ec;
-        sock.close(ec);
+        graceful_close();
 
         return;
       }
@@ -134,12 +224,7 @@ namespace rtsp_stream {
       BOOST_LOG(debug) << "handle_read_encrypted_header(): Handle read of size: "sv << bytes << " bytes"sv;
 
       auto sock_close = util::fail_guard([&socket]() {
-        boost::system::error_code ec;
-        socket->sock.close(ec);
-
-        if (ec) {
-          BOOST_LOG(error) << "RTSP: handle_read_encrypted_header(): Couldn't close tcp socket: "sv << ec.message();
-        }
+        socket->graceful_close();
       });
 
       if (ec || bytes < sizeof(encrypted_rtsp_header_t)) {
@@ -183,12 +268,7 @@ namespace rtsp_stream {
       BOOST_LOG(debug) << "handle_read_encrypted(): Handle read of size: "sv << bytes << " bytes"sv;
 
       auto sock_close = util::fail_guard([&socket]() {
-        boost::system::error_code ec;
-        socket->sock.close(ec);
-
-        if (ec) {
-          BOOST_LOG(error) << "RTSP: handle_read_encrypted_message(): Couldn't close tcp socket: "sv << ec.message();
-        }
+        socket->graceful_close();
       });
 
       auto header = (encrypted_rtsp_header_t *) socket->begin;
@@ -246,9 +326,7 @@ namespace rtsp_stream {
         BOOST_LOG(error) << "RTSP: read_plaintext_payload(): Exceeded maximum rtsp packet size: "sv << msg_buf.size();
 
         respond(sock, *session, nullptr, 400, "BAD REQUEST", 0, {});
-
-        boost::system::error_code ec;
-        sock.close(ec);
+        graceful_close();
 
         return;
       }
@@ -274,12 +352,7 @@ namespace rtsp_stream {
       BOOST_LOG(debug) << "handle_plaintext_payload(): Handle read of size: "sv << bytes << " bytes"sv;
 
       auto sock_close = util::fail_guard([&socket]() {
-        boost::system::error_code ec;
-        socket->sock.close(ec);
-
-        if (ec) {
-          BOOST_LOG(error) << "RTSP: handle_plaintext_payload(): Couldn't close tcp socket: "sv << ec.message();
-        }
+        socket->graceful_close();
       });
 
       if (ec) {
@@ -346,12 +419,7 @@ namespace rtsp_stream {
       if (ec) {
         BOOST_LOG(error) << "RTSP: handle_read_plaintext(): Couldn't read from tcp socket: "sv << ec.message();
 
-        boost::system::error_code ec;
-        socket->sock.close(ec);
-
-        if (ec) {
-          BOOST_LOG(error) << "RTSP: handle_read_plaintext(): Couldn't close tcp socket: "sv << ec.message();
-        }
+        socket->close_now();
 
         return;
       }
@@ -384,13 +452,21 @@ namespace rtsp_stream {
 
     void handle_data(msg_t &&req) {
       handle_data_fn(sock, *session, std::move(req));
+
+      // One request is served per connection
+      graceful_close();
     }
 
     std::function<void(tcp::socket &sock, launch_session_t &, msg_t &&)> handle_data_fn;
 
     tcp::socket sock;
+    boost::asio::steady_timer timer;
 
     std::array<char, 2048> msg_buf;
+    std::array<char, 512> drain_buf;
+
+    bool counted = false;
+    bool closing = false;
 
     char *crlf;
     char *begin = msg_buf.data();
@@ -438,9 +514,6 @@ namespace rtsp_stream {
       if (req->type != TYPE_REQUEST || req->message.request.command == nullptr || req->message.request.target == nullptr) {
         BOOST_LOG(warning) << "Ignoring RTSP message that is not a well-formed request"sv;
         respond(sock, session, nullptr, 400, "BAD REQUEST", req->sequenceNumber, {});
-
-        boost::system::error_code ec;
-        sock.shutdown(boost::asio::socket_base::shutdown_type::shutdown_both, ec);
         return;
       }
 
@@ -450,9 +523,6 @@ namespace rtsp_stream {
       } else {
         cmd_not_found(sock, session, std::move(req));
       }
-
-      boost::system::error_code ec;
-      sock.shutdown(boost::asio::socket_base::shutdown_type::shutdown_both, ec);
     }
 
     void handle_accept(const boost::system::error_code &ec) {
@@ -466,18 +536,27 @@ namespace rtsp_stream {
 
       auto socket = std::move(next_socket);
 
-      auto launch_session {launch_event.view(0s)};
+      auto launch_session {launch_slot.pending()};
       if (launch_session) {
-        // Associate the current RTSP session with this socket and start reading
-        socket->session = launch_session;
-        socket->read();
+        if (socket_t::open_connections.load() >= socket_t::MAX_OPEN_CONNECTIONS) {
+          BOOST_LOG(warning) << "Refusing RTSP connection, too many open connections"sv;
+          socket->close_now();
+        } else {
+          boost::system::error_code opt_ec;
+          socket->sock.set_option(tcp::no_delay(true), opt_ec);
+
+          // Associate the current RTSP session with this socket and start reading
+          socket->session = launch_session;
+          socket->count_connection();
+          socket->arm_deadline(socket_t::REQUEST_TIMEOUT);
+          socket->read();
+        }
       } else {
         // This can happen due to normal things like port scanning, so let's not make these visible by default
         BOOST_LOG(debug) << "No pending session for incoming RTSP connection"sv;
 
         // If there is no session pending, close the connection immediately
-        boost::system::error_code ec;
-        socket->sock.close(ec);
+        socket->close_now();
       }
 
       // Queue another asynchronous accept for the next incoming connection
@@ -496,28 +575,40 @@ namespace rtsp_stream {
     /**
      * @brief Launch a new streaming session.
      * @note If the client does not begin streaming within the ping_timeout,
-     *       the session will be discarded.
+     *       the session will be discarded. A pending launch of the same client is replaced, the stream
+     *       that was started from it but never got its control connection is stopped.
      * @param launch_session Streaming session information.
+     * @return false if the launch of another client is still pending.
      */
-    void session_raise(std::shared_ptr<launch_session_t> launch_session) {
-      // If a launch event is still pending, don't overwrite it.
-      if (launch_event.view(0s)) {
-        return;
+    bool session_raise(std::shared_ptr<launch_session_t> launch_session) {
+      auto id = launch_session->id;
+
+      auto raised = launch_slot.raise(std::move(launch_session));
+      if (raised.result == launch_slot_t::result_e::busy) {
+        BOOST_LOG(info) << "Launch refused, the launch of another client is pending"sv;
+        return false;
       }
 
-      // Raise the new launch session to prepare for the RTSP handshake
-      launch_event.raise(std::move(launch_session));
+      uint32_t replaced_id = raised.replaced ? raised.replaced->id : 0;
 
-      // Arm the timer to expire this launch session if the client times out
-      raised_timer.expires_after(config::stream.ping_timeout);
-      raised_timer.async_wait([this](const boost::system::error_code &ec) {
-        if (!ec) {
-          auto discarded = launch_event.pop(0s);
-          if (discarded) {
-            BOOST_LOG(debug) << "Event timeout: "sv << discarded->unique_id;
-          }
+      // The timer and the session list are handled on the RTSP thread
+      asio::post(io_context, [this, id, replaced_id]() {
+        if (replaced_id) {
+          BOOST_LOG(debug) << "Launch session "sv << replaced_id << " replaced by "sv << id;
+          stop_launch_sessions(replaced_id);
         }
+
+        // Arm the timer to expire this launch session if the client times out
+        raised_timer.expires_after(config::stream.ping_timeout);
+        raised_timer.async_wait([this, id](const boost::system::error_code &ec) {
+          // A timer that was replaced or fired late must not discard a newer launch: the id is compared
+          if (!ec && launch_slot.clear(id)) {
+            BOOST_LOG(debug) << "Event timeout: launch session "sv << id;
+          }
+        });
       });
+
+      return true;
     }
 
     /**
@@ -525,17 +616,61 @@ namespace rtsp_stream {
      * @param launch_session_id The ID of the session to clear.
      */
     void session_clear(uint32_t launch_session_id) {
-      // We currently only support a single pending RTSP session,
-      // so the ID should always match the one for that session.
-      auto launch_session = launch_event.view(0s);
-      if (launch_session) {
-        if (launch_session->id != launch_session_id) {
-          BOOST_LOG(error) << "Attempted to clear unexpected session: "sv << launch_session_id << " vs "sv << launch_session->id;
-        } else {
-          raised_timer.cancel();
-          launch_event.pop();
+      // Only a single RTSP session can be pending. A late timer of an earlier launch
+      // finds a different id and leaves the newer launch alone.
+      if (!launch_slot.clear(launch_session_id)) {
+        auto pending = launch_slot.pending();
+        if (pending) {
+          BOOST_LOG(debug) << "Attempted to clear unexpected session: "sv << launch_session_id << " vs "sv << pending->id;
         }
       }
+    }
+
+    /**
+     * @brief Stop the streams that were started from the launch session.
+     * @details Their client commands are dropped, the replacement or the caller owns them now.
+     */
+    void stop_launch_sessions(uint32_t launch_session_id) {
+      auto lg = _session_slots.lock();
+
+      for (auto &slot : *_session_slots) {
+        if (slot && stream::session::launch_id(*slot) == launch_session_id) {
+          stream::session::drop_client_commands(*slot);
+          stream::session::stop(*slot);
+        }
+      }
+    }
+
+    /**
+     * @brief Discard the pending launch (of a client) and stop the streams started from it.
+     * @param uuid The client, or nullptr for whoever owns the pending launch.
+     */
+    void session_drop(const std::string *uuid) {
+      auto dropped = uuid ? launch_slot.drop(*uuid) : launch_slot.drop_any();
+      if (!dropped) {
+        return;
+      }
+
+      auto id = dropped->id;
+      asio::post(io_context, [this, id]() {
+        stop_launch_sessions(id);
+      });
+    }
+
+    /**
+     * @brief The streams that were started from the launch session.
+     */
+    std::vector<std::shared_ptr<stream::session_t>> launch_sessions(uint32_t launch_session_id) {
+      std::vector<std::shared_ptr<stream::session_t>> result;
+      auto lg = _session_slots.lock();
+
+      for (auto &slot : *_session_slots) {
+        if (slot && stream::session::launch_id(*slot) == launch_session_id) {
+          result.push_back(slot);
+        }
+      }
+
+      return result;
     }
 
     /**
@@ -547,7 +682,7 @@ namespace rtsp_stream {
       return _session_slots->size();
     }
 
-    safe::event_t<std::shared_ptr<launch_session_t>> launch_event;
+    launch_slot_t launch_slot;
 
     /**
      * @brief Clear launch sessions.
@@ -626,6 +761,20 @@ namespace rtsp_stream {
       return nullptr;
     }
 
+    std::vector<std::shared_ptr<stream::session_t>>
+    find_sessions(const std::string_view& uuid) {
+      std::vector<std::shared_ptr<stream::session_t>> result;
+      auto lg = _session_slots.lock();
+
+      for (auto &slot : *_session_slots) {
+        if (slot && stream::session::uuid_match(*slot, uuid)) {
+          result.push_back(slot);
+        }
+      }
+
+      return result;
+    }
+
     std::list<std::string>
     get_all_session_uuids() {
       std::list<std::string> uuids;
@@ -652,8 +801,77 @@ namespace rtsp_stream {
 
   rtsp_server_t server {};
 
-  void launch_session_raise(std::shared_ptr<launch_session_t> launch_session) {
-    server.session_raise(std::move(launch_session));
+  launch_slot_t::raise_result_t launch_slot_t::raise(std::shared_ptr<launch_session_t> launch_session) {
+    std::lock_guard lg {_mutex};
+
+    if (!_pending) {
+      _pending = std::move(launch_session);
+      return {result_e::raised, nullptr};
+    }
+
+    if (_pending->unique_id != launch_session->unique_id) {
+      return {result_e::busy, nullptr};
+    }
+
+    auto replaced = std::move(_pending);
+    _pending = std::move(launch_session);
+    return {result_e::replaced, std::move(replaced)};
+  }
+
+  std::shared_ptr<launch_session_t> launch_slot_t::pending() const {
+    std::lock_guard lg {_mutex};
+    return _pending;
+  }
+
+  bool launch_slot_t::clear(uint32_t launch_session_id) {
+    std::lock_guard lg {_mutex};
+
+    if (_pending && _pending->id == launch_session_id) {
+      _pending.reset();
+      return true;
+    }
+
+    return false;
+  }
+
+  std::shared_ptr<launch_session_t> launch_slot_t::drop(std::string_view uuid) {
+    std::lock_guard lg {_mutex};
+
+    if (_pending && _pending->unique_id == uuid) {
+      return std::move(_pending);
+    }
+
+    return nullptr;
+  }
+
+  std::shared_ptr<launch_session_t> launch_slot_t::drop_any() {
+    std::lock_guard lg {_mutex};
+    return std::move(_pending);
+  }
+
+  bool launch_slot_t::blocked_for(std::string_view uuid) const {
+    std::lock_guard lg {_mutex};
+    return _pending && _pending->unique_id != uuid;
+  }
+
+  bool launch_slot_t::claim_announce(launch_session_t &launch_session) {
+    return !launch_session.announced.exchange(true);
+  }
+
+  void launch_slot_t::release_announce(launch_session_t &launch_session) {
+    launch_session.announced = false;
+  }
+
+  bool launch_session_raise(std::shared_ptr<launch_session_t> launch_session) {
+    return server.session_raise(std::move(launch_session));
+  }
+
+  bool launch_session_blocked_for(const std::string &uuid) {
+    return server.launch_slot.blocked_for(uuid);
+  }
+
+  void launch_session_drop(const std::string &uuid) {
+    server.session_drop(&uuid);
   }
 
   void launch_session_clear(uint32_t launch_session_id) {
@@ -667,6 +885,10 @@ namespace rtsp_stream {
     return server.session_count();
   }
 
+  std::vector<std::shared_ptr<stream::session_t>> find_sessions(const std::string_view &uuid) {
+    return server.find_sessions(uuid);
+  }
+
   std::shared_ptr<stream::session_t> find_session(const std::string_view& uuid) {
     return server.find_session(uuid);
   }
@@ -676,6 +898,8 @@ namespace rtsp_stream {
   }
 
   void terminate_sessions() {
+    // A launch that is waiting for its handshake must not start a stream afterwards
+    server.session_drop(nullptr);
     server.clear(true);
   }
 
@@ -751,15 +975,15 @@ namespace rtsp_stream {
       // Send the full encrypted message
       send(sock, std::string_view {(char *) message.data(), message.size()});
     } else {
-      std::string_view tmp_resp {raw_resp.get(), (size_t) serialized_len};
-
-      // Send the plaintext RTSP message header
-      if (send(sock, tmp_resp)) {
-        return;
+      // Header and payload go out in one write
+      std::string plain;
+      plain.reserve(serialized_len + payload.second);
+      plain.append(raw_resp.get(), (size_t) serialized_len);
+      if (payload.first && payload.second > 0) {
+        plain.append(payload.first, (size_t) payload.second);
       }
 
-      // Send the plaintext RTSP message payload (if present)
-      send(sock, std::string_view {payload.first, (std::size_t) payload.second});
+      send(sock, plain);
     }
   }
 
@@ -1211,23 +1435,49 @@ namespace rtsp_stream {
       return;
     }
 
-    // A launch session starts a single stream, refuse a repeated ANNOUNCE
-    if (session.announced.exchange(true)) {
-      BOOST_LOG(warning) << "Rejecting repeated ANNOUNCE for an already used launch session"sv;
-      respond(sock, session, &option, 400, "BAD REQUEST", req->sequenceNumber, {});
+    // Only the launch that is waiting for its handshake can start a stream
+    auto remote_address = remote_endpoint.address().to_string();
+    auto pending = server->launch_slot.pending();
+    if (!pending || pending->id != session.id) {
+      BOOST_LOG(warning) << "Rejecting ANNOUNCE from ["sv << remote_address << "], launch session "sv << session.id << " is no longer pending"sv;
+      respond(sock, session, &option, 409, "Conflict", req->sequenceNumber, {});
       return;
     }
 
-    auto stream_session = stream::session::alloc(config, session);
-    server->insert(stream_session);
+    // Streams that are stopping must be gone before a new one registers for pings
+    server->clear(false);
 
-    if (stream::session::start(*stream_session, remote_endpoint.address().to_string())) {
+    // A launch session runs a single stream. A repeated ANNOUNCE is a retry of a client that did not receive
+    // the reply: the connection is bound to this launch session (and with encrypted RTSP to its key), so it
+    // replaces the earlier stream until the control connection exists.
+    std::vector<std::shared_ptr<stream::session_t>> previous;
+    if (!launch_slot_t::claim_announce(session)) {
+      BOOST_LOG(info) << "Repeated ANNOUNCE for launch session "sv << session.id << " from ["sv << remote_address << "], replacing the stream"sv;
+      previous = server->launch_sessions(session.id);
+
+      // Client commands already ran with the first stream
+      session.client_do_cmds.clear();
+    }
+
+    auto stream_session = stream::session::alloc(config, session);
+
+    if (stream::session::start(*stream_session, remote_address)) {
       BOOST_LOG(error) << "Failed to start a streaming session"sv;
 
-      session.announced = false;
-      server->remove(stream_session);
+      if (previous.empty()) {
+        launch_slot_t::release_announce(session);
+      }
       respond(sock, session, &option, 500, "Internal Server Error", req->sequenceNumber, {});
       return;
+    }
+
+    // The session is listed once it runs, a cancel can not see a half started session
+    server->insert(stream_session);
+
+    // The replaced stream never got a control connection, stopping it does not touch the app or the display
+    for (auto &old : previous) {
+      stream::session::drop_client_commands(*old);
+      stream::session::stop(*old);
     }
 
     respond(sock, session, &option, 200, "OK", req->sequenceNumber, {});

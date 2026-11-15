@@ -13,6 +13,7 @@
 #endif
 
 // standard includes
+#include <mutex>
 #include <optional>
 #include <unordered_map>
 
@@ -100,6 +101,19 @@ namespace proc {
     std::chrono::seconds exit_timeout;
   };
 
+  /**
+   * @brief Mutex that can be a member of a movable class: a moved object keeps its own mutex.
+   */
+  struct movable_mutex_t {
+    movable_mutex_t() = default;
+    movable_mutex_t(movable_mutex_t &&) noexcept {}
+    movable_mutex_t &operator=(movable_mutex_t &&) noexcept {
+      return *this;
+    }
+
+    std::recursive_mutex mutex;
+  };
+
   class proc_t {
   public:
     KITTY_DEFAULT_CONSTR_MOVE_THROW(proc_t)
@@ -141,6 +155,10 @@ namespace proc {
     void terminate(bool immediate = false, bool needs_refresh = true);
 
   private:
+    // The app state is used by the HTTPS, control, RTSP and web UI threads. Public members hold this lock,
+    // it is recursive because terminate() is reached from running() and pause().
+    movable_mutex_t _lock;
+
     int _app_id = 0;
     std::string _app_name;
 

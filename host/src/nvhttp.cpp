@@ -1704,7 +1704,10 @@ namespace nvhttp {
         (config::input.enable_input_only_mode && appid == proc::terminate_app_id)
         || appuuid_str == TERMINATE_APP_UUID
       ) {
+        // Same teardown as /cancel: end the streams, then the app, then restore the display
+        rtsp_stream::terminate_sessions();
         proc::proc.terminate();
+        display_device::revert_configuration();
 
         tree.put("root.resume", 0);
         tree.put("root.<xmlattr>.status_code", 410);
@@ -1736,6 +1739,15 @@ namespace nvhttp {
       tree.put("root.resume", 0);
       tree.put("root.<xmlattr>.status_code", 400);
       tree.put("root.<xmlattr>.status_message", launch_error);
+
+      return;
+    }
+
+    // Only one launch can wait for its RTSP handshake: tell the client instead of dropping its request later
+    if (rtsp_stream::launch_session_blocked_for(named_cert_p->uuid)) {
+      tree.put("root.<xmlattr>.status_code", 503);
+      tree.put("root.<xmlattr>.status_message", "Another client is connecting");
+      tree.put("root.gamesession", 0);
 
       return;
     }
@@ -1830,6 +1842,14 @@ namespace nvhttp {
       tree.put("root.gamesession", 0);
     }
 
+    if (!rtsp_stream::launch_session_raise(launch_session)) {
+      tree.put("root.<xmlattr>.status_code", 503);
+      tree.put("root.<xmlattr>.status_message", "Another client is connecting");
+      tree.put("root.gamesession", 0);
+
+      return;
+    }
+
     tree.put("root.<xmlattr>.status_code", 200);
     tree.put(
       "root.sessionUrl0",
@@ -1841,8 +1861,6 @@ namespace nvhttp {
       )
     );
     tree.put("root.gamesession", 1);
-
-    rtsp_stream::launch_session_raise(launch_session);
   }
 
   void resume(bool &host_audio, resp_https_t response, req_https_t request) {
@@ -1906,6 +1924,15 @@ namespace nvhttp {
       return;
     }
 
+    // Only one launch can wait for its RTSP handshake: tell the client instead of dropping its request later
+    if (rtsp_stream::launch_session_blocked_for(named_cert_p->uuid)) {
+      tree.put("root.resume", 0);
+      tree.put("root.<xmlattr>.status_code", 503);
+      tree.put("root.<xmlattr>.status_message", "Another client is connecting");
+
+      return;
+    }
+
     if (!proc::proc.allow_client_commands || !named_cert_p->allow_client_commands) {
       launch_session->client_do_cmds.clear();
       launch_session->client_undo_cmds.clear();
@@ -1945,6 +1972,14 @@ namespace nvhttp {
       return;
     }
 
+    if (!rtsp_stream::launch_session_raise(launch_session)) {
+      tree.put("root.resume", 0);
+      tree.put("root.<xmlattr>.status_code", 503);
+      tree.put("root.<xmlattr>.status_message", "Another client is connecting");
+
+      return;
+    }
+
     tree.put("root.<xmlattr>.status_code", 200);
     tree.put(
       "root.sessionUrl0",
@@ -1956,8 +1991,6 @@ namespace nvhttp {
       )
     );
     tree.put("root.resume", 1);
-
-    rtsp_stream::launch_session_raise(launch_session);
 
 #if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1
     system_tray::update_tray_client_connected(named_cert_p->name);
@@ -2332,12 +2365,11 @@ namespace nvhttp {
   }
 
   bool find_and_stop_session(const std::string& uuid, bool graceful) {
-    auto session = rtsp_stream::find_session(uuid);
-    if (session) {
+    auto sessions = rtsp_stream::find_sessions(uuid);
+    for (auto &session : sessions) {
       stop_session(*session, graceful);
-      return true;
     }
-    return false;
+    return !sessions.empty();
   }
 
   void update_session_info(stream::session_t& session, const std::string& name, const crypto::PERM newPerm) {
@@ -2345,12 +2377,16 @@ namespace nvhttp {
   }
 
   bool find_and_udpate_session_info(const std::string& uuid, const std::string& name, const crypto::PERM newPerm) {
-    auto session = rtsp_stream::find_session(uuid);
-    if (session) {
-      update_session_info(*session, name, newPerm);
-      return true;
+    // A launch that is still waiting for its handshake loses its view right as well
+    if (!(newPerm & crypto::PERM::_allow_view)) {
+      rtsp_stream::launch_session_drop(uuid);
     }
-    return false;
+
+    auto sessions = rtsp_stream::find_sessions(uuid);
+    for (auto &session : sessions) {
+      update_session_info(*session, name, newPerm);
+    }
+    return !sessions.empty();
   }
 
   bool update_device_info(
@@ -2432,8 +2468,10 @@ namespace nvhttp {
     // Stopping the session and the app can take seconds: do it without holding the client lock,
     // which the TLS verification of new connections needs
     if (removed) {
-      auto session = rtsp_stream::find_session(uuid);
-      if (session) {
+      // The revoked client must not start a stream from a launch that is still pending
+      rtsp_stream::launch_session_drop(std::string {uuid});
+
+      for (auto &session : rtsp_stream::find_sessions(uuid)) {
         stop_session(*session, true);
       }
 

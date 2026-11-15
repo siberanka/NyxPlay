@@ -191,6 +191,8 @@ namespace proc {
   }
 
   void proc_t::launch_input_only() {
+    std::lock_guard lock {_lock.mutex};
+
     _app_id = input_only_app_id;
     _app_name = "Remote Input";
     _app.uuid = REMOTE_INPUT_UUID;
@@ -204,6 +206,8 @@ namespace proc {
   }
 
   int proc_t::execute(const ctx_t& app, std::shared_ptr<rtsp_stream::launch_session_t> launch_session) {
+    std::lock_guard lock {_lock.mutex};
+
     if (_app_id == input_only_app_id) {
       terminate(false, false);
       std::this_thread::sleep_for(1s);
@@ -599,6 +603,8 @@ namespace proc {
   }
 
   int proc_t::running() {
+    std::lock_guard lock {_lock.mutex};
+
 #ifndef _WIN32
     // On POSIX OSes, we must periodically wait for our children to avoid
     // them becoming zombies. This must be synchronized carefully with
@@ -640,6 +646,8 @@ namespace proc {
   }
 
   void proc_t::resume() {
+    std::lock_guard lock {_lock.mutex};
+
     BOOST_LOG(info) << "Session resuming for app [" << _app_name << "].";
 
     if (!_app.state_cmds.empty()) {
@@ -685,6 +693,8 @@ namespace proc {
   }
 
   void proc_t::pause() {
+    std::lock_guard lock {_lock.mutex};
+
     if (!running()) {
       BOOST_LOG(info) << "Session already stopped, do not run pause commands.";
       return;
@@ -744,6 +754,8 @@ namespace proc {
   }
 
   void proc_t::terminate(bool immediate, bool needs_refresh) {
+    std::lock_guard lock {_lock.mutex};
+
     std::error_code ec;
     placebo = false;
 
@@ -877,14 +889,17 @@ namespace proc {
   }
 
   std::string proc_t::get_last_run_app_name() {
+    std::lock_guard lock {_lock.mutex};
     return _app_name;
   }
 
   std::string proc_t::get_running_app_uuid() {
+    std::lock_guard lock {_lock.mutex};
     return _app.uuid;
   }
 
   boost::process::environment proc_t::get_env() {
+    std::lock_guard lock {_lock.mutex};
     return _env;
   }
 
