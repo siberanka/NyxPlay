@@ -14,7 +14,8 @@ public:
         Missing,        // nothing stored
         Loaded,         // key read as stored
         Migrated,       // plain key was re-saved in protected form
-        Undecryptable   // protected value exists but cannot be decrypted here
+        Undecryptable,  // protected value exists and can never be decrypted by this user
+        Unavailable     // protected value exists but could not be read right now; it is kept as is
     };
 
     struct Result {
@@ -22,14 +23,20 @@ public:
         QByteArray key;
     };
 
-    // Returns an empty array on failure or on platforms without protection
+    // Returns an empty array on failure or on platforms without protection.
+    // When unprotect() fails, *permanent (if given) tells whether the value is definitely
+    // not decryptable for this user (damaged data or another account's key) as opposed to
+    // a failure that may go away (profile not ready, out of resources, service unavailable).
     static QByteArray protect(const QByteArray& plain);
-    static QByteArray unprotect(const QByteArray& blob);
+    static QByteArray unprotect(const QByteArray& blob, bool* permanent = nullptr);
+
+    // Classifies a Windows error code reported by the decryption call
+    static bool isPermanentDecryptError(unsigned long errorCode);
 
     static Result load(QSettings& settings);
 
-    // Stores the key (protected where supported). Returns false if the key
-    // could only be stored in plain form or not at all.
+    // Stores the key (protected where supported). A key that cannot be protected is never
+    // written in plain form; false means nothing was stored.
     static bool save(QSettings& settings, const QByteArray& pem);
 
     // Forgets the pinned server certificate of every saved host so that the

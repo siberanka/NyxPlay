@@ -33,8 +33,9 @@ private:
     QSslKey
     getSslKey();
 
-    void
-    createCredentials(QSettings& settings);
+    // Returns true if the new identity was stored
+    bool
+    createCredentials(QSettings& settings, bool persist = true);
 
     // Initialized in constructor
     QByteArray m_CachedPrivateKey;

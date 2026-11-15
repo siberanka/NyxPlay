@@ -63,6 +63,13 @@ public class AddComputerManuallyDeepLinkTest {
         shadowOf(Looper.getMainLooper()).idle();
     }
 
+    // The latest question shown to the user. Progress dialogs of an add that a previous test
+    // left running in the background are not questions.
+    private static AlertDialog confirmationDialog() {
+        AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
+        return dialog instanceof android.app.ProgressDialog ? null : dialog;
+    }
+
     private ActivityController<AddComputerManually> open(String uri) {
         Application app = ApplicationProvider.getApplicationContext();
         Intent intent = new Intent(app, AddComputerManually.class);
@@ -76,34 +83,30 @@ public class AddComputerManuallyDeepLinkTest {
     }
 
     @Test
-    public void launchLinkAsksAndHandsOffWithToken() {
-        ActivityController<AddComputerManually> c = open("art://launch?host_uuid=" + HOST_UUID + "&app_id=1");
+    public void launchLinkHandsOffWithoutTokenSoTheTrampolineAsks() {
+        ActivityController<AddComputerManually> c = open("art://launch?host_uuid=" + HOST_UUID + "&app_id=1&host_name=Work%20PC");
 
-        AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
-        assertNotNull(dialog);
-        assertNull(shadowOf(c.get()).getNextStartedActivity());
-
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
-        shadowOf(Looper.getMainLooper()).idle();
+        // The confirmation is shown by the trampoline, with names from the app's own records
+        assertNull(ShadowAlertDialog.getLatestAlertDialog());
 
         Intent started = shadowOf(c.get()).getNextStartedActivity();
         assertNotNull(started);
         assertEquals(ShortcutTrampoline.class.getName(), started.getComponent().getClassName());
         assertEquals(HOST_UUID, started.getStringExtra(AppView.UUID_EXTRA));
         assertEquals("1", started.getStringExtra(Game.EXTRA_APP_ID));
-        assertTrue(LaunchToken.matches(c.get(), started.getStringExtra(LaunchToken.EXTRA)));
+        assertNull(started.getStringExtra(LaunchToken.EXTRA));
         assertTrue(c.get().isFinishing());
     }
 
     @Test
-    public void launchLinkCancelFinishesWithoutStarting() {
-        ActivityController<AddComputerManually> c = open("art://launch?host_uuid=" + HOST_UUID);
+    public void pairConfirmationShowsTheAddressNotTheSuppliedName() {
+        open("art://10.0.2.2:57989?pin=1234&passphrase=abcd&name=Trusted%20Bank");
 
-        ShadowAlertDialog.getLatestAlertDialog().getButton(AlertDialog.BUTTON_NEGATIVE).performClick();
-        shadowOf(Looper.getMainLooper()).idle();
-
-        assertNull(shadowOf(c.get()).getNextStartedActivity());
-        assertTrue(c.get().isFinishing());
+        AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
+        assertNotNull(dialog);
+        String text = String.valueOf(shadowOf(dialog).getMessage());
+        assertTrue(text, text.contains("10.0.2.2:57989"));
+        assertFalse(text, text.contains("Trusted Bank"));
     }
 
     @Test
@@ -125,7 +128,7 @@ public class AddComputerManuallyDeepLinkTest {
     public void linkWithoutQueryPrefillsTheHostAndDoesNotAsk() {
         ActivityController<AddComputerManually> c = open("art://10.0.2.2:57989");
 
-        assertNull(ShadowAlertDialog.getLatestAlertDialog());
+        assertNull(confirmationDialog());
         TextView host = c.get().findViewById(R.id.hostTextView);
         assertEquals("10.0.2.2:57989", host.getText().toString());
     }
@@ -134,7 +137,7 @@ public class AddComputerManuallyDeepLinkTest {
     public void ipv6LinkPrefillsTheHost() {
         ActivityController<AddComputerManually> c = open("art://[::1]");
 
-        assertNull(ShadowAlertDialog.getLatestAlertDialog());
+        assertNull(confirmationDialog());
         TextView host = c.get().findViewById(R.id.hostTextView);
         assertEquals("[::1]", host.getText().toString());
     }

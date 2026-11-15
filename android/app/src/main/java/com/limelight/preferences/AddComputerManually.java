@@ -18,6 +18,7 @@ import com.limelight.nvstream.http.ComputerDetails;
 import com.limelight.nvstream.http.NvHTTP;
 import com.limelight.nvstream.jni.MoonBridge;
 import com.limelight.utils.Dialog;
+import com.limelight.utils.DisplayText;
 import com.limelight.utils.LaunchToken;
 import com.limelight.utils.ServerHelper;
 import com.limelight.utils.SpinnerDialog;
@@ -316,23 +317,10 @@ public class AddComputerManually extends AppCompatActivity {
                     intent.putExtra(Game.EXTRA_APP_NAME, appName);
                     intent.putExtra(Game.EXTRA_APP_ID, appID);
 
-                    // This link can be opened by any app or web page, so ask before starting a stream
-                    AlertDialog.Builder launchBuilder = new AlertDialog.Builder(this);
-                    launchBuilder.setTitle(R.string.launch_confirm_title);
-                    launchBuilder.setMessage(R.string.launch_confirm_message);
-                    launchBuilder.setCancelable(false);
-                    launchBuilder.setPositiveButton(getString(R.string.proceed), (dialog, which) -> {
-                        dialog.dismiss();
-                        // The user has confirmed this launch, so the trampoline does not need to ask again
-                        intent.putExtra(LaunchToken.EXTRA, LaunchToken.get(AddComputerManually.this));
-                        startActivity(intent);
-                        finish();
-                    });
-                    launchBuilder.setNegativeButton(getString(R.string.cancel), (dialog, which) -> {
-                        dialog.dismiss();
-                        finish();
-                    });
-                    launchBuilder.create().show();
+                    // This link can be opened by any app or web page. It carries no launch token, so
+                    // the trampoline asks first and names the host and app from this app's own records.
+                    startActivity(intent);
+                    finish();
 
                     return;
                 }
@@ -391,11 +379,11 @@ public class AddComputerManually extends AppCompatActivity {
         hostText.setText(server);
 
         if (query != null && !query.isEmpty()) {
-            String hostName = data.getQueryParameter("name");
-            if (hostName != null && !hostName.isEmpty()) {
-                hostName = hostName + " (" + server + ")";
-            } else {
-                hostName = server;
+            // Only the address that will be contacted is shown; a name supplied by the link
+            // could be made to look like something else.
+            String hostName = DisplayText.label(server);
+            if (hostName == null) {
+                hostName = "?";
             }
 
             AlertDialog.Builder builder = new AlertDialog.Builder(this);

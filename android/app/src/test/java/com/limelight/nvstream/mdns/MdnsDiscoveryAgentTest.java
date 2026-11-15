@@ -27,8 +27,12 @@ public class MdnsDiscoveryAgentTest {
         public void stopDiscovery() {}
 
         void announce() throws Exception {
-            reportNewComputer("host", 47989,
-                    new Inet4Address[] { (Inet4Address) InetAddress.getByName("10.0.0.5") }, new Inet6Address[0]);
+            announce("host", "10.0.0.5");
+        }
+
+        void announce(String name, String address) throws Exception {
+            reportNewComputer(name, 47989,
+                    new Inet4Address[] { (Inet4Address) InetAddress.getByName(address) }, new Inet6Address[0]);
         }
     }
 
@@ -45,6 +49,7 @@ public class MdnsDiscoveryAgentTest {
             @Override
             public void notifyDiscoveryFailure(Exception e) {}
         });
+        agent.probeBackoffMs = 0;
 
         agent.announce();
         assertEquals(1, calls.get());
@@ -57,6 +62,48 @@ public class MdnsDiscoveryAgentTest {
         // A known host is not reported again
         agent.announce();
         assertEquals(2, calls.get());
+    }
+
+    @Test
+    public void failedProbeIsNotRepeatedDuringTheBackoff() throws Exception {
+        final AtomicInteger calls = new AtomicInteger();
+        TestAgent agent = new TestAgent(new MdnsDiscoveryListener() {
+            @Override
+            public boolean notifyComputerAdded(MdnsComputer computer) {
+                calls.incrementAndGet();
+                return false;
+            }
+
+            @Override
+            public void notifyDiscoveryFailure(Exception e) {}
+        });
+
+        for (int i = 0; i < 5; i++) {
+            agent.announce();
+        }
+        assertEquals(1, calls.get());
+    }
+
+    @Test
+    public void automaticallyAddedHostsAreCapped() throws Exception {
+        final AtomicInteger calls = new AtomicInteger();
+        TestAgent agent = new TestAgent(new MdnsDiscoveryListener() {
+            @Override
+            public boolean notifyComputerAdded(MdnsComputer computer) {
+                calls.incrementAndGet();
+                return true;
+            }
+
+            @Override
+            public void notifyDiscoveryFailure(Exception e) {}
+        });
+
+        int total = MdnsDiscoveryAgent.MAX_AUTO_ADDED_COMPUTERS + 10;
+        for (int i = 0; i < total; i++) {
+            agent.announce("host" + i, "10.0.1." + (i + 1));
+        }
+        assertEquals(MdnsDiscoveryAgent.MAX_AUTO_ADDED_COMPUTERS, calls.get());
+        assertEquals(MdnsDiscoveryAgent.MAX_AUTO_ADDED_COMPUTERS, agent.getComputerSet().size());
     }
 
     @Test

@@ -9,6 +9,8 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.IBinder;
 import android.util.Log;
 
@@ -25,6 +27,7 @@ import com.limelight.nvstream.wol.WakeOnLanSender;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.utils.CacheHelper;
 import com.limelight.utils.Dialog;
+import com.limelight.utils.DisplayText;
 import com.limelight.utils.LaunchToken;
 import com.limelight.utils.ServerHelper;
 import com.limelight.utils.ShortcutHelper;
@@ -45,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ShortcutTrampoline extends AppCompatActivity {
@@ -66,6 +70,13 @@ public class ShortcutTrampoline extends AppCompatActivity {
 
     // Upper bound for a shortcut file; real files are a few hundred bytes
     private static final int MAX_ART_FILE_BYTES = 16 * 1024;
+
+    // A provider that stalls must not keep the screen waiting forever
+    private static final long ART_READ_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(10);
+
+    private final Handler artHandler = new Handler(Looper.getMainLooper());
+    private final AtomicBoolean artSettled = new AtomicBoolean(false);
+    private Runnable artTimeout;
 
     // Releases the service connection exactly once, no matter which path gets here first
     private void unbindOnce() {
@@ -334,9 +345,42 @@ public class ShortcutTrampoline extends AppCompatActivity {
         return true;
     }
 
-    // Returns the parsed entries, or null (after showing an error) if the file cannot be used
+    // Looks the app up in the cached list of the host, so the dialog names what will really start
+    private String resolveCachedAppName(String hostUuid, NvApp wanted) {
+        if (wanted == null || !ComputerDetails.isValidUuid(hostUuid)) {
+            return null;
+        }
+
+        try {
+            String rawAppList = CacheHelper.readInputStreamToString(
+                    CacheHelper.openCacheFileForInput(getCacheDir(), "applist", hostUuid));
+            if (rawAppList.isEmpty()) {
+                return null;
+            }
+
+            for (NvApp candidate : NvHTTP.getAppListByReader(new StringReader(rawAppList))) {
+                boolean sameUuid = wanted.getAppUUID() != null && !wanted.getAppUUID().isEmpty()
+                        && wanted.getAppUUID().equalsIgnoreCase(candidate.getAppUUID());
+                boolean sameId = wanted.getAppId() >= 0 && wanted.getAppId() == candidate.getAppId();
+                if (sameUuid || sameId) {
+                    return DisplayText.label(candidate.getAppName());
+                }
+            }
+        } catch (IOException | XmlPullParserException | RuntimeException e) {
+            Log.w(TAG, "Unable to read the cached app list", e);
+        }
+        return null;
+    }
+
+    // Returns the parsed entries, or null if the file cannot be used. Runs on a worker thread.
     private Map<String, String> parseArtFileData(Uri fileUri) {
         if (fileUri == null) {
+            return null;
+        }
+
+        // Only content providers are accepted; app-private files are never read on behalf of a caller
+        if (!"content".equalsIgnoreCase(fileUri.getScheme())) {
+            Log.w(TAG, "Rejected a shortcut file with an unsupported scheme");
             return null;
         }
 
@@ -384,13 +428,46 @@ public class ShortcutTrampoline extends AppCompatActivity {
             }
         } catch (IOException | RuntimeException e) {
             Log.e(TAG, "Error reading .art file", e);
-            Dialog.displayDialog(ShortcutTrampoline.this,
-                    getResources().getString(R.string.conn_error_title),
-                    getResources().getString(R.string.scut_art_read_error),
-                    true);
             return null;
         }
         return artData;
+    }
+
+    private void showArtReadError() {
+        Dialog.displayDialog(ShortcutTrampoline.this,
+                getResources().getString(R.string.conn_error_title),
+                getResources().getString(R.string.scut_art_read_error),
+                true);
+    }
+
+    // Reads the shortcut file away from the UI thread and continues once it is parsed
+    private void loadArtFileAsync(final Uri fileUri) {
+        artTimeout = () -> {
+            if (artSettled.compareAndSet(false, true) && !stopped) {
+                showArtReadError();
+            }
+        };
+        artHandler.postDelayed(artTimeout, ART_READ_TIMEOUT_MS);
+
+        Thread worker = new Thread(() -> {
+            final Map<String, String> data = parseArtFileData(fileUri);
+            runOnUiThread(() -> {
+                if (!artSettled.compareAndSet(false, true)) {
+                    return;
+                }
+                artHandler.removeCallbacks(artTimeout);
+                if (stopped || isFinishing()) {
+                    return;
+                }
+                if (data == null) {
+                    showArtReadError();
+                } else {
+                    prepareLaunch(data, true, true);
+                }
+            });
+        }, "ArtFileReader");
+        worker.setDaemon(true);
+        worker.start();
     }
 
     @Override
@@ -400,8 +477,6 @@ public class ShortcutTrampoline extends AppCompatActivity {
         prefConfig = PreferenceConfiguration.readPreferences(this);
 
         UiHelper.notifyNewRootView(this);
-        ComputerDatabaseManager dbManager = new ComputerDatabaseManager(this);
-        ComputerDetails _computer = null;
 
         Intent intent = getIntent();
         String action = intent.getAction();
@@ -413,19 +488,24 @@ public class ShortcutTrampoline extends AppCompatActivity {
         final boolean externalLaunch = viewLaunch
                 || !LaunchToken.matches(this, intent.getStringExtra(LaunchToken.EXTRA));
 
+        if (viewLaunch) {
+            loadArtFileAsync(dataUri);
+        } else {
+            prepareLaunch(null, false, externalLaunch);
+        }
+    }
+
+    private void prepareLaunch(Map<String, String> artData, final boolean viewLaunch, final boolean externalLaunch) {
+        ComputerDatabaseManager dbManager = new ComputerDatabaseManager(this);
+        ComputerDetails _computer = null;
+
         String hostUUID = null;
         String hostName = null;
         String appName = null;
         String appUUID = null;
         String appIDStr = null;
 
-        if (viewLaunch) {
-            Map<String, String> artData = parseArtFileData(dataUri);
-            if (artData == null) {
-                // The error has been shown already
-                return;
-            }
-
+        if (artData != null) {
             hostUUID = artData.get(ShortcutHelper.KEY_HOST_UUID);
             hostName = artData.get(ShortcutHelper.KEY_HOST_NAME);
             appName = artData.get(ShortcutHelper.KEY_APP_NAME);
@@ -573,10 +653,14 @@ public class ShortcutTrampoline extends AppCompatActivity {
 
         if (externalLaunch) {
             // The shortcut file came from another app, so ask before starting a stream
-            String pcLabel = hostName != null && !hostName.isEmpty() ? hostName : (_computer != null ? _computer.name : null);
+            // Names come from this app's own records for the host and app that will really start,
+            // never from the text the caller supplied.
+            ComputerDetails knownComputer = dbManager.getComputerByUUID(uuidString);
+            String pcLabel = knownComputer != null ? DisplayText.label(knownComputer.name) : null;
+            String appLabel = resolveCachedAppName(uuidString, app);
             String message;
-            if (pcLabel != null && appName != null && !appName.isEmpty()) {
-                message = getString(R.string.launch_confirm_message_named, appName, pcLabel);
+            if (pcLabel != null && appLabel != null) {
+                message = getString(R.string.launch_confirm_message_named, appLabel, pcLabel);
             } else {
                 message = getString(R.string.launch_confirm_message);
             }
@@ -599,6 +683,10 @@ public class ShortcutTrampoline extends AppCompatActivity {
         super.onStop();
 
         stopped = true;
+
+        if (artTimeout != null) {
+            artHandler.removeCallbacks(artTimeout);
+        }
 
         if (blockingLoadSpinner != null) {
             blockingLoadSpinner.dismiss();

@@ -31,6 +31,7 @@ import com.limelight.profiles.ProfilesManager;
 import com.limelight.ui.AdapterFragment;
 import com.limelight.ui.AdapterFragmentCallbacks;
 import com.limelight.utils.Dialog;
+import com.limelight.utils.DisplayText;
 import com.limelight.utils.HelpLauncher;
 import com.limelight.utils.LaunchToken;
 import com.limelight.utils.ServerHelper;
@@ -351,9 +352,15 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
                                     if (trusted) {
                                         doPair(details, pin, passphrase);
                                     } else if (!isFinishing()) {
+                                        // The name is reported by the host; show it cleaned up with the address
+                                        String shownName = DisplayText.label(details.name);
+                                        String shownAddress = DisplayText.label(details.activeAddress.address);
+                                        String pairTarget = shownName != null && shownAddress != null
+                                                ? shownName + " (" + shownAddress + ")"
+                                                : (shownAddress != null ? shownAddress : String.valueOf(shownName));
                                         new AlertDialog.Builder(PcView.this)
                                                 .setTitle(R.string.pair_pc_confirm_title)
-                                                .setMessage(getString(R.string.pair_pc_confirm_message, details.name))
+                                                .setMessage(getString(R.string.pair_pc_confirm_message, pairTarget))
                                                 .setPositiveButton(R.string.proceed, (dialog, which) -> doPair(details, pin, passphrase))
                                                 .setNegativeButton(R.string.cancel, null)
                                                 .show();

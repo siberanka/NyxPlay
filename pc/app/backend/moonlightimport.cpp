@@ -8,17 +8,28 @@
 #define SER_HOSTS "hosts"
 #define MAX_IMPORTED_HOSTS 100
 
+// Records beyond this many are never read, and a single value larger than this is skipped
+#define MAX_SCANNED_RECORDS (MAX_IMPORTED_HOSTS * 2)
+#define MAX_VALUE_BYTES (64 * 1024)
+
 QList<QVariantMap> QSettingsImportSource::hosts() const
 {
     QList<QVariantMap> result;
 
-    int count = m_Settings.beginReadArray(SER_HOSTS);
+    int count = qMin(m_Settings.beginReadArray(SER_HOSTS), MAX_SCANNED_RECORDS);
     for (int i = 0; i < count; i++) {
         m_Settings.setArrayIndex(i);
         QVariantMap record;
         const QStringList keys = m_Settings.childKeys();
         for (const QString& key : keys) {
-            record.insert(key, m_Settings.value(key));
+            QVariant value = m_Settings.value(key);
+            if (value.typeId() == QMetaType::QByteArray && value.toByteArray().size() > MAX_VALUE_BYTES) {
+                continue;
+            }
+            if (value.typeId() == QMetaType::QString && value.toString().size() > MAX_VALUE_BYTES) {
+                continue;
+            }
+            record.insert(key, value);
         }
         result.append(record);
     }

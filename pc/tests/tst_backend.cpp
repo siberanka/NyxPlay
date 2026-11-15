@@ -4,6 +4,7 @@
 #include "backend/nvcomputer.h"
 #include "backend/identitystore.h"
 #include "backend/moonlightimport.h"
+#include "backend/updateurl.h"
 
 static QString wrap(const QString& body, int status = 200)
 {
@@ -256,6 +257,44 @@ private slots:
 #endif
     }
 
+    void decryptErrorsAreClassified()
+    {
+        // Damaged data and keys of another account never recover
+        QVERIFY(IdentityStore::isPermanentDecryptError(13));
+        QVERIFY(IdentityStore::isPermanentDecryptError(0x80090005UL));
+        QVERIFY(IdentityStore::isPermanentDecryptError(0x8009000BUL));
+
+        // Access problems, missing resources, an unavailable service or an unknown code may pass
+        QVERIFY(!IdentityStore::isPermanentDecryptError(0));
+        QVERIFY(!IdentityStore::isPermanentDecryptError(5));      // ERROR_ACCESS_DENIED
+        QVERIFY(!IdentityStore::isPermanentDecryptError(8));      // ERROR_NOT_ENOUGH_MEMORY
+        QVERIFY(!IdentityStore::isPermanentDecryptError(1722));   // RPC_S_SERVER_UNAVAILABLE
+        QVERIFY(!IdentityStore::isPermanentDecryptError(0x80090016UL)); // NTE_BAD_KEYSET
+    }
+
+    void unprotectReportsPermanentFailureForGarbage()
+    {
+#ifdef Q_OS_WIN
+        bool permanent = false;
+        QVERIFY(IdentityStore::unprotect(QByteArray("not a protected value"), &permanent).isEmpty());
+        QVERIFY(permanent);
+#endif
+    }
+
+    void undecryptableValueIsKept()
+    {
+#ifdef Q_OS_WIN
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings s(dir.filePath("keep.ini"), QSettings::IniFormat);
+        QByteArray blob("value from another machine");
+        s.setValue(IdentityStore::KEY_PROTECTED, blob);
+        IdentityStore::load(s);
+        QCOMPARE(s.value(IdentityStore::KEY_PROTECTED).toByteArray(), blob);
+        QVERIFY(!s.contains(IdentityStore::KEY_PLAIN));
+#endif
+    }
+
     void clearsPinnedCertificatesOnly()
     {
         QTemporaryDir dir;
@@ -293,6 +332,67 @@ private slots:
         IdentityStore::setStartupNotice(s, "repair");
         QCOMPARE(IdentityStore::takeStartupNotice(s), QString("repair"));
         QVERIFY(IdentityStore::takeStartupNotice(s).isEmpty());
+    }
+};
+
+class UpdateUrlTest : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void accepts_data()
+    {
+        QTest::addColumn<QString>("url");
+        QTest::addColumn<QString>("expected");
+
+        QTest::newRow("repo") << "https://github.com/siberanka/NyxPlay"
+                              << "https://github.com/siberanka/NyxPlay";
+        QTest::newRow("release") << "https://github.com/siberanka/NyxPlay/releases/tag/v1"
+                                 << "https://github.com/siberanka/NyxPlay/releases/tag/v1";
+        QTest::newRow("trailing slash") << "https://github.com/siberanka/NyxPlay/"
+                                        << "https://github.com/siberanka/NyxPlay/";
+    }
+
+    void accepts()
+    {
+        QFETCH(QString, url);
+        QFETCH(QString, expected);
+        QString normalized;
+        QVERIFY(normalizeTrustedUpdateUrl(url, &normalized));
+        QCOMPARE(normalized, expected);
+    }
+
+    void rejects_data()
+    {
+        QTest::addColumn<QString>("url");
+
+        QTest::newRow("http") << "http://github.com/siberanka/NyxPlay/x";
+        QTest::newRow("other host") << "https://example.com/siberanka/NyxPlay/x";
+        QTest::newRow("lookalike host") << "https://github.com.evil.example/siberanka/NyxPlay/x";
+        QTest::newRow("userinfo") << "https://user@github.com/siberanka/NyxPlay/x";
+        QTest::newRow("port") << "https://github.com:8443/siberanka/NyxPlay/x";
+        QTest::newRow("other repo") << "https://github.com/siberanka/Other/x";
+        QTest::newRow("sibling prefix") << "https://github.com/siberanka/NyxPlayEvil/x";
+        QTest::newRow("dot dot") << "https://github.com/siberanka/NyxPlay/../../attacker/repo/x";
+        QTest::newRow("dot dot at end") << "https://github.com/siberanka/NyxPlay/..";
+        QTest::newRow("single dot") << "https://github.com/siberanka/NyxPlay/./x";
+        QTest::newRow("encoded dot dot") << "https://github.com/siberanka/NyxPlay/%2e%2e/%2E%2e/attacker/x";
+        QTest::newRow("mixed dot dot") << "https://github.com/siberanka/NyxPlay/.%2e/attacker/x";
+        QTest::newRow("encoded slash") << "https://github.com/siberanka/NyxPlay%2f..%2f..%2fattacker";
+        QTest::newRow("encoded backslash") << "https://github.com/siberanka/NyxPlay/%5c..%5cattacker";
+        QTest::newRow("backslash") << "https://github.com/siberanka/NyxPlay/\\..\\x";
+        QTest::newRow("double slash") << "https://github.com/siberanka/NyxPlay//x";
+        QTest::newRow("escapes up") << "https://github.com/siberanka/NyxPlay/x/../../../y";
+        QTest::newRow("empty") << "";
+        QTest::newRow("not a url") << "not a url";
+    }
+
+    void rejects()
+    {
+        QFETCH(QString, url);
+        QString normalized = "untouched";
+        QVERIFY(!normalizeTrustedUpdateUrl(url, &normalized));
+        QCOMPARE(normalized, QString("untouched"));
     }
 };
 
@@ -490,6 +590,7 @@ int main(int argc, char** argv)
     status |= runSuite<NetworkErrorTest>(argc, argv);
     status |= runSuite<UuidTest>(argc, argv);
     status |= runSuite<IdentityStoreTest>(argc, argv);
+    status |= runSuite<UpdateUrlTest>(argc, argv);
     status |= runSuite<MoonlightImportTest>(argc, argv);
     return status;
 }

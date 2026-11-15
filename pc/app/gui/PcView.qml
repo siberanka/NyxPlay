@@ -44,6 +44,14 @@ CenteredGridView {
             noticeDialog.text = qsTr("The saved client identity could not be used on this computer or account, so a new one was created. Please pair each of your hosts again.")
             noticeDialog.open()
         }
+        else if (notice === "identityerror") {
+            noticeDialog.text = qsTr("The saved client identity could not be read right now. It was kept unchanged; a temporary identity is used for this session, so paired hosts may ask for pairing. Restart NyxPlay to try again.")
+            noticeDialog.open()
+        }
+        else if (notice === "unsaved") {
+            noticeDialog.text = qsTr("The new client identity could not be stored securely on this account, so it is only valid until NyxPlay is closed.")
+            noticeDialog.open()
+        }
 
         // Highlight the first item if a gamepad is connected
         if (currentIndex === -1 && SdlGamepadKeyNavigation.getConnectedGamepads() > 0) {

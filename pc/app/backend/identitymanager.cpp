@@ -27,7 +27,7 @@ IdentityManager::get()
     return s_Im;
 }
 
-void IdentityManager::createCredentials(QSettings& settings)
+bool IdentityManager::createCredentials(QSettings& settings, bool persist)
 {
     X509* cert = X509_new();
     THROW_BAD_ALLOC_IF_NULL(cert);
@@ -101,10 +101,21 @@ void IdentityManager::createCredentials(QSettings& settings)
         qFatal("Newly generated private key is unreadable");
     }
 
+    if (!persist) {
+        qWarning() << "Created temporary identity credentials; the saved identity was left unchanged";
+        return false;
+    }
+
+    // The key goes first: if it cannot be stored safely, the certificate is not replaced either
+    if (!IdentityStore::save(settings, m_CachedPrivateKey)) {
+        qWarning() << "The new identity could not be stored and is only valid for this session";
+        IdentityStore::setStartupNotice(settings, "unsaved");
+        return false;
+    }
     settings.setValue(SER_CERT, m_CachedPemCert);
-    IdentityStore::save(settings, m_CachedPrivateKey);
 
     qInfo() << "Wrote new identity credentials to settings";
+    return true;
 }
 
 IdentityManager::IdentityManager()
@@ -113,9 +124,20 @@ IdentityManager::IdentityManager()
 
     m_CachedPemCert = settings.value(SER_CERT).toByteArray();
     IdentityStore::Result stored = IdentityStore::load(settings);
+    bool temporaryIdentity = false;
     m_CachedPrivateKey = stored.key;
 
-    if (stored.status == IdentityStore::Status::Undecryptable) {
+    if (stored.status == IdentityStore::Status::Unavailable) {
+        // The saved key could not be read this time. Keep it, work with a temporary identity for
+        // this session and leave the saved pairings alone.
+        qWarning() << "The saved client identity is unavailable right now";
+        m_CachedPemCert.clear();
+        m_CachedPrivateKey.clear();
+        createCredentials(settings, false);
+        IdentityStore::setStartupNotice(settings, "identityerror");
+        temporaryIdentity = true;
+    }
+    else if (stored.status == IdentityStore::Status::Undecryptable) {
         // The stored key belongs to another Windows user or machine. Start a
         // new identity and make every saved host ask for pairing again.
         qWarning() << "The saved client identity cannot be decrypted on this system";
@@ -161,7 +183,9 @@ IdentityManager::IdentityManager()
 
         qInfo() << "Generated new unique ID:" << m_CachedUniqueId;
 
-        settings.setValue(SER_UNIQUEID, m_CachedUniqueId);
+        if (!temporaryIdentity) {
+            settings.setValue(SER_UNIQUEID, m_CachedUniqueId);
+        }
     }
 }
 

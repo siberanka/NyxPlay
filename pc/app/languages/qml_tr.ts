@@ -246,6 +246,16 @@
         <translation>Ana bilgisayarlarınız ve ayarlarınız mevcut bir Moonlight kurulumundan içe aktarıldı. Yayın yapmadan önce her ana bilgisayarın NyxPlay ile bir kez eşleştirilmesi gerekir.</translation>
     </message>
     <message>
+        <location filename="../gui/PcView.qml" line="47"/>
+        <source>The saved client identity could not be read right now. It was kept unchanged; a temporary identity is used for this session, so paired hosts may ask for pairing. Restart NyxPlay to try again.</source>
+        <translation>Kayıtlı istemci kimliği şu anda okunamadı. Kimlik değiştirilmeden saklandı; bu oturum için geçici bir kimlik kullanılıyor, bu yüzden eşleştirilmiş ana bilgisayarlar yeniden eşleştirme isteyebilir. Yeniden denemek için NyxPlay'i yeniden başlatın.</translation>
+    </message>
+    <message>
+        <location filename="../gui/PcView.qml" line="51"/>
+        <source>The new client identity could not be stored securely on this account, so it is only valid until NyxPlay is closed.</source>
+        <translation>Yeni istemci kimliği bu hesapta güvenli olarak saklanamadığı için yalnızca NyxPlay kapatılana kadar geçerlidir.</translation>
+    </message>
+    <message>
         <location filename="../gui/PcView.qml" line="37"/>
         <source>The saved client identity could not be used on this computer or account, so a new one was created. Please pair each of your hosts again.</source>
         <translation>Kayıtlı istemci kimliği bu bilgisayarda veya hesapta kullanılamadığı için yeni bir kimlik oluşturuldu. Lütfen ana bilgisayarlarınızın her birini yeniden eşleştirin.</translation>

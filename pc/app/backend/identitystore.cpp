@@ -10,8 +10,11 @@ namespace {
     // Application-specific entropy mixed into the encryption
     const char kEntropy[] = "NyxPlay client identity v1";
 
-    QByteArray runCrypt(const QByteArray& input, bool encrypt)
+    QByteArray runCrypt(const QByteArray& input, bool encrypt, DWORD* errorCode = nullptr)
     {
+        if (errorCode != nullptr) {
+            *errorCode = 0;
+        }
         if (input.isEmpty()) {
             return QByteArray();
         }
@@ -35,6 +38,9 @@ namespace {
                                     CRYPTPROTECT_UI_FORBIDDEN, &out);
         }
         if (!ok) {
+            if (errorCode != nullptr) {
+                *errorCode = GetLastError();
+            }
             return QByteArray();
         }
 
@@ -56,10 +62,39 @@ QByteArray IdentityStore::protect(const QByteArray& plain)
 #endif
 }
 
-QByteArray IdentityStore::unprotect(const QByteArray& blob)
+bool IdentityStore::isPermanentDecryptError(unsigned long errorCode)
 {
+    switch (errorCode) {
+    case 13:          // ERROR_INVALID_DATA: the blob is damaged
+    case 87:          // ERROR_INVALID_PARAMETER: the blob is not a protected value
+    case 0x80090003:  // NTE_BAD_KEY
+    case 0x80090004:  // NTE_BAD_LEN
+    case 0x80090005:  // NTE_BAD_DATA
+    case 0x80090006:  // NTE_BAD_SIGNATURE: integrity check failed
+    case 0x80090007:  // NTE_BAD_VER
+    case 0x8009000B:  // NTE_BAD_KEY_STATE: the master key belongs to another account
+    case 0x8009000D:  // NTE_NO_KEY
+        return true;
+    default:
+        return false;
+    }
+}
+
+QByteArray IdentityStore::unprotect(const QByteArray& blob, bool* permanent)
+{
+    if (permanent != nullptr) {
+        *permanent = false;
+    }
 #ifdef Q_OS_WIN
-    return runCrypt(blob, false);
+    DWORD errorCode = 0;
+    QByteArray result = runCrypt(blob, false, &errorCode);
+    if (result.isEmpty() && permanent != nullptr) {
+        *permanent = isPermanentDecryptError(errorCode);
+        if (!*permanent) {
+            qWarning() << "Decrypting the client identity failed with a possibly temporary error" << errorCode;
+        }
+    }
+    return result;
 #else
     Q_UNUSED(blob);
     return QByteArray();
@@ -77,9 +112,8 @@ bool IdentityStore::save(QSettings& settings, const QByteArray& pem)
         return true;
     }
 
-    // Encryption is unavailable; keep the identity usable rather than lose it
-    qWarning() << "Unable to protect the client identity, storing it unprotected";
-    settings.setValue(KEY_PLAIN, pem);
+    // Encryption is unavailable: the key is never written in plain form
+    qWarning() << "Unable to protect the client identity, it was not saved";
     return false;
 #else
     settings.setValue(KEY_PLAIN, pem);
@@ -94,9 +128,12 @@ IdentityStore::Result IdentityStore::load(QSettings& settings)
 #ifdef Q_OS_WIN
     QByteArray blob = settings.value(KEY_PROTECTED).toByteArray();
     if (!blob.isEmpty()) {
-        result.key = unprotect(blob);
+        bool permanent = false;
+        result.key = unprotect(blob, &permanent);
         if (result.key.isEmpty()) {
-            result.status = Status::Undecryptable;
+            // Only a value that can never be decrypted here is reported as such; for any other
+            // failure the stored value is left untouched so a later start can read it.
+            result.status = permanent ? Status::Undecryptable : Status::Unavailable;
             return result;
         }
 

@@ -45,7 +45,7 @@
 
     <application
         android:name=".ArtemisApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/backup_rules_s"
         android:networkSecurityConfig="@xml/network_security_config"

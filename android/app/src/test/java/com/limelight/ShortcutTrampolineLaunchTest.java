@@ -79,6 +79,20 @@ public class ShortcutTrampolineLaunchTest {
         ActivityController<ShortcutTrampoline> controller = Robolectric.buildActivity(ShortcutTrampoline.class, intent);
         controller.create().start().resume();
         shadowOf(Looper.getMainLooper()).idle();
+
+        // Shortcut files are read on a worker thread, so wait for the dialog it ends up showing
+        if (Intent.ACTION_VIEW.equals(intent.getAction())) {
+            long deadline = System.currentTimeMillis() + 5000;
+            while (ShadowAlertDialog.getLatestAlertDialog() == null && System.currentTimeMillis() < deadline) {
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                shadowOf(Looper.getMainLooper()).idle();
+            }
+        }
         return controller;
     }
 
@@ -94,11 +108,26 @@ public class ShortcutTrampolineLaunchTest {
         return f;
     }
 
-    private Intent viewIntent(File art) {
+    private Intent viewIntent(File art) throws Exception {
+        Uri uri = Uri.parse("content://shortcut.test/" + art.getName());
+        shadowOf(app.getContentResolver()).registerInputStream(uri, new java.io.FileInputStream(art));
         Intent intent = new Intent(app, ShortcutTrampoline.class);
         intent.setAction(Intent.ACTION_VIEW);
-        intent.setData(Uri.fromFile(art));
+        intent.setData(uri);
         return intent;
+    }
+
+    private void storeHostAndApps(String hostName) throws Exception {
+        com.limelight.nvstream.http.ComputerDetails details = new com.limelight.nvstream.http.ComputerDetails();
+        details.uuid = HOST_UUID;
+        details.name = hostName;
+        details.localAddress = new com.limelight.nvstream.http.ComputerDetails.AddressTuple("10.0.0.5", 47989);
+        new com.limelight.computers.ComputerDatabaseManager(app).updateComputer(details);
+
+        String xml = "<root status_code=\"200\"><App><AppTitle>Real Game</AppTitle><ID>5</ID></App></root>";
+        try (java.io.OutputStream out = com.limelight.utils.CacheHelper.openCacheFileForOutput(app.getCacheDir(), "applist", HOST_UUID)) {
+            out.write(xml.getBytes(StandardCharsets.UTF_8));
+        }
     }
 
     private static String message(AlertDialog dialog) {
@@ -213,15 +242,55 @@ public class ShortcutTrampolineLaunchTest {
 
     @Test
     public void validShortcutFileAsksAndNamesAppAndComputer() throws Exception {
+        storeHostAndApps("Desk");
         String art = "# test\n[host_uuid] " + HOST_UUID + "\n[host_name] Desk\n[app_name] Game One\n[app_id] 5\n";
         launch(viewIntent(writeArt("ok.art", art.getBytes(StandardCharsets.UTF_8))));
 
         AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
         assertNotNull(dialog);
         assertEquals(app.getString(R.string.launch_confirm_title), String.valueOf(shadowOf(dialog).getTitle()));
-        assertTrue(message(dialog).contains("Game One"));
+        assertTrue(message(dialog).contains("Real Game"));
         assertTrue(message(dialog).contains("Desk"));
         assertEquals(0, boundConnections());
+    }
+
+    @Test
+    public void shortcutFileUsingTheFileSchemeIsRejected() throws Exception {
+        File art = writeArt("scheme.art", ("[host_uuid] " + HOST_UUID + "\n").getBytes(StandardCharsets.UTF_8));
+        Intent intent = new Intent(app, ShortcutTrampoline.class);
+        intent.setAction(Intent.ACTION_VIEW);
+        intent.setData(Uri.fromFile(art));
+        launch(intent);
+
+        AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
+        assertNotNull(dialog);
+        assertEquals(app.getString(R.string.scut_art_read_error), message(dialog));
+        assertEquals(0, boundConnections());
+    }
+
+    @Test
+    public void confirmationNamesComeFromStoredRecordsNotFromTheFile() throws Exception {
+        storeHostAndApps("Living Room");
+        String art = "[host_uuid] " + HOST_UUID + "\n[host_name] Work PC\n[app_name] Notepad\n[app_id] 5\n";
+        launch(viewIntent(writeArt("spoof.art", art.getBytes(StandardCharsets.UTF_8))));
+
+        AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
+        assertNotNull(dialog);
+        String text = message(dialog);
+        assertTrue(text, text.contains("Real Game"));
+        assertTrue(text, text.contains("Living Room"));
+        assertFalse(text, text.contains("Work PC"));
+        assertFalse(text, text.contains("Notepad"));
+    }
+
+    @Test
+    public void unknownHostGetsTheGenericConfirmation() throws Exception {
+        String art = "[host_uuid] " + HOST_UUID + "\n[host_name] Work PC\n[app_name] Notepad\n[app_id] 5\n";
+        launch(viewIntent(writeArt("unknown.art", art.getBytes(StandardCharsets.UTF_8))));
+
+        AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
+        assertNotNull(dialog);
+        assertEquals(app.getString(R.string.launch_confirm_message), message(dialog));
     }
 
     @Test

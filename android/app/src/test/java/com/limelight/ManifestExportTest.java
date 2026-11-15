@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 
 import android.content.Context;
 import android.content.pm.ActivityInfo;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
@@ -60,6 +61,27 @@ public class ManifestExportTest {
                 if (receiver.name.startsWith("com.limelight.")) {
                     assertEquals(receiver.name, false, receiver.exported);
                 }
+            }
+        }
+    }
+
+    @Test
+    public void backupsAreDisabledAndTheRulesExcludeEverything() throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        assertEquals(0, context.getApplicationInfo().flags & ApplicationInfo.FLAG_ALLOW_BACKUP);
+
+        for (String rules : new String[]{"backup_rules", "backup_rules_s"}) {
+            int id = context.getResources().getIdentifier(rules, "xml", context.getPackageName());
+            android.content.res.XmlResourceParser parser = context.getResources().getXml(id);
+            Set<String> excluded = new TreeSet<>();
+            int event;
+            while ((event = parser.next()) != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+                if (event == org.xmlpull.v1.XmlPullParser.START_TAG && "exclude".equals(parser.getName())) {
+                    excluded.add(parser.getAttributeValue(null, "domain"));
+                }
+            }
+            for (String domain : new String[]{"file", "database", "sharedpref"}) {
+                assertEquals(rules + " must exclude " + domain, true, excluded.contains(domain));
             }
         }
     }

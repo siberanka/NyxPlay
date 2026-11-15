@@ -79,6 +79,9 @@ public class NvHTTP {
     public static final int CALL_TIMEOUT = 60000;
     // Upper bound for the pairing request that waits for the user to enter the PIN
     public static final int PAIRING_WAIT_TIMEOUT = 300000;
+    // Upper bounds for launching/resuming an app and for cancelling the running one
+    public static final int LAUNCH_CALL_TIMEOUT = 120000;
+    public static final int CANCEL_CALL_TIMEOUT = 30000;
 
     // Largest accepted text response (the app list is the biggest legitimate one)
     private static final long MAX_RESPONSE_SIZE = 4 * 1024 * 1024;
@@ -92,6 +95,7 @@ public class NvHTTP {
     
     private OkHttpClient httpClientLongConnectTimeout;
     private OkHttpClient httpClientLongConnectNoReadTimeout;
+    private OkHttpClient httpClientCancel;
     private OkHttpClient httpClientPairingWait;
     private volatile Call pairingCall;
     private volatile boolean pairingCancelled;
@@ -201,9 +205,15 @@ public class NvHTTP {
                 .connectTimeout(SHORT_CONNECTION_TIMEOUT, TimeUnit.MILLISECONDS)
                 .build();
 
+        // Starting an app can take a while on the host, so reads may stay quiet, but the whole call is bounded
         httpClientLongConnectNoReadTimeout = httpClientLongConnectTimeout.newBuilder()
                 .readTimeout(0, TimeUnit.MILLISECONDS)
-                .callTimeout(0, TimeUnit.MILLISECONDS)
+                .callTimeout(LAUNCH_CALL_TIMEOUT, TimeUnit.MILLISECONDS)
+                .build();
+
+        httpClientCancel = httpClientLongConnectTimeout.newBuilder()
+                .readTimeout(CANCEL_CALL_TIMEOUT, TimeUnit.MILLISECONDS)
+                .callTimeout(CANCEL_CALL_TIMEOUT, TimeUnit.MILLISECONDS)
                 .build();
 
         httpClientPairingWait = httpClientLongConnectTimeout.newBuilder()
@@ -1014,7 +1024,7 @@ public class NvHTTP {
     }
     
     public boolean quitApp() throws IOException, XmlPullParserException {
-        String xmlStr = openHttpConnectionToString(httpClientLongConnectNoReadTimeout, getHttpsUrl(true), "cancel");
+        String xmlStr = openHttpConnectionToString(httpClientCancel, getHttpsUrl(true), "cancel");
         if (getXmlString(xmlStr, "cancel", true).equals("0")) {
             return false;
         }

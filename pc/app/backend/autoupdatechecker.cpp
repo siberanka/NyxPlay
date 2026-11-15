@@ -6,24 +6,7 @@
 #include <QJsonObject>
 #include <QUrl>
 
-namespace {
-
-// Only HTTPS links into the project's own repository may be opened from the manifest
-bool isTrustedUpdateUrl(const QString& urlString)
-{
-    QUrl url(urlString, QUrl::StrictMode);
-    if (!url.isValid() || url.scheme() != QLatin1String("https")) {
-        return false;
-    }
-    if (url.host() != QLatin1String("github.com") || url.port() != -1 || !url.userInfo().isEmpty()) {
-        return false;
-    }
-    const QString path = url.path();
-    return path == QLatin1String("/siberanka/NyxPlay") ||
-           path.startsWith(QLatin1String("/siberanka/NyxPlay/"));
-}
-
-}
+#include "updateurl.h"
 
 AutoUpdateChecker::AutoUpdateChecker(QObject *parent) :
     QObject(parent)
@@ -179,7 +162,8 @@ void AutoUpdateChecker::handleUpdateCheckRequestFinished(QNetworkReply* reply)
                     continue;
                 }
 
-                if (!isTrustedUpdateUrl(updateObj["browser_url"].toString())) {
+                QString trustedUrl;
+                if (!normalizeTrustedUpdateUrl(updateObj["browser_url"].toString(), &trustedUrl)) {
                     qWarning() << "Update manifest entry has an untrusted download URL";
                     continue;
                 }
@@ -216,7 +200,7 @@ void AutoUpdateChecker::handleUpdateCheckRequestFinished(QNetworkReply* reply)
                         // m_CurrentVersionQuad < latestVersionQuad
                         qDebug() << "Update available";
                         emit onUpdateAvailable(updateObj["version"].toString(),
-                                               updateObj["browser_url"].toString());
+                                               trustedUrl);
                         return;
                     }
                     else if (res > 0) {

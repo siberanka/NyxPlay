@@ -5,6 +5,7 @@ import com.limelight.LimeLog;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 
@@ -12,6 +13,16 @@ public abstract class MdnsDiscoveryAgent {
     protected MdnsDiscoveryListener listener;
 
     protected HashSet<MdnsComputer> computers = new HashSet<>();
+
+    // Most hosts that discovery adds on its own, so a noisy network cannot fill the host list
+    static final int MAX_AUTO_ADDED_COMPUTERS = 32;
+
+    // After a failed probe the same announcement is ignored for a while
+    static final long PROBE_BACKOFF_MS = 30_000;
+    long probeBackoffMs = PROBE_BACKOFF_MS;
+    private static final int MAX_TRACKED_FAILURES = 256;
+
+    private final HashMap<MdnsComputer, Long> failedUntilNanos = new HashMap<>();
 
     public MdnsDiscoveryAgent(MdnsDiscoveryListener listener) {
         this.listener = listener;
@@ -44,10 +55,26 @@ public abstract class MdnsDiscoveryAgent {
 
     private void registerComputer(MdnsComputer computer) {
         synchronized (computers) {
-            if (!computers.add(computer)) {
+            if (computers.contains(computer)) {
                 // Already known
                 return;
             }
+
+            Long retryAfter = failedUntilNanos.get(computer);
+            if (retryAfter != null) {
+                if (System.nanoTime() - retryAfter < 0) {
+                    // This announcement failed recently; do not probe it again yet
+                    return;
+                }
+                failedUntilNanos.remove(computer);
+            }
+
+            if (computers.size() >= MAX_AUTO_ADDED_COMPUTERS) {
+                LimeLog.warning("mDNS: ignoring "+computer.getName()+", too many discovered computers");
+                return;
+            }
+
+            computers.add(computer);
         }
 
         // The listener may block for a while, so call it without holding the lock
@@ -59,6 +86,10 @@ public abstract class MdnsDiscoveryAgent {
                 // Forget the entry so the next announce is reported again
                 synchronized (computers) {
                     computers.remove(computer);
+                    if (failedUntilNanos.size() >= MAX_TRACKED_FAILURES) {
+                        failedUntilNanos.clear();
+                    }
+                    failedUntilNanos.put(computer, System.nanoTime() + probeBackoffMs * 1_000_000L);
                 }
             }
         }

@@ -1378,6 +1378,7 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         sessionToken = strtok_r(sessionId, ";", &strtokCtx);
         if (sessionToken == NULL || sessionToken[0] == '\0') {
             Limelog("RTSP SETUP streamid=audio has malformed session attribute\n");
+            freeMessage(&response);
             ret = -1;
             goto Exit;
         }
@@ -1385,6 +1386,7 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         sessionIdString = strdup(sessionToken);
         if (sessionIdString == NULL) {
             Limelog("Failed to duplicate session ID string\n");
+            freeMessage(&response);
             ret = -1;
             goto Exit;
         }

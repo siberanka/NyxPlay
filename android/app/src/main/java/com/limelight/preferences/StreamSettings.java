@@ -788,7 +788,10 @@ public class StreamSettings extends AppCompatActivity {
                         String noEmailClientsMsg = context.getString(R.string.toast_no_email_clients);
 
                         try {
-                            File cacheDir = context.getCacheDir();
+                            File cacheDir = new File(context.getCacheDir(), "shared_logs");
+                            if (!cacheDir.isDirectory() && !cacheDir.mkdirs()) {
+                                throw new IOException("Unable to create the log directory");
+                            }
                             File logFile = new File(cacheDir, "nyxplay_perf_log.txt");
                             try (FileOutputStream fos = new FileOutputStream(logFile)) {
                                 fos.write(logs.getBytes(StandardCharsets.UTF_8));

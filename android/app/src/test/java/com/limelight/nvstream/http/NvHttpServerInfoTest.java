@@ -119,8 +119,12 @@ public class NvHttpServerInfoTest {
     public void clients_timeouts() throws Exception {
         NvHTTP http = newHttp();
         OkHttpClient noTimeout = getClient(http, "httpClientLongConnectNoReadTimeout");
-        assertEquals(0, noTimeout.callTimeoutMillis());
+        // Launch and resume may stay quiet while the host starts the app, but the call is bounded
+        assertEquals(NvHTTP.LAUNCH_CALL_TIMEOUT, noTimeout.callTimeoutMillis());
         assertEquals(0, noTimeout.readTimeoutMillis());
+        OkHttpClient cancel = getClient(http, "httpClientCancel");
+        assertEquals(NvHTTP.CANCEL_CALL_TIMEOUT, cancel.callTimeoutMillis());
+        assertTrue(cancel.readTimeoutMillis() > 0);
         OkHttpClient normal = getClient(http, "httpClientLongConnectTimeout");
         assertEquals(NvHTTP.CALL_TIMEOUT, normal.callTimeoutMillis());
         OkHttpClient pairing = getClient(http, "httpClientPairingWait");
