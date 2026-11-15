@@ -1,0 +1,33 @@
+SudoVDA virtual display driver 1.10.9.289 (SudoVDA.dll, SudoVDA.inf, sudovda.cat), SudoMaker
+Source: https://github.com/SudoMaker/SudoVDA (as shipped with Apollo)
+
+The upstream repository has no separate LICENSE file. Its README.md states under "License":
+
+  "MIT and CC0 or Public Domain (for changes I made, please consult Microsoft for their license),
+   choose the least restrictive option."
+
+GitHub's licence detection reports MIT for the repository. The driver is based on the Microsoft
+Indirect Display Driver sample (https://github.com/microsoft/Windows-driver-samples, MIT) and
+on MTT's Virtual Display Driver. Acknowledgements as given upstream: Roshkins (IddSampleDriver),
+Baloukj, AKATrevorJay (edid-generator), zjoasan and Bud.
+
+This driver is a separate component and is installed only on request. It is provided "AS IS"
+without warranty of any kind. The exact copyright line is not published upstream; no copyright
+holder has been invented here. Terms should be confirmed with SudoMaker if required.
+
+The MIT permission text that applies is the standard one:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

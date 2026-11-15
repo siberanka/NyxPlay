@@ -29,11 +29,12 @@ libdisplaydevice                           AGPL-3.0 (combined with GPL-3.0)     
 Components installed on request (separate packages, with their own licence terms):
 
 * ViGEmBus driver installer (gamepad component), Nefarius Software Solutions e.U.
-  https://github.com/nefarius/ViGEmBus - BSD-3-Clause.
-* nefconc.exe (device installer used for the virtual display driver), Nefarius Software Solutions
-  e.U. https://github.com/nefarius/nefcon - BSD-3-Clause.
-* SudoVDA virtual display driver (SudoVDA.dll, SudoVDA.inf), SudoMaker, as shipped with Apollo.
-  https://github.com/SudoMaker/SudoVDA - see the project page for its licence terms.
+  https://github.com/nefarius/ViGEmBus - BSD-3-Clause (BSD-3-Clause-ViGEmBus.txt).
+* nefconc.exe 1.12.0.0 (device installer used for the virtual display driver), Nefarius Software
+  Solutions e.U. https://github.com/nefarius/nefcon - MIT (MIT-nefcon.txt).
+* SudoVDA virtual display driver 1.10.9.289 (SudoVDA.dll, SudoVDA.inf), SudoMaker, as shipped with
+  Apollo. https://github.com/SudoMaker/SudoVDA - MIT and CC0/Public Domain as declared in the
+  upstream README (SudoVDA-NOTICE.txt); based on the Microsoft Indirect Display Driver sample.
 
 Other bundled artwork and fonts keep the licences stated in their folders and in CREDITS.md.
 "Steam" and the Steam logo are trademarks of Valve Corporation (see NOTICE).

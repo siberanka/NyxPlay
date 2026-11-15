@@ -149,10 +149,10 @@ $notices = New-Object System.Text.StringBuilder
 [void]$notices.AppendLine('projects listed below and, on request, from the NyxPlay repository.')
 [void]$notices.AppendLine('')
 $components = @(
-    @('Qt 6 (Core, Gui, Network, Qml, Quick, Quick Controls 2, Svg and others)', 'LGPL-3.0 / GPL-3.0', 'https://www.qt.io, source: https://download.qt.io'),
-    @('FFmpeg (avcodec, avformat, avutil, swscale)', 'LGPL-2.1 or later', 'https://ffmpeg.org'),
-    @('libplacebo', 'LGPL-2.1 or later', 'https://code.videolan.org/videolan/libplacebo'),
-    @('dav1d', 'BSD-2-Clause', 'https://code.videolan.org/videolan/dav1d'),
+    @('Qt 6.12.0 (Core, Gui, Network, Qml, Quick, Quick Controls 2, Svg and others)', 'LGPL-3.0 (LGPL-3.0.txt, Qt-NOTICE-GPL-3.0.txt)', 'https://www.qt.io, source: https://download.qt.io'),
+    @('FFmpeg (avcodec 63.1.102, avformat, avutil, swscale)', 'LGPL-2.1 or later (LGPL-2.1-FFmpeg.txt)', 'https://ffmpeg.org'),
+    @('libplacebo v7.387.0', 'LGPL-2.1 or later (LGPL-2.1-libplacebo.txt)', 'https://code.videolan.org/videolan/libplacebo'),
+    @('dav1d 1.5.4', 'BSD-2-Clause (BSD-2-Clause-dav1d.txt)', 'https://code.videolan.org/videolan/dav1d'),
     @('Opus', 'BSD-3-Clause', 'https://opus-codec.org'),
     @('SDL2, SDL3, SDL2_ttf', 'zlib', 'https://libsdl.org'),
     @('OpenSSL (libssl, libcrypto)', 'Apache-2.0', 'https://www.openssl.org'),
@@ -160,7 +160,7 @@ $components = @(
     @('moonlight-common-c', 'GPL-3.0', 'https://github.com/moonlight-stream/moonlight-common-c'),
     @('QmDnsEngine', 'MIT', 'https://github.com/nitroshare/qmdnsengine'),
     @('h264bitstream', 'LGPL-2.1', 'https://github.com/aizvorski/h264bitstream'),
-    @('Microsoft Detours (AntiHooking.dll)', 'MIT', 'https://github.com/microsoft/Detours')
+    @('Microsoft Detours 4.0.1 (AntiHooking.dll)', 'MIT (MIT-Microsoft-Detours.txt)', 'https://github.com/microsoft/Detours')
 )
 foreach ($c in $components) {
     [void]$notices.AppendLine("* $($c[0])")
