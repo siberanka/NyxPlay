@@ -20,6 +20,7 @@
 #include <nlohmann/json.hpp>
 
 // local includes
+#include "config.h"
 #include "config_import.h"
 #include "crypto.h"
 #include "uuid.h"
@@ -703,6 +704,9 @@ namespace config_import {
                 continue;
               }
               result.warnings.push_back("settings: port " + e.value + " is kept; the other host must be stopped or use another port");
+            }
+            if (!config::is_known_option(e.key)) {
+              result.warnings.push_back("settings: \"" + e.key + "\" is not a known setting of this host and has no effect");
             }
             if (contains_dir(e.value, install_norm)) {
               result.warnings.push_back("settings: \"" + e.key + "\" refers to the other installation directory, review it");

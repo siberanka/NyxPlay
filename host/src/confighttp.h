@@ -72,8 +72,14 @@ namespace confighttp {
    */
   bool is_same_origin(std::string_view method, std::string_view host, std::string_view origin, std::string_view referer, std::string_view sec_fetch_site);
 
-  /// Message returned when the first Web UI credentials are requested from another machine.
-  constexpr std::string_view FIRST_SETUP_LOCAL_ONLY_MESSAGE = "Initial setup is only allowed from the host PC. Open the Web UI on the PC that runs NyxPlay Host (https://localhost:47990) to create the credentials.";
+  /**
+   * @brief Message returned when the first Web UI credentials are requested from another machine.
+   * @param web_ui_port The configured Web UI port.
+   */
+  inline std::string first_setup_local_only_message(unsigned short web_ui_port) {
+    return "Initial setup is only allowed from the host PC. Open the Web UI on the PC that runs NyxPlay Host (https://localhost:" +
+           std::to_string(web_ui_port) + ") to create the credentials.";
+  }
 
   /**
    * @brief Decide whether the first Web UI credentials may be created from a client address.

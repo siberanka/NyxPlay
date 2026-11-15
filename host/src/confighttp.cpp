@@ -402,7 +402,7 @@ namespace confighttp {
       return true;
     }
     BOOST_LOG(info) << "Web UI: ["sv << address << "] -- initial setup refused, only the host PC may create the first credentials"sv;
-    send_error(response, SimpleWeb::StatusCode::client_error_forbidden, std::string {FIRST_SETUP_LOCAL_ONLY_MESSAGE});
+    send_error(response, SimpleWeb::StatusCode::client_error_forbidden, first_setup_local_only_message(net::map_port(PORT_HTTPS)));
     return false;
   }
 

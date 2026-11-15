@@ -148,6 +148,19 @@ TEST_F(ConfigImportTest, SettingsFilterPathKeysAndKeepMultilineValues) {
   EXPECT_TRUE(r.backup_dir.empty());
 }
 
+TEST_F(ConfigImportTest, UnknownSettingsKeysAreReported) {
+  populate_source();
+  write(src / "sunshine.conf", read(src / "sunshine.conf") + "unknown_future_key = 1\n");
+  options_t o;
+  o.apps = o.clients = false;
+  auto r = import_from(src, dst, o);
+  ASSERT_TRUE(r.ok) << r.error;
+  EXPECT_TRUE(has_warning(r, "\"unknown_future_key\" is not a known setting"));
+  EXPECT_FALSE(has_warning(r, "\"sunshine_name\" is not a known setting"));
+  EXPECT_FALSE(has_warning(r, "\"external_ip\" is not a known setting"));
+  EXPECT_FALSE(has_warning(r, "\"global_prep_cmd\" is not a known setting"));
+}
+
 TEST_F(ConfigImportTest, DropPortWhenRequested) {
   populate_source();
   options_t o;

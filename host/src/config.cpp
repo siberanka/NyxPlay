@@ -8,8 +8,10 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 // lib includes
@@ -1388,6 +1390,39 @@ namespace config {
 
     ::video::active_hevc_mode = video.hevc_mode;
     ::video::active_av1_mode = video.av1_mode;
+  }
+
+  bool is_known_option(std::string_view name) {
+    // Every option read by apply_config (plus "flags"). Keep in sync when an option is added.
+    static const std::unordered_set<std::string_view> known {
+      "adapter_name"sv, "address_family"sv, "always_send_scancodes"sv, "amd_coder"sv,
+      "amd_enforce_hrd"sv, "amd_preanalysis"sv, "amd_quality"sv, "amd_rc"sv, "amd_usage"sv,
+      "amd_vbaq"sv, "audio_sink"sv, "auto_capture_sink"sv, "av1_mode"sv, "back_button_timeout"sv,
+      "capture"sv, "cert"sv, "controller"sv, "credentials_file"sv, "dd_config_revert_delay"sv,
+      "dd_config_revert_on_disconnect"sv, "dd_configuration_option"sv, "dd_hdr_option"sv,
+      "dd_manual_refresh_rate"sv, "dd_manual_resolution"sv, "dd_mode_remapping"sv,
+      "dd_refresh_rate_option"sv, "dd_resolution_option"sv, "dd_wa_hdr_toggle_delay"sv,
+      "double_refreshrate"sv, "ds4_back_as_touchpad_click"sv, "ds5_inputtino_randomize_mac"sv,
+      "enable_discovery"sv, "enable_input_only_mode"sv, "enable_pairing"sv, "encoder"sv,
+      "envvar_compatibility_mode"sv, "external_ip"sv, "fallback_mode"sv, "fec_percentage"sv,
+      "file_apps"sv, "file_state"sv, "flags"sv, "forward_rumble"sv, "gamepad"sv, "global_prep_cmd"sv,
+      "global_state_cmd"sv, "headless_mode"sv, "hevc_mode"sv, "hide_tray_controls"sv,
+      "high_resolution_scrolling"sv, "ignore_encoder_probe_failure"sv,
+      "install_steam_audio_drivers"sv, "isolated_virtual_display_option"sv, "keep_sink_default"sv,
+      "key_repeat_delay"sv, "key_repeat_frequency"sv, "key_rightalt_to_key_win"sv, "keybindings"sv,
+      "keyboard"sv, "lan_encryption_mode"sv, "legacy_ordering"sv, "limit_framerate"sv, "locale"sv,
+      "log_path"sv, "max_bitrate"sv, "min_log_level"sv, "min_threads"sv, "minimum_fps_target"sv,
+      "motion_as_ds4"sv, "mouse"sv, "native_pen_touch"sv, "notify_pre_releases"sv,
+      "nvenc_h264_cavlc"sv, "nvenc_intra_refresh"sv, "nvenc_latency_over_power"sv,
+      "nvenc_opengl_vulkan_on_dxgi"sv, "nvenc_preset"sv, "nvenc_realtime_hags"sv,
+      "nvenc_spatial_aq"sv, "nvenc_twopass"sv, "nvenc_vbv_increase"sv, "origin_web_ui_allowed"sv,
+      "output_name"sv, "ping_timeout"sv, "pkey"sv, "port"sv, "qp"sv, "qsv_coder"sv, "qsv_preset"sv,
+      "qsv_slow_hevc"sv, "rtsp_plaintext"sv, "server_cmd"sv, "stream_audio"sv, "sunshine_name"sv,
+      "sw_preset"sv, "sw_tune"sv, "system_tray"sv, "touchpad_as_ds4"sv, "upnp"sv,
+      "vaapi_strict_rc_buffer"sv, "virtual_display_driver"sv, "virtual_sink"sv, "vt_coder"sv,
+      "vt_realtime"sv, "vt_software"sv, "wan_encryption_mode"sv
+    };
+    return known.count(name) > 0;
   }
 
   int parse(int argc, char *argv[]) {

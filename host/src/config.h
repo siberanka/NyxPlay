@@ -306,5 +306,9 @@ namespace config {
   extern sunshine_t sunshine;
 
   int parse(int argc, char *argv[]);
+  /**
+   * @brief Check whether a configuration file option name is one the host reads.
+   */
+  bool is_known_option(std::string_view name);
   std::unordered_map<std::string, std::string> parse_config(const std::string_view &file_content);
 }  // namespace config

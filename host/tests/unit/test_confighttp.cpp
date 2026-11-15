@@ -291,8 +291,10 @@ TEST(FirstSetupTest, ClassifiesLoopbackAndLanAddresses) {
 }
 
 TEST(FirstSetupTest, RefusalMessageNamesTheHostPc) {
-  EXPECT_NE(confighttp::FIRST_SETUP_LOCAL_ONLY_MESSAGE.find("host PC"), std::string_view::npos);
-  EXPECT_NE(confighttp::FIRST_SETUP_LOCAL_ONLY_MESSAGE.find("localhost"), std::string_view::npos);
+  const auto message = confighttp::first_setup_local_only_message(55990);
+  EXPECT_NE(message.find("host PC"), std::string::npos);
+  EXPECT_NE(message.find("https://localhost:55990)"), std::string::npos);
+  EXPECT_EQ(message.find("47990"), std::string::npos);
 }
 
 TEST(ValidateConfigTest, RejectsLineBreaksAfterAListPrefix) {
