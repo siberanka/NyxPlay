@@ -28,6 +28,44 @@ namespace input {
    */
   bool validate_input_packet(std::span<const std::uint8_t> packet);
 
+  /**
+   * @brief Release input that is held for permission groups which were just revoked.
+   * @param input The input context pointer.
+   * @param removed The revoked permission bits (only the input bits are considered).
+   */
+  void release_denied(std::shared_ptr<input_t> &input, crypto::PERM removed);
+
+  /**
+   * @brief Internal helpers exposed for unit tests.
+   */
+  namespace testing {
+    /// Result of batching two queued input messages.
+    enum class batch_outcome_e {
+      batched,
+      not_batchable,
+      terminate_batch,
+    };
+
+    /**
+     * @brief Check whether a validated input message may be queued with the given permissions.
+     * @param permission The permissions of the client.
+     * @param packet The validated input message.
+     * @return `true` when the message belongs to a known type and a permission group the client holds.
+     */
+    bool is_permitted(const crypto::PERM &permission, std::span<const std::uint8_t> packet);
+
+    /**
+     * @brief Try to batch `src` into `dest` (both must be validated messages).
+     */
+    batch_outcome_e batch_messages(std::vector<std::uint8_t> &dest, std::vector<std::uint8_t> &src);
+
+    /// Clamp `value` to [min, max]; a non-finite value yields `min`.
+    float clamp_or_min(float value, float min, float max);
+
+    /// Limit `value` to [-limit, limit]; a non-finite value yields 0.
+    float limit_finite(float value, float limit);
+  }  // namespace testing
+
   [[nodiscard]] std::unique_ptr<platf::deinit_t> init();
 
   bool probe_gamepads();

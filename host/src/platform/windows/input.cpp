@@ -1500,6 +1500,10 @@ namespace platf {
       return;
     }
 
+    if (nr < 0 || nr >= (int) vigem->gamepads.size()) {
+      return;
+    }
+
     auto &gamepad = vigem->gamepads[nr];
     if (!gamepad.gp) {
       return;
@@ -1529,6 +1533,10 @@ namespace platf {
 
     // If there is no gamepad support
     if (!vigem) {
+      return;
+    }
+
+    if (touch.id.globalIndex < 0 || touch.id.globalIndex >= (int) vigem->gamepads.size()) {
       return;
     }
 
@@ -1638,6 +1646,10 @@ namespace platf {
       return;
     }
 
+    if (motion.id.globalIndex < 0 || motion.id.globalIndex >= (int) vigem->gamepads.size()) {
+      return;
+    }
+
     auto &gamepad = vigem->gamepads[motion.id.globalIndex];
     if (!gamepad.gp) {
       return;
@@ -1662,6 +1674,10 @@ namespace platf {
 
     // If there is no gamepad support
     if (!vigem) {
+      return;
+    }
+
+    if (battery.id.globalIndex < 0 || battery.id.globalIndex >= (int) vigem->gamepads.size()) {
       return;
     }
 

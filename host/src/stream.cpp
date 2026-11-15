@@ -1178,7 +1178,8 @@ namespace stream {
     });
 
     server->map(packetTypes[IDX_SET_CLIPBOARD], [server](session_t *session, const std::string_view &payload) {
-      BOOST_LOG(info) << "type [IDX_SET_CLIPBOARD]: "sv << payload << " size: " << payload.size();
+      // Clipboard contents are never logged, only the size
+      BOOST_LOG(debug) << "type [IDX_SET_CLIPBOARD] size: "sv << payload.size();
 
       if (!(session->permission & crypto::PERM::clipboard_set)) {
         BOOST_LOG(debug) << "Permission Clipboard Set deined for [" << session->device_name << "]";
@@ -1187,7 +1188,7 @@ namespace stream {
     });
 
     server->map(packetTypes[IDX_FILE_TRANSFER_NONCE_REQUEST], [server](session_t *session, const std::string_view &payload) {
-      BOOST_LOG(info) << "type [IDX_FILE_TRANSFER_NONCE_REQUEST]: "sv << payload << " size: " << payload.size();
+      BOOST_LOG(debug) << "type [IDX_FILE_TRANSFER_NONCE_REQUEST] size: "sv << payload.size();
 
       if (!(session->permission & crypto::PERM::file_upload)) {
         BOOST_LOG(debug) << "Permission File Upload deined for [" << session->device_name << "]";
@@ -2150,7 +2151,16 @@ namespace stream {
     }
 
     bool update_device_info(session_t& session, const std::string& name, const crypto::PERM& newPerm) {
+      // Input groups that are revoked while keys, buttons or contacts are held must be released
+      const auto removed_inputs = static_cast<crypto::PERM>(
+        static_cast<std::uint32_t>(session.permission) &
+        ~static_cast<std::uint32_t>(newPerm) &
+        static_cast<std::uint32_t>(crypto::PERM::_all_inputs)
+      );
       session.permission = newPerm;
+      if (session.input && !!removed_inputs) {
+        input::release_denied(session.input, removed_inputs);
+      }
       if (!(newPerm & crypto::PERM::_allow_view)) {
         BOOST_LOG(debug) << "Session: View permission revoked for [" << session.device_name << "], disconnecting...";
         graceful_stop(session);

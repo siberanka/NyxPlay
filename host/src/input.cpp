@@ -107,12 +107,39 @@ namespace input {
    * @return Clamped native endianess float value.
    */
   float from_clamped_netfloat(netfloat f, float min, float max) {
-    return std::clamp(from_netfloat(f), min, max);
+    return testing::clamp_or_min(from_netfloat(f), min, max);
   }
+
+  /**
+   * @brief Convert a little-endian netfloat to a native endianness float, limited to +-limit.
+   * @param f Netfloat value.
+   * @param limit The largest accepted magnitude.
+   * @return The limited value, or 0 when the received value is not finite.
+   */
+  float from_finite_netfloat(netfloat f, float limit) {
+    return testing::limit_finite(from_netfloat(f), limit);
+  }
+
+  namespace testing {
+    float clamp_or_min(float value, float min, float max) {
+      if (!std::isfinite(value)) {
+        return min;
+      }
+      return std::clamp(value, min, max);
+    }
+
+    float limit_finite(float value, float limit) {
+      if (!std::isfinite(value)) {
+        return 0.0f;
+      }
+      return std::clamp(value, -limit, limit);
+    }
+  }  // namespace testing
 
   static task_pool_util::TaskPool::task_id_t key_press_repeat_id {};
   static std::unordered_map<key_press_id_t, bool> key_press {};
-  static std::array<std::uint8_t, 5> mouse_press {};
+  // Buttons 1..5 (left, middle, right, X1, X2) are tracked; index 0 is unused
+  static std::array<std::uint8_t, 6> mouse_press {};
 
   static platf::input_t platf_input;
   static std::bitset<platf::MAX_GAMEPADS> gamepadMask {};
@@ -133,6 +160,10 @@ namespace input {
     }
 
     ~gamepad_t() {
+      if (back_timeout_id) {
+        task_pool.cancel(back_timeout_id);
+        back_timeout_id = nullptr;
+      }
       if (id >= 0) {
         task_pool.push([id = this->id]() {
           free_gamepad(platf_input, id);
@@ -188,6 +219,7 @@ namespace input {
 
     std::list<std::vector<uint8_t>> input_queue;
     std::mutex input_queue_lock;
+    std::chrono::steady_clock::time_point last_queue_full_log {};
 
     thread_pool_util::ThreadPool::task_id_t mouse_left_button_timeout;
 
@@ -266,9 +298,6 @@ namespace input {
     BOOST_LOG(debug)
       << "--begin keyboard packet--"sv << std::endl
       << "keyAction ["sv << util::hex(packet->header.magic).to_string_view() << ']' << std::endl
-      << "keyCode ["sv << util::hex(packet->keyCode).to_string_view() << ']' << std::endl
-      << "modifiers ["sv << util::hex(packet->modifiers).to_string_view() << ']' << std::endl
-      << "flags ["sv << util::hex(packet->flags).to_string_view() << ']' << std::endl
       << "--end keyboard packet--"sv;
   }
 
@@ -276,10 +305,10 @@ namespace input {
     // The packet was validated when it was queued; clamp anyway so logging can never over-read
     std::size_t size = util::endian::big(packet->header.size);
     size = size < sizeof(packet->header.magic) ? 0 : std::min<std::size_t>(size - sizeof(packet->header.magic), UTF8_TEXT_EVENT_MAX_COUNT);
-    std::string text(packet->text, size);
+    // Typed text is never written to the log, only its length
     BOOST_LOG(debug)
       << "--begin unicode packet--"sv << std::endl
-      << "text ["sv << text << ']' << std::endl
+      << "length ["sv << size << ']' << std::endl
       << "--end unicode packet--"sv;
   }
 
@@ -567,14 +596,16 @@ namespace input {
 
     auto release = util::endian::little(packet->header.magic) == MOUSE_BUTTON_UP_EVENT_MAGIC_GEN5;
     auto button = util::endian::big(packet->button);
-    if (button > 0 && button < mouse_press.size()) {
-      if (mouse_press[button] != release) {
-        // button state is already what we want
-        return;
-      }
-
-      mouse_press[button] = !release;
+    if (button < 1 || button >= mouse_press.size()) {
+      // Only the five standard buttons exist
+      return;
     }
+    if (mouse_press[button] != release) {
+      // button state is already what we want
+      return;
+    }
+
+    mouse_press[button] = !release;
     /**
      * When Moonlight sends mouse input through absolute coordinates,
      * it's possible that BUTTON_RIGHT is pressed down immediately after releasing BUTTON_LEFT.
@@ -1049,12 +1080,14 @@ namespace input {
       return;
     }
 
+    // Accelerometer values are in m/s^2 and gyroscope values in degrees per second
+    const float motion_limit = packet->motionType == LI_MOTION_TYPE_ACCEL ? 10000.0f : 4000.0f;
     platf::gamepad_motion_t motion {
       {gamepad.id, packet->controllerNumber},
       packet->motionType,
-      from_netfloat(packet->x),
-      from_netfloat(packet->y),
-      from_netfloat(packet->z),
+      from_finite_netfloat(packet->x, motion_limit),
+      from_finite_netfloat(packet->y, motion_limit),
+      from_finite_netfloat(packet->z, motion_limit),
     };
 
     platf::gamepad_motion(platf_input, motion);
@@ -1119,8 +1152,14 @@ namespace input {
       gamepad.id = id;
     } else if (!(packet->activeGamepadMask & (1 << packet->controllerNumber)) && gamepad.id >= 0) {
       // If this is the final event for a gamepad being removed, free the gamepad and return.
+      if (gamepad.back_timeout_id) {
+        task_pool.cancel(gamepad.back_timeout_id);
+        gamepad.back_timeout_id = nullptr;
+      }
       free_gamepad(platf_input, gamepad.id);
       gamepad.id = -1;
+      gamepad.gamepad_state = {};
+      gamepad.back_button_state = button_state_e::NONE;
       return;
     }
 
@@ -1171,6 +1210,12 @@ namespace input {
           auto f = [input, controller = packet->controllerNumber]() {
             auto &gamepad = input->gamepads[controller];
 
+            // The controller may have been removed while the timer was pending
+            if (gamepad.id < 0) {
+              gamepad.back_timeout_id = nullptr;
+              return;
+            }
+
             auto &state = gamepad.gamepad_state;
 
             // Force the back button up
@@ -1209,11 +1254,12 @@ namespace input {
    * @brief Validate a fixed-size input packet.
    * @param packet Raw packet bytes.
    * @param declared_size Packet size declared after the size field.
-   * @return `true` when both sizes safely contain the fixed packet structure.
+   * @return `true` when both sizes safely contain the fixed packet structure (extra trailing bytes are allowed).
    */
   template<typename Packet>
   bool validate_fixed_input_packet(std::span<const std::uint8_t> packet, std::uint32_t declared_size) {
-    if (constexpr auto expected_size = static_cast<std::uint32_t>(sizeof(Packet) - sizeof(std::uint32_t)); declared_size != expected_size) {
+    // Newer clients may append fields; those are ignored, shorter packets are rejected
+    if (constexpr auto expected_size = static_cast<std::uint32_t>(sizeof(Packet) - sizeof(std::uint32_t)); declared_size < expected_size) {
       return false;
     }
     return packet.size() >= sizeof(Packet);
@@ -1660,6 +1706,72 @@ namespace input {
     }
   }
 
+  namespace testing {
+    bool is_permitted(const crypto::PERM &permission, std::span<const std::uint8_t> packet) {
+      if (packet.size() < sizeof(NV_INPUT_HEADER)) {
+        return false;
+      }
+
+      NV_INPUT_HEADER header {};
+      std::memcpy(&header, packet.data(), sizeof(header));
+
+      // No input permissions at all
+      if (!(permission & crypto::PERM::_all_inputs)) {
+        return false;
+      }
+
+      // Every known message type belongs to exactly one permission group
+      crypto::PERM required;
+      switch (util::endian::little(header.magic)) {
+        case MULTI_CONTROLLER_MAGIC_GEN5:
+        case SS_CONTROLLER_ARRIVAL_MAGIC:
+        case SS_CONTROLLER_TOUCH_MAGIC:
+        case SS_CONTROLLER_MOTION_MAGIC:
+        case SS_CONTROLLER_BATTERY_MAGIC:
+          required = crypto::PERM::input_controller;
+          break;
+        case MOUSE_MOVE_REL_MAGIC_GEN5:
+        case MOUSE_MOVE_ABS_MAGIC:
+        case MOUSE_BUTTON_DOWN_EVENT_MAGIC_GEN5:
+        case MOUSE_BUTTON_UP_EVENT_MAGIC_GEN5:
+        case SCROLL_MAGIC_GEN5:
+        case SS_HSCROLL_MAGIC:
+          required = crypto::PERM::input_mouse;
+          break;
+        case KEY_DOWN_EVENT_MAGIC:
+        case KEY_UP_EVENT_MAGIC:
+        case UTF8_TEXT_EVENT_MAGIC:
+          required = crypto::PERM::input_kbd;
+          break;
+        case SS_TOUCH_MAGIC:
+          required = crypto::PERM::input_touch;
+          break;
+        case SS_PEN_MAGIC:
+          required = crypto::PERM::input_pen;
+          break;
+        default:
+          // Unknown input event, it would be ignored anyway
+          return false;
+      }
+
+      return !!(permission & required);
+    }
+
+    batch_outcome_e batch_messages(std::vector<std::uint8_t> &dest, std::vector<std::uint8_t> &src) {
+      switch (batch((PNV_INPUT_HEADER) dest.data(), (PNV_INPUT_HEADER) src.data())) {
+        case batch_result_e::batched:
+          return batch_outcome_e::batched;
+        case batch_result_e::not_batchable:
+          return batch_outcome_e::not_batchable;
+        default:
+          return batch_outcome_e::terminate_batch;
+      }
+    }
+  }  // namespace testing
+
+  // Upper bound for messages waiting for the input thread of one session
+  constexpr std::size_t MAX_QUEUED_INPUT_MESSAGES = 4096;
+
   /**
    * @brief Called on the control stream thread to queue an input message.
    * @param input The input context pointer.
@@ -1681,65 +1793,21 @@ namespace input {
       return;
     }
 
-    // No input permissions at all
-    if (!(permission & crypto::PERM::_all_inputs)) {
+    // Unknown message types and groups the client has no permission for are dropped
+    if (!testing::is_permitted(permission, input_data)) {
       return;
-    }
-
-    // Have some input permission
-    // Otherwise have all input permission
-    if ((permission & crypto::PERM::_all_inputs) != crypto::PERM::_all_inputs) {
-      // Check permission
-      switch (util::endian::little(header.magic)) {
-        case MULTI_CONTROLLER_MAGIC_GEN5:
-        case SS_CONTROLLER_ARRIVAL_MAGIC:
-        case SS_CONTROLLER_TOUCH_MAGIC:
-        case SS_CONTROLLER_MOTION_MAGIC:
-        case SS_CONTROLLER_BATTERY_MAGIC:
-          if (!(permission & crypto::PERM::input_controller)) {
-            return;
-          } else {
-            break;
-          }
-        case MOUSE_MOVE_REL_MAGIC_GEN5:
-        case MOUSE_MOVE_ABS_MAGIC:
-        case MOUSE_BUTTON_DOWN_EVENT_MAGIC_GEN5:
-        case MOUSE_BUTTON_UP_EVENT_MAGIC_GEN5:
-        case SCROLL_MAGIC_GEN5:
-        case SS_HSCROLL_MAGIC:
-          if (!(permission & crypto::PERM::input_mouse)) {
-            return;
-          } else {
-            break;
-          }
-        case KEY_DOWN_EVENT_MAGIC:
-        case KEY_UP_EVENT_MAGIC:
-        case UTF8_TEXT_EVENT_MAGIC:
-          if (!(permission & crypto::PERM::input_kbd)) {
-            return;
-          } else {
-            break;
-          }
-        case SS_TOUCH_MAGIC:
-          if (!(permission & crypto::PERM::input_touch)) {
-            return;
-          } else {
-            break;
-          }
-        case SS_PEN_MAGIC:
-          if (!(permission & crypto::PERM::input_pen)) {
-            return;
-          } else {
-            break;
-          }
-        default:
-          // Unknown input event
-          return;
-      }
     }
 
     {
       std::lock_guard<std::mutex> lg(input->input_queue_lock);
+      if (input->input_queue.size() >= MAX_QUEUED_INPUT_MESSAGES) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - input->last_queue_full_log >= 1s) {
+          input->last_queue_full_log = now;
+          BOOST_LOG(warning) << "Input queue is full, dropping input messages"sv;
+        }
+        return;
+      }
       input->input_queue.push_back(std::move(input_data));
     }
     task_pool.push(passthrough_next_message, input);
@@ -1765,6 +1833,67 @@ namespace input {
         }
         platf::keyboard_update(platf_input, vk_from_kpid(kp.first) & 0x00FF, true, flags_from_kpid(kp.first));
         key_press[kp.first] = false;
+      }
+    });
+  }
+
+  void release_denied(std::shared_ptr<input_t> &input, crypto::PERM removed) {
+    const bool keyboard = !!(removed & crypto::PERM::input_kbd);
+    const bool mouse = !!(removed & crypto::PERM::input_mouse);
+    const bool touch = !!(removed & crypto::PERM::input_touch);
+    const bool pen = !!(removed & crypto::PERM::input_pen);
+    if (!keyboard && !mouse && !touch && !pen) {
+      return;
+    }
+
+    // Run on the input thread so the release is ordered with the queued input
+    task_pool.push([input, keyboard, mouse, touch, pen]() {
+      if (keyboard) {
+        if (key_press_repeat_id) {
+          task_pool.cancel(key_press_repeat_id);
+          key_press_repeat_id = nullptr;
+        }
+
+        for (auto &kp : key_press) {
+          if (!kp.second) {
+            continue;
+          }
+          platf::keyboard_update(platf_input, vk_from_kpid(kp.first) & 0x00FF, true, flags_from_kpid(kp.first));
+          kp.second = false;
+        }
+        input->shortcutFlags = 0;
+      }
+
+      if (mouse) {
+        // A delayed left button release would otherwise be lost
+        if (input->mouse_left_button_timeout > DISABLE_LEFT_BUTTON_DELAY) {
+          task_pool.cancel(input->mouse_left_button_timeout);
+          input->mouse_left_button_timeout = ENABLE_LEFT_BUTTON_DELAY;
+          platf::button_mouse(platf_input, BUTTON_LEFT, true);
+        }
+
+        for (int x = 0; x < mouse_press.size(); ++x) {
+          if (mouse_press[x]) {
+            platf::button_mouse(platf_input, x, true);
+            mouse_press[x] = false;
+          }
+        }
+      }
+
+      if (touch || pen) {
+        platf::touch_port_t abs_port {
+          input->touch_port.offset_x,
+          input->touch_port.offset_y,
+          input->touch_port.env_width,
+          input->touch_port.env_height
+        };
+
+        if (touch) {
+          platf::touch_update(input->client_context.get(), abs_port, {LI_TOUCH_EVENT_CANCEL_ALL, LI_ROT_UNKNOWN, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+        }
+        if (pen) {
+          platf::pen_update(input->client_context.get(), abs_port, {LI_TOUCH_EVENT_CANCEL_ALL, LI_TOOL_TYPE_UNKNOWN, 0, LI_TILT_UNKNOWN, LI_ROT_UNKNOWN, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+        }
       }
     });
   }
