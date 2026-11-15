@@ -9,9 +9,10 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-2026.11.11.1-8b73ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-2026.11.14.1-8b73ff">
   <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0-blue">
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Android%20%7C%20Linux%20%7C%20macOS-15163a">
+  <img alt="Platforms" src="https://img.shields.io/badge/host-Windows-15163a">
+  <img alt="Clients" src="https://img.shields.io/badge/clients-Android%20%7C%20Windows-15163a">
 </p>
 
 NyxPlay is a monorepo that contains everything needed to stream from a PC to phones, tablets,

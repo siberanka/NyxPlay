@@ -24,7 +24,7 @@ NyxPlay additions:
   `virtual_display_driver` option leaves SudoVDA to another host
 - [x] `NYXPLAY_*` environment variables for application and client commands (`APOLLO_*`/`SUNSHINE_*` stay available)
 - [x] NyxPlay web UI theme, tray icons and a complete Turkish translation
-- [x] Calendar versioning (`2026.11.11.1`)
+- [x] Calendar versioning (`2026.11.14.1`)
 
 ## Usage
 

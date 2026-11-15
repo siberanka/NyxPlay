@@ -12,7 +12,7 @@ Game Streaming Project.
 | | |
 |---|---|
 | Executable | `NyxPlay.exe` (Windows), `nyxplay` (Linux), `NyxPlay.app` (macOS) |
-| Version | `2026.11.11.1` |
+| Version | `2026.11.14.1` |
 | Settings | Organization `NyxPlay` (separate from Moonlight) |
 
 NyxPlay changes: branding, NyxPlay colour scheme, own update manifest (`deploy/updates/qt.json`),

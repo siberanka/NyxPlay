@@ -12,7 +12,7 @@ by ClassicOldSong, which itself is a fork of [Moonlight for Android](https://git
 | | |
 |---|---|
 | Package | `com.siberanka.nyxplay` (debug: `com.siberanka.nyxplay.debug`) |
-| Version | `2026.11.11.1` (versionCode `2026111101`) |
+| Version | `2026.11.14.1` (versionCode `2026111401`) |
 | Minimum Android | 5.0 (API 21) |
 
 ## NyxPlay features

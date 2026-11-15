@@ -1,0 +1,39 @@
+NyxPlay Host third-party notices
+================================
+
+NyxPlay Host is distributed under the GNU General Public License v3.0 (GPL-3.0.txt). It is based
+on Apollo and Sunshine; see CREDITS.md in the source repository for the upstream projects and
+authors. The complete corresponding source code is available at
+https://github.com/siberanka/NyxPlay
+
+The full licence texts are in this "licenses" folder. The components below are linked into or
+shipped with the host:
+
+Component                                  Licence                                  File
+-----------------------------------------  ---------------------------------------  ------------------------------------------
+Boost                                      Boost Software License 1.0               BSL-1.0-Boost.txt
+OpenSSL (libssl, libcrypto)                Apache-2.0                               Apache-2.0-OpenSSL.txt
+miniupnpc                                  BSD-3-Clause                             BSD-3-Clause-miniupnpc.txt
+libcurl                                    curl licence (MIT-style)                 curl.txt
+Opus                                       BSD-3-Clause                             BSD-3-Clause-Opus.txt
+zlib (zlib1.dll)                           zlib                                     zlib.txt
+mingw-w64 winpthreads                      MIT-style                                MIT-mingw-w64-winpthreads.txt
+GCC runtime libraries (libgcc, libstdc++)  GPL-3.0 with Runtime Library Exception   GCC-Runtime-Library-Exception.txt
+moonlight-common-c (incl. ENet, nanors)    GPL-3.0 with exception                   GPL-3.0-with-exception-moonlight-common-c.txt
+nanors                                     MIT                                      MIT-nanors.txt
+Simple-Web-Server                          MIT                                      MIT-Simple-Web-Server.txt
+tray                                       MIT                                      MIT-tray.txt
+ViGEmClient (statically linked)            MIT                                      MIT-ViGEmClient.txt
+libdisplaydevice                           AGPL-3.0 (combined with GPL-3.0)         AGPL-3.0-libdisplaydevice.txt
+
+Components installed on request (separate packages, with their own licence terms):
+
+* ViGEmBus driver installer (gamepad component), Nefarius Software Solutions e.U.
+  https://github.com/nefarius/ViGEmBus - BSD-3-Clause.
+* nefconc.exe (device installer used for the virtual display driver), Nefarius Software Solutions
+  e.U. https://github.com/nefarius/nefcon - BSD-3-Clause.
+* SudoVDA virtual display driver (SudoVDA.dll, SudoVDA.inf), SudoMaker, as shipped with Apollo.
+  https://github.com/SudoMaker/SudoVDA - see the project page for its licence terms.
+
+Other bundled artwork and fonts keep the licences stated in their folders and in CREDITS.md.
+"Steam" and the Steam logo are trademarks of Valve Corporation (see NOTICE).

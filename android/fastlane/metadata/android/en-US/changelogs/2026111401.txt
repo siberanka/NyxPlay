@@ -1,0 +1,4 @@
+Stability and security release (2026.11.14.1):
+- Links and shortcuts from outside the app ask for confirmation
+- More robust host discovery, pairing and streaming teardown
+- Complete Turkish translation

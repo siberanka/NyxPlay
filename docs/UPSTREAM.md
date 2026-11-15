@@ -38,8 +38,8 @@ git merge -X subtree=android/ artemis/moonlight-noir
 
 After a pull:
 
-1. Re-apply submodule changes: compare `host/.gitmodules` / `pc/.gitmodules` with the root
-   `.gitmodules` (git only reads the root file) and update the gitlinks with
+1. Re-apply submodule changes: compare the upstream `.gitmodules` of the pulled component with the root
+   `.gitmodules` (the only file git reads, paths carry the component prefix) and update the gitlinks with
    `git update-index --cacheinfo 160000,<sha>,<path>`.
 2. Vendored `moonlight-common-c` copies are not updated automatically. Merge upstream changes manually;
    NyxPlay changes are marked with `NyxPlay` comments and listed in each `VENDORED.md`.

@@ -6,7 +6,7 @@
   Takes an already built NyxPlay.exe (release) and AntiHooking.dll, runs windeployqt
   without the QML debugger plugins, adds the bundled runtime libraries, the licence
   files and an empty portable.dat marker, verifies that no user data or debug
-  components ended up in the tree and writes NyxPlayPortable-<arch>-<version>.zip.
+  components ended up in the tree and writes NyxPlayPC-<version>-windows-<arch>-portable.zip.
 
   The staging directory is always created from scratch and must never be a directory
   in which NyxPlay has been started, because a started portable copy writes its
@@ -14,15 +14,15 @@
 
 .PARAMETER BuildDir
   qmake build directory that holds app\release\NyxPlay.exe and AntiHooking\release\AntiHooking.dll.
-  Default: D:\ai\temp\nyx-pc-build
+  Default: <repository>\pc-build
 
 .PARAMETER QtBin
   Qt bin directory that provides windeployqt.exe.
-  Default: D:\ai\cache\Qt\6.12.0\msvc2022_64\bin
+  Default: $env:QTDIR\bin when QTDIR is set (required otherwise).
 
 .PARAMETER OutDir
   Working and output directory. Staging goes to <OutDir>\stage, the zip to <OutDir>.
-  Default: D:\ai\temp\nyx-pc-package
+  Default: <repository>\dist
 
 .PARAMETER Arch
   Package architecture label and library folder (x64 or arm64). Default: x64
@@ -41,9 +41,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$BuildDir = 'D:\ai\temp\nyx-pc-build',
-    [string]$QtBin = 'D:\ai\cache\Qt\6.12.0\msvc2022_64\bin',
-    [string]$OutDir = 'D:\ai\temp\nyx-pc-package',
+    [string]$BuildDir = '',
+    [string]$QtBin = '',
+    [string]$OutDir = '',
     [string]$Arch = 'x64',
     [string]$VcRuntimeDir = ''
 )
@@ -54,8 +54,14 @@ Set-StrictMode -Version 2
 $pcRoot = Split-Path -Parent $PSScriptRoot
 $repoRoot = Split-Path -Parent $pcRoot
 $version = (Get-Content -LiteralPath (Join-Path $pcRoot 'app\version.txt') -Raw).Trim()
+if (-not $BuildDir) { $BuildDir = Join-Path $repoRoot 'pc-build' }
+if (-not $OutDir) { $OutDir = Join-Path $repoRoot 'dist' }
+if (-not $QtBin) {
+    if (-not $env:QTDIR) { throw 'Pass -QtBin (Qt bin directory with windeployqt.exe) or set QTDIR.' }
+    $QtBin = Join-Path $env:QTDIR 'bin'
+}
 $stage = Join-Path $OutDir 'stage'
-$zipPath = Join-Path $OutDir "NyxPlayPortable-$Arch-$version.zip"
+$zipPath = Join-Path $OutDir "NyxPlayPC-$version-windows-$Arch-portable.zip"
 $exeSrc = Join-Path $BuildDir 'app\release\NyxPlay.exe'
 $ahSrc = Join-Path $BuildDir 'AntiHooking\release\AntiHooking.dll'
 $libDir = Join-Path $pcRoot "libs\windows\lib\$Arch"
@@ -162,7 +168,7 @@ foreach ($c in $components) {
     [void]$notices.AppendLine("    Project: $($c[2])")
 }
 [void]$notices.AppendLine('')
-[void]$notices.AppendLine('The licence texts shipped with the repository follow.')
+[void]$notices.AppendLine('The licence texts follow; they are also available as separate files in the licenses folder.')
 foreach ($f in @(
         @('QmDnsEngine', (Join-Path $pcRoot 'qmdnsengine\qmdnsengine\LICENSE.txt')),
         @('h264bitstream', (Join-Path $pcRoot 'h264bitstream\LICENSE')),
@@ -171,6 +177,30 @@ foreach ($f in @(
         [void]$notices.AppendLine('')
         [void]$notices.AppendLine("---- $($f[0]) ----")
         [void]$notices.AppendLine((Get-Content -LiteralPath $f[1] -Raw))
+    } else { Fail "Licence file missing: $($f[1])" }
+}
+$licStage = Join-Path $stage 'licenses'
+New-Item -ItemType Directory -Path $licStage | Out-Null
+$licSrc = Join-Path $pcRoot 'licenses'
+if (-not (Test-Path -LiteralPath $licSrc)) { Fail "Licence directory missing: $licSrc" }
+else {
+    foreach ($f in @(Get-ChildItem -LiteralPath $licSrc -File | Sort-Object Name)) {
+        Copy-Item -LiteralPath $f.FullName -Destination $licStage
+        [void]$notices.AppendLine('')
+        [void]$notices.AppendLine("---- $($f.BaseName) ----")
+        [void]$notices.AppendLine((Get-Content -LiteralPath $f.FullName -Raw))
+    }
+}
+$mcc = Join-Path $pcRoot 'moonlight-common-c\moonlight-common-c'
+foreach ($f in @(
+        @('enet', (Join-Path $mcc 'enet\LICENSE')),
+        @('nanors', (Join-Path $mcc 'nanors\LICENSE')),
+        @('moonlight-common-c', (Join-Path $mcc 'LICENSE.txt')))) {
+    if (Test-Path -LiteralPath $f[1]) {
+        [void]$notices.AppendLine('')
+        [void]$notices.AppendLine("---- $($f[0]) ----")
+        [void]$notices.AppendLine((Get-Content -LiteralPath $f[1] -Raw))
+        Copy-Item -LiteralPath $f[1] -Destination (Join-Path $licStage ("$($f[0])-LICENSE.txt"))
     } else { Fail "Licence file missing: $($f[1])" }
 }
 [IO.File]::WriteAllText((Join-Path $stage 'THIRD-PARTY-NOTICES.txt'), $notices.ToString(), (New-Object Text.UTF8Encoding($false)))
@@ -185,7 +215,7 @@ if (Test-Path -LiteralPath (Join-Path $stage 'qmltooling')) { Fail 'qmltooling d
 if (Test-Path -LiteralPath (Join-Path $stage 'NyxPlay') -PathType Container) { Fail 'NyxPlay settings directory present' }
 if (@(Get-ChildItem -LiteralPath (Join-Path $stage 'boxart') -Force).Count -ne 0) { Fail 'boxart is not empty' }
 if ((Get-Item -LiteralPath (Join-Path $stage 'portable.dat')).Length -ne 0) { Fail 'portable.dat is not empty' }
-foreach ($r in 'NyxPlay.exe', 'AntiHooking.dll', 'LICENSE', 'CREDITS.md', 'THIRD-PARTY-NOTICES.txt', 'gamecontrollerdb.txt',
+foreach ($r in 'NyxPlay.exe', 'AntiHooking.dll', 'LICENSE', 'CREDITS.md', 'THIRD-PARTY-NOTICES.txt', 'licenses\LGPL-3.0.txt', 'licenses\LGPL-2.1.txt', 'gamecontrollerdb.txt',
                'Qt6Core.dll', 'SDL2.dll', 'avcodec-63.dll', 'platforms\qwindows.dll') {
     if (-not (Test-Path -LiteralPath (Join-Path $stage $r))) { Fail "Required file missing: $r" }
 }

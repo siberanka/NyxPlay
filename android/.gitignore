@@ -47,3 +47,7 @@ app/.externalNativeBuild/
 
 # agent files
 AGENTS.md
+# Release signing (credentials stay outside the repository)
+keystore.properties
+*.jks
+*.keystore

@@ -94,6 +94,37 @@ android {
         }
     }
 
+    // Release signing is optional. android/keystore.properties (git-ignored) holds either the four
+    // keys storeFile, storePassword, keyAlias, keyPassword, or a single propertiesFile=<path> entry
+    // pointing at such a file kept outside the repository. NYXPLAY_KEYSTORE_PROPERTIES may name the
+    // file instead. Without any of them the release build stays unsigned.
+    def signingProps = new Properties()
+    def signingSource = System.getenv('NYXPLAY_KEYSTORE_PROPERTIES')
+    def localSigning = rootProject.file('keystore.properties')
+    if (!signingSource && localSigning.exists()) {
+        def local = new Properties()
+        localSigning.withInputStream { local.load(it) }
+        signingSource = local.getProperty('propertiesFile')
+        if (!signingSource) {
+            signingProps.putAll(local)
+        }
+    }
+    if (signingSource && file(signingSource).exists()) {
+        file(signingSource).withInputStream { signingProps.load(it) }
+    }
+    def hasReleaseSigning = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].every { signingProps.getProperty(it) }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(signingProps.getProperty('storeFile'))
+                storePassword signingProps.getProperty('storePassword')
+                keyAlias signingProps.getProperty('keyAlias')
+                keyPassword signingProps.getProperty('keyPassword')
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix ".debug"
@@ -111,6 +142,10 @@ android {
             resValue "string", "app_label", "NyxPlay"
             resValue "string", "app_label_root", "NyxPlay (Root)"
             resValue "string", "app_label_game", "NyxPlay"
+
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
 
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'

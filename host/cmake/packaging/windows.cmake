@@ -64,6 +64,16 @@ install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/drivers/sudovda"
         DESTINATION "drivers"
         COMPONENT sudovda)
 
+# Licence texts and third-party notices
+install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/licenses/"
+        DESTINATION "licenses"
+        COMPONENT application)
+if(EXISTS "${PROJECT_SOURCE_DIR}/../CREDITS.md")
+    install(FILES "${PROJECT_SOURCE_DIR}/../CREDITS.md"
+            DESTINATION "licenses"
+            COMPONENT application)
+endif()
+
 # Mandatory scripts
 install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/misc/service/"
         DESTINATION "scripts"
