@@ -1183,6 +1183,10 @@ namespace platf::dxgi {
       if (FAILED(status)) {
         BOOST_LOG(error) << "Failed to get new pointer shape [0x"sv << util::hex(status).to_string_view() << ']';
 
+        // The duplication is gone after a device loss, recreate it
+        if (status == DXGI_ERROR_DEVICE_REMOVED || status == DXGI_ERROR_DEVICE_RESET || status == DXGI_ERROR_ACCESS_LOST) {
+          return capture_e::reinit;
+        }
         return capture_e::error;
       }
 

@@ -83,6 +83,55 @@ namespace audio {
     },
   };
 
+  bool packet_duration_valid(int duration_ms) {
+    return duration_ms == 5 || duration_ms == 10 || duration_ms == 20 || duration_ms == 40 || duration_ms == 60;
+  }
+
+  bool channel_count_valid(int channels) {
+    return channels == 2 || channels == 6 || channels == 8;
+  }
+
+  bool stream_params_valid(const stream_params_t &params) {
+    // Opus requires every coupled stream to be one of the streams and one mapping slot per channel
+    if ((params.channelCount != 6 && params.channelCount != 8) ||
+        params.streams < 1 || params.coupledStreams < 0 ||
+        params.coupledStreams > params.streams ||
+        params.streams + params.coupledStreams != params.channelCount) {
+      return false;
+    }
+
+    for (int i = 0; i < params.channelCount; i++) {
+      if (params.mapping[i] >= params.channelCount) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool packet_fits_buffer(int bitrate, int duration_ms) {
+    if (bitrate <= 0 || duration_ms <= 0) {
+      return false;
+    }
+
+    // Constant bitrate frame plus some room for the Opus framing
+    const std::int64_t required = (std::int64_t) bitrate / 8 * duration_ms / 1000 + 64;
+    return required <= MAX_PACKET_SIZE;
+  }
+
+  bool config_valid(const config_t &config) {
+    if (!channel_count_valid(config.channels) || !packet_duration_valid(config.packetDuration)) {
+      return false;
+    }
+
+    auto stream = stream_configs[map_stream(config.channels, config.flags[config_t::HIGH_QUALITY])];
+    if (config.flags[config_t::CUSTOM_SURROUND_PARAMS] && !stream_params_valid(config.customStreamParams)) {
+      return false;
+    }
+
+    return packet_fits_buffer(stream.bitrate, config.packetDuration);
+  }
+
   void encodeThread(sample_queue_t samples, config_t config, void *channel_data) {
     auto packets = mail::man->queue<packet_t>(mail::audio_packets);
     auto stream = stream_configs[map_stream(config.channels, config.flags[config_t::HIGH_QUALITY])];
@@ -93,6 +142,7 @@ namespace audio {
     // Encoding takes place on this thread
     platf::adjust_thread_priority(platf::thread_priority_e::high);
 
+    int opus_error = OPUS_OK;
     opus_t opus {opus_multistream_encoder_create(
       stream.sampleRate,
       stream.channelCount,
@@ -100,8 +150,15 @@ namespace audio {
       stream.coupledStreams,
       stream.mapping,
       OPUS_APPLICATION_RESTRICTED_LOWDELAY,
-      nullptr
+      &opus_error
     )};
+
+    if (!opus) {
+      // Only this session loses its audio, the queue shared by all sessions stays up
+      BOOST_LOG(error) << "Couldn't create the Opus encoder ("sv << opus_strerror(opus_error) << "), the stream will not have audio"sv;
+      samples->stop();
+      return;
+    }
 
     opus_multistream_encoder_ctl(opus.get(), OPUS_SET_BITRATE(stream.bitrate));
     opus_multistream_encoder_ctl(opus.get(), OPUS_SET_VBR(0));
@@ -112,13 +169,14 @@ namespace audio {
 
     auto frame_size = config.packetDuration * stream.sampleRate / 1000;
     while (auto sample = samples->pop()) {
-      buffer_t packet {1400};
+      buffer_t packet {MAX_PACKET_SIZE};
 
       int bytes = opus_multistream_encode_float(opus.get(), sample->data(), frame_size, std::begin(packet), packet.size());
       if (bytes < 0) {
         BOOST_LOG(error) << "Couldn't encode audio: "sv << opus_strerror(bytes);
-        packets->stop();
 
+        // Only this session loses its audio, the queue shared by all sessions stays up
+        samples->stop();
         return;
       }
 
@@ -219,6 +277,7 @@ namespace audio {
 
     int samples_per_frame = frame_size * stream.channelCount;
 
+    bool audio_lost_logged = false;
     while (!shutdown_event->peek()) {
       std::vector<float> sample_buffer;
       sample_buffer.resize(samples_per_frame);
@@ -230,7 +289,14 @@ namespace audio {
         case platf::capture_e::timeout:
           continue;
         case platf::capture_e::reinit:
-          if (config::audio.auto_capture) {
+          if (!config::audio.auto_capture) {
+            if (!audio_lost_logged) {
+              BOOST_LOG(warning) << "Audio device lost, automatic audio capture is disabled"sv;
+              audio_lost_logged = true;
+            }
+            // The device is gone, do not poll it in a tight loop
+            shutdown_event->view(100ms);
+          } else {
             BOOST_LOG(info) << "Reinitializing audio capture"sv;
             mic.reset();
             do {

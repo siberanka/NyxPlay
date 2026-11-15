@@ -245,10 +245,10 @@ namespace nvenc {
                                                                                             NV_ENC_MULTI_PASS_DISABLED;
 
     enc_config.rcParams.enableAQ = config.adaptive_quantization;
-    enc_config.rcParams.averageBitRate = client_config.bitrate * 1000;
+    enc_config.rcParams.averageBitRate = video::bitrate_bps(client_config.bitrate);
 
     if (get_encoder_cap(NV_ENC_CAPS_SUPPORT_CUSTOM_VBV_BUF_SIZE)) {
-      enc_config.rcParams.vbvBufferSize = client_config.bitrate * 1000 / client_config.framerate;
+      enc_config.rcParams.vbvBufferSize = (uint32_t) (video::bitrate_bps(client_config.bitrate) / std::max(client_config.framerate, 1));
       if (config.vbv_percentage_increase > 0) {
         enc_config.rcParams.vbvBufferSize += enc_config.rcParams.vbvBufferSize * config.vbv_percentage_increase / 100;
       }

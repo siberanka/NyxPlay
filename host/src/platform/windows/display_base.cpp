@@ -3,7 +3,10 @@
  * @brief Definitions for the Windows display base code.
  */
 // standard includes
+#include <chrono>
 #include <cmath>
+#include <deque>
+#include <mutex>
 #include <thread>
 
 // platform includes
@@ -124,6 +127,24 @@ namespace platf::dxgi {
     return 0;
   }
 
+  /**
+   * @brief Decide whether a lost GPU device may be recovered by reinitializing the capture.
+   * @return true when fewer than 5 device losses happened during the last 10 seconds.
+   */
+  static bool device_loss_recoverable() {
+    static std::mutex loss_mutex;
+    static std::deque<std::chrono::steady_clock::time_point> losses;
+
+    std::lock_guard lg {loss_mutex};
+    const auto now = std::chrono::steady_clock::now();
+    while (!losses.empty() && now - losses.front() > 10s) {
+      losses.pop_front();
+    }
+    losses.push_back(now);
+
+    return losses.size() <= 5;
+  }
+
   capture_e duplication_t::next_frame(DXGI_OUTDUPL_FRAME_INFO &frame_info, std::chrono::milliseconds timeout, resource_t::pointer *res_p) {
     auto capture_status = release_frame();
     if (capture_status != capture_e::ok) {
@@ -150,6 +171,15 @@ namespace platf::dxgi {
       case DXGI_ERROR_ACCESS_LOST:
       case DXGI_ERROR_ACCESS_DENIED:
         return capture_e::reinit;
+      case DXGI_ERROR_DEVICE_REMOVED:
+      case DXGI_ERROR_DEVICE_RESET:
+        // A driver reset: recreate the device through the reinit path, but do not loop forever
+        if (device_loss_recoverable()) {
+          BOOST_LOG(warning) << "The graphics device was reset, reinitializing capture"sv;
+          return capture_e::reinit;
+        }
+        BOOST_LOG(error) << "The graphics device keeps getting reset, stopping capture"sv;
+        return capture_e::error;
       default:
         BOOST_LOG(error) << "Couldn't acquire next frame [0x"sv << util::hex(status).to_string_view();
         return capture_e::error;
@@ -195,7 +225,7 @@ namespace platf::dxgi {
   capture_e display_base_t::capture(const push_captured_image_cb_t &push_captured_image_cb, const pull_free_image_cb_t &pull_free_image_cb, bool *cursor) {
     auto adjust_client_frame_rate = [&]() -> DXGI_RATIONAL {
       // Adjust capture frame interval when display refresh rate is not integral but very close to requested fps.
-      if (display_refresh_rate.Denominator > 1) {
+      if (display_refresh_rate.Denominator > 1 && display_refresh_rate_rounded > 0 && client_frame_rate > 0) {
         DXGI_RATIONAL candidate = display_refresh_rate;
         if (client_frame_rate % display_refresh_rate_rounded == 0) {
           candidate.Numerator *= client_frame_rate / display_refresh_rate_rounded;
@@ -599,7 +629,7 @@ namespace platf::dxgi {
     {
       const DWORD flags = TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY;
       TOKEN_PRIVILEGES tp;
-      HANDLE token;
+      HANDLE token = nullptr;
       LUID val;
 
       if (OpenProcessToken(GetCurrentProcess(), flags, &token) &&
@@ -613,7 +643,9 @@ namespace platf::dxgi {
         }
       }
 
-      CloseHandle(token);
+      if (token) {
+        CloseHandle(token);
+      }
 
       HMODULE gdi32 = GetModuleHandleA("GDI32");
       if (gdi32) {

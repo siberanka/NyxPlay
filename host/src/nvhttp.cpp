@@ -2146,6 +2146,17 @@ namespace nvhttp {
     }
 
     std::string content = platf::get_clipboard();
+
+    // Clients read at most this much of the response
+    constexpr size_t max_clipboard_response = 4 * 1024 * 1024;
+    if (content.size() > max_clipboard_response) {
+      BOOST_LOG(warning) << "Clipboard content is too large to send to the client ["sv << content.size() << " bytes]"sv;
+
+      response->write(SimpleWeb::StatusCode::client_error_payload_too_large);
+      response->close_connection_after_response = true;
+      return;
+    }
+
     response->write(content);
     response->close_connection_after_response = true;
     return;

@@ -790,9 +790,10 @@ namespace video {
            auto size = cfg.width * cfg.height;
            // For 4K and below, try to use level 5.1 or 5.2 if possible
            if (size <= 8912896) {
-             if (size * cfg.framerate <= 534773760) {
+             const std::int64_t rate = (std::int64_t) size * cfg.framerate;
+             if (rate <= 534773760) {
                return "5.1"s;
-             } else if (size * cfg.framerate <= 1069547520) {
+             } else if (rate <= 1069547520) {
                return "5.2"s;
              }
            }
@@ -1171,17 +1172,20 @@ namespace video {
     }
     capture_ctxs.emplace_back(std::move(*initial_capture_ctx));
 
+    // The contexts can all be gone while the display is reinitialized, keep the last configuration for that case
+    config_t last_config = capture_ctxs.front().config;
+
     std::vector<std::string> display_names;
     int display_p = -1;
     std::shared_ptr<platf::display_t> disp;
     if (!proc::proc.display_name.empty()) {
-      disp = platf::display(encoder.platform_formats->dev_type, proc::proc.display_name, capture_ctxs.front().config);
+      disp = platf::display(encoder.platform_formats->dev_type, proc::proc.display_name, last_config);
     }
     if (!disp) {
       // Get all the monitor names now, rather than at boot, to
       // get the most up-to-date list available monitors
       refresh_displays(encoder.platform_formats->dev_type, display_names, display_p);
-      disp = platf::display(encoder.platform_formats->dev_type, display_names[display_p], capture_ctxs.front().config);
+      disp = platf::display(encoder.platform_formats->dev_type, display_names[display_p], last_config);
       if (disp) {
         proc::proc.display_name = display_names[display_p];
       } else {
@@ -1315,6 +1319,7 @@ namespace video {
 
         while (capture_ctx_queue->peek()) {
           capture_ctxs.emplace_back(std::move(*capture_ctx_queue->pop()));
+          last_config = capture_ctxs.back().config;
         }
 
         if (switch_display_event->peek()) {
@@ -1346,7 +1351,14 @@ namespace video {
             // display_wp is modified in this thread only
             // Wait for the other shared_ptr's of display to be destroyed.
             // New displays will only be created in this thread.
-            while (display_wp->use_count() != 1) {
+            auto use_count_wait_start = std::chrono::steady_clock::now();
+            bool use_count_wait_logged = false;
+            while (display_wp->use_count() != 1 && capture_ctx_queue->running()) {
+              if (!use_count_wait_logged && std::chrono::steady_clock::now() - use_count_wait_start > 5s) {
+                BOOST_LOG(warning) << "Still waiting for the encoder threads to release the display"sv;
+                use_count_wait_logged = true;
+              }
+
               // Free images that weren't consumed by the encoders. These can reference the display and prevent
               // the ref count from reaching 1. We do this here rather than on the encoder thread to avoid race
               // conditions where the encoding loop might free a good frame after reinitializing if we capture
@@ -1381,7 +1393,7 @@ namespace video {
               }
 
               // reset_display() will sleep between retries
-              reset_display(disp, encoder.platform_formats->dev_type, display_names[display_p], capture_ctxs.front().config);
+              reset_display(disp, encoder.platform_formats->dev_type, display_names[display_p], last_config);
               if (disp) {
                 proc::proc.display_name = display_names[display_p];
                 break;
@@ -1750,7 +1762,7 @@ namespace video {
         }
       }
 
-      auto bitrate = config.bitrate * 1000;
+      auto bitrate = bitrate_bps(config.bitrate);
       ctx->rc_max_rate = bitrate;
       ctx->bit_rate = bitrate;
 
@@ -1771,9 +1783,9 @@ namespace video {
           // because libx264 can severely degrade quality if the buffer is too small.
           // libx265 encounters this issue more frequently, so always scale the
           // buffer by 1.5x for software HEVC encoding.
-          ctx->rc_buffer_size = bitrate / ((config.framerate * 10) / 15);
+          ctx->rc_buffer_size = bitrate / std::max((config.framerate * 10) / 15, 1);
         } else {
-          ctx->rc_buffer_size = bitrate / config.framerate;
+          ctx->rc_buffer_size = bitrate / std::max(config.framerate, 1);
 
 #ifndef __APPLE__
           if (encoder.name == "nvenc" && config::video.nv_legacy.vbv_percentage_increase > 0) {
@@ -2257,8 +2269,13 @@ namespace video {
 
           auto encode_session = make_synced_session(disp.get(), encoder, *img, *synced_session_ctxs.back());
           if (!encode_session) {
-            ec = platf::capture_e::error;
-            return false;
+            // Only the joining session fails, the sessions that already run keep their stream
+            BOOST_LOG(error) << "Could not start an additional encode session, ending only that session"sv;
+            auto &failed_ctx = synced_session_ctxs.back();
+            failed_ctx->shutdown_event->raise(true);
+            failed_ctx->join_event->raise(true);
+            synced_session_ctxs.pop_back();
+            continue;
           }
 
           synced_sessions.emplace_back(std::move(*encode_session));
@@ -2392,6 +2409,7 @@ namespace video {
     }
 
     int frame_nr = 1;
+    int consecutive_failures = 0;
 
     auto touch_port_event = mail->event<input::touch_port_t>(mail::touch_port);
     auto hdr_event = mail->event<hdr_info_t>(mail::hdr);
@@ -2437,6 +2455,7 @@ namespace video {
       }
       hdr_event->raise(std::move(hdr_info));
 
+      const int frame_nr_before = frame_nr;
       encode_run(
         frame_nr,
         mail,
@@ -2448,7 +2467,31 @@ namespace video {
         *ref->encoder_p,
         channel_data
       );
+
+      // A run that ended without a single frame means the encoder could not be used with this
+      // configuration. Do not retry in a tight loop, and give up after a few attempts.
+      if (frame_nr != frame_nr_before || shutdown_event->peek() || !images->running() || ref->reinit_event.peek()) {
+        consecutive_failures = 0;
+      } else if (++consecutive_failures >= MAX_ENCODER_START_ATTEMPTS) {
+        BOOST_LOG(error) << "The encoder could not be started after "sv << consecutive_failures << " attempts, ending the stream"sv;
+        shutdown_event->raise(true);
+        return;
+      } else {
+        BOOST_LOG(warning) << "The encoder could not be started, retrying"sv;
+        std::this_thread::sleep_for(ENCODER_START_RETRY_DELAY);
+      }
     }
+  }
+
+  bool codec_supported(const config_t &config) {
+    if (!chosen_encoder) {
+      return false;
+    }
+
+    auto &codec = chosen_encoder->codec_from_config(config);
+    return codec[encoder_t::PASSED] &&
+           (!config.dynamicRange || codec[encoder_t::DYNAMIC_RANGE]) &&
+           (config.chromaSamplingType != 1 || codec[encoder_t::YUV444]);
   }
 
   void capture(
@@ -2456,6 +2499,11 @@ namespace video {
     config_t config,
     void *channel_data
   ) {
+    if (!chosen_encoder) {
+      BOOST_LOG(error) << "No video encoder is available, the stream will not have video"sv;
+      return;
+    }
+
     auto idr_events = mail->event<bool>(mail::idr);
 
     idr_events->raise(true);
@@ -2843,6 +2891,8 @@ namespace video {
     }
 
     if (chosen_encoder == nullptr) {
+      // Keep the previous encoder so that a launch that ignores probe failures does not run without one
+      chosen_encoder = previous_encoder;
       const auto output_name {display_device::map_output_name(config::video.output_name)};
       BOOST_LOG(fatal) << "Unable to find display or encoder during startup."sv;
       if (!config::video.adapter_name.empty() || !output_name.empty()) {
@@ -2996,6 +3046,11 @@ namespace video {
 #endif
 
   int start_capture_async(capture_thread_async_ctx_t &capture_thread_ctx) {
+    if (!chosen_encoder) {
+      BOOST_LOG(error) << "No video encoder is available"sv;
+      return -1;
+    }
+
     capture_thread_ctx.encoder_p = chosen_encoder;
     capture_thread_ctx.reinit_event.reset();
 

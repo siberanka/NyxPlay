@@ -77,6 +77,24 @@ namespace audio {
   using packet_t = std::pair<void *, buffer_t>;
   using audio_ctx_ref_t = safe::shared_t<audio_ctx_t>::ptr_t;
 
+  /// Size of the buffer one encoded audio packet is written to.
+  constexpr int MAX_PACKET_SIZE = 1400;
+
+  /// Packet durations (ms) that are valid Opus frame sizes.
+  bool packet_duration_valid(int duration_ms);
+
+  /// Channel counts that map to a real speaker layout.
+  bool channel_count_valid(int channels);
+
+  /// Check custom surround parameters against the Opus multistream constraints.
+  bool stream_params_valid(const stream_params_t &params);
+
+  /// Check that a constant bitrate packet of the given duration fits MAX_PACKET_SIZE.
+  bool packet_fits_buffer(int bitrate, int duration_ms);
+
+  /// Check that a client supplied audio configuration can be encoded.
+  bool config_valid(const config_t &config);
+
   void capture(safe::mail_t mail, config_t config, void *channel_data);
 
   /**

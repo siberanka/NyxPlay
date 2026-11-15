@@ -699,6 +699,48 @@ namespace stream {
       }
     };
 
+    /**
+     * @brief Choose the number of parity shards for a block and the percentage that is announced to the client.
+     * @param data_shards Number of data shards in the block.
+     * @param fecpercentage Configured FEC percentage.
+     * @param minparityshards Minimum number of parity shards requested by the client.
+     * @return The parity shard count and the percentage for the packet header.
+     * @note The packet header holds the percentage in 8 bits and the client derives the parity count
+     *       as ceil(data_shards * percentage / 100), so both values must agree.
+     */
+    parity_plan_t plan_parity(size_t data_shards, size_t fecpercentage, size_t minparityshards) {
+      if (data_shards == 0 || fecpercentage == 0) {
+        return {0, 0};
+      }
+
+      auto client_parity = [data_shards](size_t percentage) {
+        return (data_shards * percentage + 99) / 100;
+      };
+
+      auto parity_shards = client_parity(fecpercentage);
+      if (parity_shards >= minparityshards) {
+        // The percentage is sent as configured, the client computes the same count
+        return {parity_shards, std::min<size_t>(fecpercentage, 255)};
+      }
+
+      // A Reed-Solomon block cannot hold more than DATA_SHARDS_MAX shards in total
+      parity_shards = data_shards < DATA_SHARDS_MAX ? std::min<size_t>(minparityshards, DATA_SHARDS_MAX - data_shards) : 0;
+      // The percentage field is 8 bits wide
+      parity_shards = std::min<size_t>(parity_shards, data_shards * 255 / 100);
+
+      while (parity_shards > 0) {
+        // Smallest percentage for which the client computes at least this many parity shards
+        auto percentage = (100 * parity_shards - 99 + data_shards - 1) / data_shards;
+        percentage = std::max<size_t>(percentage, 1);
+        if (percentage <= 255 && client_parity(percentage) == parity_shards) {
+          return {parity_shards, percentage};
+        }
+        --parity_shards;
+      }
+
+      return {0, 0};
+    }
+
     static fec_t encode(const std::string_view &payload, size_t blocksize, size_t fecpercentage, size_t minparityshards, size_t prefixsize) {
       auto payload_size = payload.size();
 
@@ -706,16 +748,13 @@ namespace stream {
 
       auto aligned_data_shards = payload_size / blocksize;
       auto data_shards = aligned_data_shards + (pad ? 1 : 0);
-      auto parity_shards = (data_shards * fecpercentage + 99) / 100;
-
-      // increase the FEC percentage for this frame if the parity shard minimum is not met
-      if (parity_shards < minparityshards && fecpercentage != 0) {
-        // A Reed-Solomon block cannot hold more than DATA_SHARDS_MAX shards in total
-        parity_shards = data_shards < DATA_SHARDS_MAX ? std::min<size_t>(minparityshards, DATA_SHARDS_MAX - data_shards) : 0;
-        fecpercentage = (100 * parity_shards) / data_shards;
-
-        BOOST_LOG(verbose) << "Increasing FEC percentage to "sv << fecpercentage << " to meet parity shard minimum"sv << std::endl;
+      // the FEC percentage of this frame is increased if the parity shard minimum is not met
+      auto plan = plan_parity(data_shards, fecpercentage, minparityshards);
+      auto parity_shards = plan.parity_shards;
+      if (plan.percentage != fecpercentage) {
+        BOOST_LOG(verbose) << "Changing FEC percentage to "sv << plan.percentage << " to meet parity shard minimum"sv << std::endl;
       }
+      fecpercentage = plan.percentage;
 
       auto nr_shards = data_shards + parity_shards;
 
@@ -1854,8 +1893,9 @@ namespace stream {
 
       auto bytes = encode_audio(session->config.encryptionFlagsEnabled & SS_ENC_AUDIO, packet_data, shards_p[sequenceNumber % RTPA_DATA_SHARDS], iv, session->audio.cipher);
       if (bytes < 0) {
+        // Drop this packet, one session's bad packet must not stop the audio of the others
         BOOST_LOG(error) << "Couldn't encode audio packet"sv;
-        break;
+        continue;
       }
 
       BOOST_LOG(verbose) << "Audio [seq "sv << sequenceNumber << ", pts "sv << timestamp << "] ::  send..."sv;

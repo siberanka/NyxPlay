@@ -30,6 +30,7 @@ extern "C" {
 #include "logging.h"
 #include "network.h"
 #include "rtsp.h"
+#include "rtsp_validation.h"
 #include "stream.h"
 #include "sync.h"
 #include "video.h"
@@ -1335,14 +1336,29 @@ namespace rtsp_stream {
       config.monitor.chromaSamplingType = util::from_view(args.at("x-ss-video[0].chromaSamplingType"sv));
       config.monitor.enableIntraRefresh = util::from_view(args.at("x-ss-video[0].intraRefresh"sv));
 
+      // A launch without an explicit rate uses 60 fps, apply the same to the ANNOUNCE
+      if (config.monitor.framerate == 0 && session.fps > 4000) {
+        config.monitor.framerate = session.fps;
+      }
+
       // These values are used as divisors and to size buffers, keep them in a sane range
-      if (config.monitor.width < 1 || config.monitor.width > 16384 ||
-          config.monitor.height < 1 || config.monitor.height > 16384 ||
-          config.monitor.framerate < 1 || config.monitor.framerate > 1000000 ||
-          config.monitor.bitrate < 1 || config.monitor.bitrate > 10000000) {
+      if (!announce_video_valid({
+            config.monitor.width,
+            config.monitor.height,
+            config.monitor.framerate,
+            config.monitor.bitrate,
+            config.monitor.slicesPerFrame,
+            config.monitor.numRefFrames,
+            config.monitor.encoderCscMode,
+            config.monitor.videoFormat,
+            config.monitor.dynamicRange,
+            config.monitor.chromaSamplingType,
+            config.monitor.enableIntraRefresh,
+          })) {
         BOOST_LOG(warning) << "Rejecting ANNOUNCE with out of range video parameters: width ["sv << config.monitor.width
                            << "] height ["sv << config.monitor.height << "] fps ["sv << config.monitor.framerate
-                           << "] bitrate ["sv << config.monitor.bitrate << ']';
+                           << "] bitrate ["sv << config.monitor.bitrate << "] slices ["sv << config.monitor.slicesPerFrame
+                           << "] format ["sv << config.monitor.videoFormat << "] dynamic range ["sv << config.monitor.dynamicRange << ']';
         throw std::out_of_range("video parameters");
       }
 
@@ -1365,7 +1381,7 @@ namespace rtsp_stream {
       config.monitor.input_only = session.input_only;
 
       configuredBitrateKbps = util::from_view(args.at("x-ml-video.configuredBitrateKbps"sv));
-      if (configuredBitrateKbps < 0 || configuredBitrateKbps > 10000000) {
+      if (configuredBitrateKbps < 0 || configuredBitrateKbps > ANNOUNCE_MAX_BITRATE_KBPS) {
         BOOST_LOG(warning) << "Rejecting ANNOUNCE with out of range configured bitrate ["sv << configuredBitrateKbps << ']';
         throw std::out_of_range("configured bitrate");
       }
@@ -1385,9 +1401,9 @@ namespace rtsp_stream {
       BOOST_LOG(info) << "Host Streaming bitrate is [" << configuredBitrateKbps << "kbps]";
 
       // Hack: Restore bitrate for warp mode
-      size_t warp_factor = std::round((float)config.monitor.framerate * 1000 / session.fps);
+      std::int64_t warp_factor = session.fps > 0 ? (std::int64_t) std::round((double) config.monitor.framerate * 1000 / session.fps) : 1;
       if (config::video.limit_framerate && warp_factor >= 2) {
-        configuredBitrateKbps *= warp_factor;
+        configuredBitrateKbps = clamp_bitrate_kbps(configuredBitrateKbps * warp_factor);
         BOOST_LOG(info) << "Warp factor [" << warp_factor << "] engaged";
       }
 
@@ -1397,10 +1413,9 @@ namespace rtsp_stream {
     }
 
     // Client supplied values size buffers and are used as divisors by the video and audio threads
-    if (config.packetsize < 200 || config.packetsize > 65535 ||
-        config.audio.channels < 1 || config.audio.channels > 8 ||
-        config.audio.packetDuration < 1 || config.audio.packetDuration > 100 ||
-        config.minRequiredFecPackets < 0 || config.minRequiredFecPackets > 254) {
+    if (!announce_stream_valid(config.packetsize, config.minRequiredFecPackets) ||
+        !audio::channel_count_valid(config.audio.channels) ||
+        !audio::packet_duration_valid(config.audio.packetDuration)) {
       BOOST_LOG(warning) << "Rejecting ANNOUNCE with out of range stream parameters: packetSize ["sv << config.packetsize
                          << "] channels ["sv << config.audio.channels << "] packetDuration ["sv << config.audio.packetDuration
                          << "] minRequiredFecPackets ["sv << config.minRequiredFecPackets << ']';
@@ -1427,7 +1442,7 @@ namespace rtsp_stream {
       // Coupled streams
       std::uint8_t m = session.surround_params[2] - '0';
       auto valid = false;
-      if ((c == 6 || c == 8) && c == config.audio.channels && n + m == c && session.surround_params.length() == c + 3) {
+      if ((c == 6 || c == 8) && c == config.audio.channels && n + m == c && m <= n && session.surround_params.length() == c + 3) {
         config.audio.customStreamParams.channelCount = c;
         config.audio.customStreamParams.streams = n;
         config.audio.customStreamParams.coupledStreams = m;
@@ -1440,7 +1455,16 @@ namespace rtsp_stream {
           }
         }
       }
+      valid = valid && audio::stream_params_valid(config.audio.customStreamParams);
       config.audio.flags[audio::config_t::CUSTOM_SURROUND_PARAMS] = valid;
+    }
+
+    // The encoded packets must fit the packet buffer for the selected quality and duration
+    if (!audio::config_valid(config.audio)) {
+      BOOST_LOG(warning) << "Rejecting ANNOUNCE with an audio configuration that can not be encoded: channels ["sv << config.audio.channels
+                         << "] packetDuration ["sv << config.audio.packetDuration << ']';
+      respond(sock, session, &option, 400, "BAD REQUEST", req->sequenceNumber, {});
+      return;
     }
 
     config.audio.input_only = session.input_only;
@@ -1467,8 +1491,10 @@ namespace rtsp_stream {
       // traffic (capped at 10% reduction).
       configuredBitrateKbps -= std::min((std::int64_t) 500, configuredBitrateKbps / 10);
 
+      configuredBitrateKbps = clamp_bitrate_kbps(configuredBitrateKbps);
+
       BOOST_LOG(debug) << "Final adjusted video encoding bitrate is "sv << configuredBitrateKbps << " Kbps"sv;
-      config.monitor.bitrate = configuredBitrateKbps;
+      config.monitor.bitrate = (int) configuredBitrateKbps;
     }
 
     if (config.monitor.videoFormat == 1 && video::active_hevc_mode == 1) {
@@ -1480,6 +1506,15 @@ namespace rtsp_stream {
 
     if (config.monitor.videoFormat == 2 && video::active_av1_mode == 1) {
       BOOST_LOG(warning) << "AV1 is disabled, yet the client requested AV1"sv;
+
+      respond(sock, session, &option, 400, "BAD REQUEST", req->sequenceNumber, {});
+      return;
+    }
+
+    // The requested codec, dynamic range and chroma format must have passed the encoder probing
+    if (!config.monitor.input_only && !video::codec_supported(config.monitor)) {
+      BOOST_LOG(warning) << "The client requested a video format the encoder does not support: format ["sv << config.monitor.videoFormat
+                         << "] dynamic range ["sv << config.monitor.dynamicRange << "] chroma sampling ["sv << config.monitor.chromaSamplingType << ']';
 
       respond(sock, session, &option, 400, "BAD REQUEST", req->sequenceNumber, {});
       return;

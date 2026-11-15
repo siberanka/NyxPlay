@@ -12,6 +12,9 @@ namespace stream {
   std::vector<uint8_t> concat_and_insert(uint64_t insert_size, uint64_t slice_size, const std::string_view &data1, const std::string_view &data2);
 }
 
+#include <src/rtsp.h>
+#include <src/stream.h>
+
 #include "../tests_common.h"
 
 TEST(ConcatAndInsertTests, ConcatNoInsertionTest) {
@@ -44,6 +47,7 @@ TEST(ConcatAndInsertTests, ConcatSmallStrideTest) {
 
 #include <boost/asio.hpp>
 
+#include <src/rtsp.h>
 #include <src/rtsp.h>
 #include <src/stream.h>
 #include <src/thread_safe.h>
@@ -148,4 +152,46 @@ TEST(SessionLifecycle, StopAndJoinOfUnstartedSession) {
   EXPECT_NO_THROW(stream::session::join(*session));
   EXPECT_NO_THROW(stream::session::join(*session));
   EXPECT_EQ(stream::session::state(*session), stream::session::state_e::STOPPED);
+}
+
+TEST(FecParity, DisabledWithoutPercentageOrData) {
+  EXPECT_EQ(stream::fec::plan_parity(10, 0, 5).parity_shards, 0u);
+  EXPECT_EQ(stream::fec::plan_parity(0, 20, 2).parity_shards, 0u);
+}
+
+TEST(FecParity, ConfiguredPercentageIsKeptWhenMinimumIsMet) {
+  auto plan = stream::fec::plan_parity(10, 20, 2);
+  EXPECT_EQ(plan.parity_shards, 2u);
+  EXPECT_EQ(plan.percentage, 20u);
+}
+
+TEST(FecParity, MinimumParityRaisesPercentage) {
+  auto plan = stream::fec::plan_parity(1, 20, 2);
+  EXPECT_EQ(plan.parity_shards, 2u);
+  EXPECT_GT(plan.percentage, 100u);
+
+  plan = stream::fec::plan_parity(3, 1, 2);
+  EXPECT_EQ(plan.parity_shards, 2u);
+}
+
+TEST(FecParity, PercentageNeverExceedsHeaderField) {
+  for (size_t min_parity : {2u, 16u, 254u}) {
+    for (size_t data = 1; data <= 252; ++data) {
+      auto plan = stream::fec::plan_parity(data, 1, min_parity);
+      EXPECT_LE(plan.percentage, 255u) << data << '/' << min_parity;
+      EXPECT_LE(data + plan.parity_shards, 255u) << data << '/' << min_parity;
+    }
+  }
+}
+
+TEST(FecParity, ClientRecomputesTheSameParityCount) {
+  for (size_t min_parity : {0u, 2u, 16u}) {
+    for (size_t data = 1; data <= 254; ++data) {
+      auto plan = stream::fec::plan_parity(data, 20, min_parity);
+      if (plan.parity_shards == 0) {
+        continue;
+      }
+      EXPECT_EQ((data * plan.percentage + 99) / 100, plan.parity_shards) << data << '/' << min_parity;
+    }
+  }
 }

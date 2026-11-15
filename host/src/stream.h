@@ -38,6 +38,16 @@ namespace stream {
     std::optional<int> gcmap;
   };
 
+  namespace fec {
+    /// Parity shard count of a block and the FEC percentage announced to the client.
+    struct parity_plan_t {
+      size_t parity_shards;
+      size_t percentage;
+    };
+
+    parity_plan_t plan_parity(size_t data_shards, size_t fecpercentage, size_t minparityshards);
+  }  // namespace fec
+
   namespace session {
     enum class state_e : int {
       STOPPED,  ///< The session is stopped

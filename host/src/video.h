@@ -4,6 +4,12 @@
  */
 #pragma once
 
+// standard includes
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
+#include <limits>
+
 // local includes
 #include "input.h"
 #include "platform/common.h"
@@ -49,6 +55,21 @@ namespace video {
     int encodingFramerate; // Requested display framerate
     bool input_only;
   };
+
+  /// Highest video bitrate (kbps) accepted from a client, well above what any encoder supports.
+  constexpr int MAX_BITRATE_KBPS = 1000000;
+
+  /// Consecutive encoder starts without a frame before the stream is ended.
+  constexpr int MAX_ENCODER_START_ATTEMPTS = 3;
+
+  /// Pause between two encoder start attempts.
+  constexpr std::chrono::milliseconds ENCODER_START_RETRY_DELAY {200};
+
+  /// Convert a bitrate in kbps to bits per second without overflowing int.
+  inline int bitrate_bps(int kbps) {
+    const std::int64_t bps = (std::int64_t) kbps * 1000;
+    return (int) std::clamp<std::int64_t>(bps, 0, std::numeric_limits<int>::max());
+  }
 
   platf::mem_type_e map_base_dev_type(AVHWDeviceType type);
   platf::pix_fmt_e map_pix_fmt(AVPixelFormat fmt);
@@ -340,6 +361,9 @@ namespace video {
   extern int active_av1_mode;
   extern bool last_encoder_probe_supported_ref_frames_invalidation;
   extern std::array<bool, 3> last_encoder_probe_supported_yuv444_for_codec;  // 0 - H.264, 1 - HEVC, 2 - AV1
+
+  /// Check that the encoder chosen by probing supports the codec, dynamic range and chroma format of the configuration.
+  bool codec_supported(const config_t &config);
 
   void capture(
     safe::mail_t mail,
