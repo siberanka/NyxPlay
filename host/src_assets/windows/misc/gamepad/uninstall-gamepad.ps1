@@ -30,9 +30,24 @@ if (-not $command) {
 if ($command -match '^\s*"([^"]+)"\s*(.*)$') {
     $file = $Matches[1]
     $arguments = $Matches[2]
-} elseif ($command -match '^\s*(\S+)\s*(.*)$') {
-    $file = $Matches[1]
-    $arguments = $Matches[2]
+} elseif ($command -match '^\s*(\S.*)$') {
+    # Unquoted command: use the longest leading part that is an existing file, so a path with
+    # spaces is never split into an executable and arguments at the wrong place
+    $text = $Matches[1]
+    $file = $null
+    $arguments = ''
+    $ends = @([regex]::Matches($text, '\s') | ForEach-Object { $_.Index }) + $text.Length
+    foreach ($end in $ends) {
+        $candidate = $text.Substring(0, $end)
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $file = $candidate
+            $arguments = $text.Substring($end).Trim()
+        }
+    }
+    if (-not $file) {
+        Write-Host "The uninstall command of ViGEm Bus Driver does not point to an existing file"
+        exit 1
+    }
 } else {
     Write-Host "The uninstall command of ViGEm Bus Driver could not be parsed"
     exit 1

@@ -14,6 +14,7 @@
 #include <vector>
 
 // local includes
+#include "network.h"
 #include "nvhttp.h"
 #include "thread_safe.h"
 
@@ -70,6 +71,19 @@ namespace confighttp {
    * none of the headers (scripts, curl) are accepted: they still need the session cookie.
    */
   bool is_same_origin(std::string_view method, std::string_view host, std::string_view origin, std::string_view referer, std::string_view sec_fetch_site);
+
+  /// Message returned when the first Web UI credentials are requested from another machine.
+  constexpr std::string_view FIRST_SETUP_LOCAL_ONLY_MESSAGE = "Initial setup is only allowed from the host PC. Open the Web UI on the PC that runs NyxPlay Host (https://localhost:47990) to create the credentials.";
+
+  /**
+   * @brief Decide whether the first Web UI credentials may be created from a client address.
+   * @param origin The network class of the client address.
+   * @return `true` only for loopback clients. Once credentials exist the normal login applies instead.
+   *
+   * Until credentials exist anyone who can reach the Web UI could claim it, so the first account
+   * can only be created on the host PC itself.
+   */
+  bool first_setup_allowed(net::net_e origin);
 
   /**
    * @brief Validate an application definition submitted to `POST /api/apps`.

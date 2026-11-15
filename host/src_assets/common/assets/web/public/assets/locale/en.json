@@ -523,6 +523,7 @@
     "err_too_short": "The new password must be at least 8 characters long.",
     "err_save_failed": "The credentials could not be saved. Check the permissions of the configuration folder.",
     "err_cross_origin": "The request was rejected because it did not come from this page. Reload the page and try again.",
+    "err_local_setup_only": "For security, the first Web UI account can only be created on the host PC. Open https://localhost:47990 on the PC that runs NyxPlay Host.",
     "err_network": "The server could not be reached.",
     "err_server": "The server returned an error ({status})."
   },

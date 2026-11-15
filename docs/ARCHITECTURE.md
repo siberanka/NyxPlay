@@ -69,3 +69,15 @@ and ENet) because the host side implementation of the extension lives in `host/s
 | Moonlight | standard | standard | standard |
 
 Smart typing works with every host because it only uses the standard UTF-8 text event.
+
+## Web UI first setup and driver payload
+
+- Until the first Web UI account exists, the welcome page and `POST /api/password` accept only
+  loopback clients. Other machines receive `403` with a message that points to the host PC
+  (`https://localhost:47990`). Once credentials exist the usual login, origin allow-list and
+  same-origin rules apply.
+- The SudoVDA driver files (`nefconc.exe`, `SudoVDA.dll`, `SudoVDA.inf`, `sudovda.cat`,
+  `sudovda.cer`) are pinned by SHA-256 in `host/cmake/packaging/windows.cmake` when the package
+  is created and again by `drivers/sudovda/install.bat` before the certificate is added to the
+  machine Trusted Root and Trusted Publisher stores. A mismatch aborts the driver step. Update
+  both lists together when the driver changes.

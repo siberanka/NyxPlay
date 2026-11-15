@@ -434,7 +434,7 @@ namespace config_import {
       return true;
     }
 
-    bool write_atomic(const fs::path &dest, const std::string &content, backup_t &backup, std::string &error) {
+    bool write_atomic(const fs::path &dest, const std::string &content, backup_t &backup, std::string &error, bool restrict_permissions = false) {
       std::error_code ec;
       fs::create_directories(dest.parent_path(), ec);
       if (ec) {
@@ -446,6 +446,13 @@ namespace config_import {
       }
       auto tmp = dest;
       tmp += ".tmp";
+      if (restrict_permissions) {
+        // Key material: limit access before the first byte is written
+        {
+          std::ofstream create(tmp, std::ios::binary | std::ios::trunc);
+        }
+        fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
+      }
       {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
         out.write(content.data(), static_cast<std::streamsize>(content.size()));
@@ -469,7 +476,7 @@ namespace config_import {
         error = "cannot read " + to_u8(from);
         return false;
       }
-      if (!write_atomic(dest, data, backup, error)) {
+      if (!write_atomic(dest, data, backup, error, restrict_permissions)) {
         return false;
       }
       std::string check;

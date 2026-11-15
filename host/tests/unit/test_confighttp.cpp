@@ -273,3 +273,30 @@ TEST(CookieValueTest, MatchesWholeNamesOnly) {
   EXPECT_EQ(confighttp::getCookieValue(std::string(100 * 1024, 'x'), "auth"), "");
   EXPECT_EQ(confighttp::getCookieValue("", "auth"), "");
 }
+
+TEST(FirstSetupTest, OnlyTheHostPcMayCreateTheFirstCredentials) {
+  EXPECT_TRUE(confighttp::first_setup_allowed(net::PC));
+  EXPECT_FALSE(confighttp::first_setup_allowed(net::LAN));
+  EXPECT_FALSE(confighttp::first_setup_allowed(net::WAN));
+}
+
+TEST(FirstSetupTest, ClassifiesLoopbackAndLanAddresses) {
+  EXPECT_TRUE(confighttp::first_setup_allowed(net::from_address("127.0.0.1")));
+  EXPECT_TRUE(confighttp::first_setup_allowed(net::from_address("::1")));
+  EXPECT_TRUE(confighttp::first_setup_allowed(net::from_address("::ffff:127.0.0.1")));
+  EXPECT_FALSE(confighttp::first_setup_allowed(net::from_address("192.168.1.20")));
+  EXPECT_FALSE(confighttp::first_setup_allowed(net::from_address("10.0.0.5")));
+  EXPECT_FALSE(confighttp::first_setup_allowed(net::from_address("fe80::1")));
+  EXPECT_FALSE(confighttp::first_setup_allowed(net::from_address("203.0.113.9")));
+}
+
+TEST(FirstSetupTest, RefusalMessageNamesTheHostPc) {
+  EXPECT_NE(confighttp::FIRST_SETUP_LOCAL_ONLY_MESSAGE.find("host PC"), std::string_view::npos);
+  EXPECT_NE(confighttp::FIRST_SETUP_LOCAL_ONLY_MESSAGE.find("localhost"), std::string_view::npos);
+}
+
+TEST(ValidateConfigTest, RejectsLineBreaksAfterAListPrefix) {
+  EXPECT_FALSE(confighttp::validate_config_object({{"global_prep_cmd", "[1]\nfile_apps = x"}}).error.empty());
+  EXPECT_FALSE(confighttp::validate_config_object({{"global_prep_cmd", "[\nbroken"}}).error.empty());
+  EXPECT_TRUE(confighttp::validate_config_object({{"global_prep_cmd", "[\n{\"do\":\"a\"}\n]"}}).error.empty());
+}

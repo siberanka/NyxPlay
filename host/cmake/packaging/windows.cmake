@@ -32,10 +32,17 @@ install(TARGETS sunshinesvc RUNTIME DESTINATION "tools" COMPONENT application)
 # The files are pinned by SHA-256:
 #   SudoVDA.dll   SudoVDA driver 1.10.9.289 (SudoMaker, as shipped with Apollo)
 #   nefconc.exe   nefcon 1.12.0.0 (Nefarius Software Solutions e.U., BSD-3-Clause)
+#   SudoVDA.inf, sudovda.cat, sudovda.cer   driver package files, the certificate is added to the
+#                 machine Trusted Root store by install.bat
+# install.bat checks the same values before it imports the certificate or installs the driver.
+# Keep both lists identical when the driver is updated.
 set(SUDOVDA_DRIVER_DIR "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/drivers/sudovda")
 set(SUDOVDA_PAYLOAD
         "nefconc.exe=9dba1f1a9e2b21843c4a0ca6c6ffa9e747250dd6e42c8c14325ca069ad43ea8f"
-        "SudoVDA.dll=47ee263cb5de9382c6630a2d7f3dafec4a49419f953beec869ca5dd0c460ff63")
+        "SudoVDA.dll=47ee263cb5de9382c6630a2d7f3dafec4a49419f953beec869ca5dd0c460ff63"
+        "SudoVDA.inf=ad69ac682756f0cf339b081fac7e6e8159fdf2ca01ca69df8945c7246c286925"
+        "sudovda.cat=2f9189de5604bec9d86f51640cc540639e394d9ad0f8e689129375e95f2d22f8"
+        "sudovda.cer=6accdcd519f6179d967db4eaa20ecf25a732ba30e87f4cffebc768b2c13c9007")
 foreach(_entry IN LISTS SUDOVDA_PAYLOAD)
     string(REGEX REPLACE "=.*$" "" _name "${_entry}")
     if(NOT EXISTS "${SUDOVDA_DRIVER_DIR}/${_name}")

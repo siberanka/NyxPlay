@@ -15,6 +15,19 @@ for %%F in (nefconc.exe SudoVDA.dll SudoVDA.inf sudovda.cat sudovda.cer) do (
     )
 )
 
+rem Verify every driver file against the pinned SHA-256 before anything is trusted or installed.
+rem Keep these values identical to SUDOVDA_PAYLOAD in cmake/packaging/windows.cmake.
+call :verify nefconc.exe 9dba1f1a9e2b21843c4a0ca6c6ffa9e747250dd6e42c8c14325ca069ad43ea8f
+if errorlevel 1 goto :tampered
+call :verify SudoVDA.dll 47ee263cb5de9382c6630a2d7f3dafec4a49419f953beec869ca5dd0c460ff63
+if errorlevel 1 goto :tampered
+call :verify SudoVDA.inf ad69ac682756f0cf339b081fac7e6e8159fdf2ca01ca69df8945c7246c286925
+if errorlevel 1 goto :tampered
+call :verify sudovda.cat 2f9189de5604bec9d86f51640cc540639e394d9ad0f8e689129375e95f2d22f8
+if errorlevel 1 goto :tampered
+call :verify sudovda.cer 6accdcd519f6179d967db4eaa20ecf25a732ba30e87f4cffebc768b2c13c9007
+if errorlevel 1 goto :tampered
+
 echo ================
 echo Installing cert for the SudoVDA driver...
 
@@ -56,3 +69,26 @@ set "RESULT=%ERRORLEVEL%"
 echo SudoVDA driver installation failed with error %RESULT%.
 popd
 exit /b %RESULT%
+
+:tampered
+echo SudoVDA driver was NOT installed: a driver file does not match the expected release.
+echo The certificate was not imported. Reinstall NyxPlay Host from a trusted installer.
+popd
+exit /b 3
+
+rem %1 = file name, %2 = expected SHA-256 (hexadecimal, case-insensitive)
+:verify
+set "ACTUAL="
+for /f "skip=1 delims=" %%H in ('%CERTUTIL% -hashfile "%~1" SHA256 2^>nul') do (
+    if not defined ACTUAL set "ACTUAL=%%H"
+)
+if not defined ACTUAL (
+    echo Could not compute the SHA-256 of %~1.
+    exit /b 1
+)
+set "ACTUAL=%ACTUAL: =%"
+if /i not "%ACTUAL%"=="%~2" (
+    echo SHA-256 mismatch for %~1: %ACTUAL%
+    exit /b 1
+)
+exit /b 0

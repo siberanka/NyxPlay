@@ -388,6 +388,24 @@ namespace confighttp {
     return true;
   }
 
+  bool first_setup_allowed(net::net_e origin) {
+    return origin == net::PC;
+  }
+
+  /**
+   * @brief Allow the first credentials to be created only from the host PC.
+   * @return True if the request may continue, otherwise a 403 explaining where to set up was sent.
+   */
+  static bool checkFirstSetupOrigin(resp_https_t response, req_https_t request) {
+    auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    if (first_setup_allowed(net::from_address(address))) {
+      return true;
+    }
+    BOOST_LOG(info) << "Web UI: ["sv << address << "] -- initial setup refused, only the host PC may create the first credentials"sv;
+    send_error(response, SimpleWeb::StatusCode::client_error_forbidden, std::string {FIRST_SETUP_LOCAL_ONLY_MESSAGE});
+    return false;
+  }
+
   /**
    * @brief Authenticate the request.
    * @param response The HTTP response object.
@@ -719,7 +737,10 @@ namespace confighttp {
       // (only JSON array values may span lines, the parser reads them up to the closing bracket)
       std::string text = value.is_string() ? value.get<std::string>() : value.dump();
       const auto first_char = text.find_first_not_of(" \t");
-      const bool is_list = value.is_structured() || (first_char != std::string::npos && text[first_char] == '[');
+      // A string that looks like a list may span lines only when it is one complete JSON array, so
+      // trailing text cannot add further options
+      const bool is_list = value.is_structured() ||
+                           (first_char != std::string::npos && text[first_char] == '[' && nlohmann::json::accept(text));
       if (text.size() > (is_list ? 64 * 1024 : max_text_field)) {
         result.error = "Option " + key + " is too long";
         return result;
@@ -928,6 +949,10 @@ namespace confighttp {
 
     if (!config::sunshine.username.empty()) {
       send_redirect(response, request, "/");
+      return;
+    }
+
+    if (!checkFirstSetupOrigin(response, request)) {
       return;
     }
 
@@ -1889,8 +1914,9 @@ namespace confighttp {
    */
   void savePassword(resp_https_t response, req_https_t request) {
     // While no credentials exist this endpoint is unauthenticated: the origin allow-list and the
-    // same-origin rule still apply
-    if (config::sunshine.username.empty() && (!checkIPOrigin(response, request) || !check_request_origin(response, request))) {
+    // same-origin rule still apply, and only the host PC itself may create the first credentials
+    if (config::sunshine.username.empty() &&
+        (!checkIPOrigin(response, request) || !checkFirstSetupOrigin(response, request) || !check_request_origin(response, request))) {
       return;
     }
     if ((!config::sunshine.username.empty() && !authenticate(response, request)) || !validateContentType(response, request, "application/json"))
@@ -2479,7 +2505,14 @@ namespace confighttp {
 
     // Anything that does not end in a session counts as a failed attempt
     auto record_failure = [&]{
-      if (login_throttle.size() < 1024 || login_throttle.contains(address)) {
+      if (login_throttle.size() >= 1024 && !login_throttle.contains(address)) {
+        // Make room for the new address by dropping the entry that is released first
+        auto oldest = std::min_element(login_throttle.begin(), login_throttle.end(), [](const auto &a, const auto &b) {
+          return a.second.next_allowed < b.second.next_allowed;
+        });
+        login_throttle.erase(oldest);
+      }
+      {
         auto &throttle = login_throttle[address];
         throttle.failures = std::min(throttle.failures + 1, 1000);
         throttle.next_allowed = std::chrono::steady_clock::now() + std::chrono::seconds(login_delay_seconds(throttle.failures));
@@ -2593,7 +2626,7 @@ namespace confighttp {
     // Requests are buffered before authentication: bound their size (cover images are uploaded as base64).
     // The handlers apply tighter limits per endpoint (see body_limit_for).
     server.config.max_request_streambuf_size = MAX_REQUEST_SIZE;
-    server.config.timeout_content = 120;
+    server.config.timeout_content = 60;
 
     auto accept_and_run = [&](auto *server) {
       try {

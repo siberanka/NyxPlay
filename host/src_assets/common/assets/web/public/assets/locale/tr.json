@@ -540,6 +540,7 @@
     "err_too_short": "Yeni şifre en az 8 karakter uzunluğunda olmalıdır.",
     "err_save_failed": "Kimlik bilgileri kaydedilemedi. Yapılandırma klasörünün izinlerini kontrol edin.",
     "err_cross_origin": "İstek bu sayfadan gelmediği için reddedildi. Sayfayı yenileyip tekrar deneyin.",
+    "err_local_setup_only": "Güvenlik nedeniyle ilk Web UI hesabı yalnızca ana bilgisayarda oluşturulabilir. NyxPlay Host'un çalıştığı bilgisayarda https://localhost:47990 adresini açın.",
     "err_network": "Sunucuya ulaşılamadı.",
     "err_server": "Sunucu bir hata döndürdü ({status})."
   },
