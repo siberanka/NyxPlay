@@ -3,7 +3,10 @@
  * @brief Handles launching Sunshine.exe into user sessions as SYSTEM
  */
 #define WIN32_LEAN_AND_MEAN
+#include "svc_logic.h"
+
 #include <format>
+#include <functional>
 #include <string>
 #include <Windows.h>
 #include <sddl.h>
@@ -16,10 +19,99 @@
 
 SERVICE_STATUS_HANDLE service_status_handle;
 SERVICE_STATUS service_status;
+SRWLOCK service_status_lock = SRWLOCK_INIT;
 HANDLE stop_event;
 HANDLE session_change_event;
+HANDLE event_source;
 
 #define SERVICE_NAME "NyxPlayHostService"
+
+// Time budget of a stop request. SCM is told to wait 30 s, the steps below add up to less.
+constexpr DWORD STOP_WAIT_HINT_MS = 30 * 1000;
+constexpr DWORD TERMINATION_HELPER_TIMEOUT_MS = 8 * 1000;
+constexpr DWORD HOST_EXIT_TIMEOUT_MS = 15 * 1000;
+
+/**
+ * @brief Publish the service status. Called from the control handler thread and from ServiceMain().
+ */
+static void ReportStatus(DWORD state, DWORD controls_accepted, DWORD wait_hint, DWORD exit_code = NO_ERROR) {
+  AcquireSRWLockExclusive(&service_status_lock);
+  service_status.dwCurrentState = state;
+  service_status.dwControlsAccepted = controls_accepted;
+  service_status.dwWaitHint = wait_hint;
+  service_status.dwWin32ExitCode = exit_code;
+  service_status.dwCheckPoint = (state == SERVICE_STOP_PENDING || state == SERVICE_START_PENDING) ? service_status.dwCheckPoint + 1 : 0;
+  SetServiceStatus(service_status_handle, &service_status);
+  ReleaseSRWLockExclusive(&service_status_lock);
+}
+
+/**
+ * @brief Report progress while a stop request is being processed so SCM does not give up on us.
+ */
+static void ReportStopProgress() {
+  AcquireSRWLockExclusive(&service_status_lock);
+  if (service_status.dwCurrentState == SERVICE_STOP_PENDING) {
+    service_status.dwCheckPoint++;
+    service_status.dwWaitHint = STOP_WAIT_HINT_MS;
+    SetServiceStatus(service_status_handle, &service_status);
+  }
+  ReleaseSRWLockExclusive(&service_status_lock);
+}
+
+/**
+ * @brief Wait for @p handle for at most @p timeout_ms while reporting stop progress every second.
+ * @return The result of the last WaitForSingleObject() call.
+ */
+static DWORD WaitReportingProgress(HANDLE handle, DWORD timeout_ms) {
+  DWORD waited = 0;
+  for (;;) {
+    DWORD slice = std::min<DWORD>(1000u, timeout_ms - waited);
+    DWORD result = WaitForSingleObject(handle, slice);
+    if (result != WAIT_TIMEOUT) {
+      return result;
+    }
+    waited += slice;
+    ReportStopProgress();
+    if (waited >= timeout_ms) {
+      return WAIT_TIMEOUT;
+    }
+  }
+}
+
+/**
+ * @brief Append a line to the service log (shared with the host's standard output).
+ */
+static void LogLine(HANDLE log_file, const std::string &message) {
+  if (log_file == nullptr || log_file == INVALID_HANDLE_VALUE) {
+    return;
+  }
+
+  SYSTEMTIME time;
+  GetLocalTime(&time);
+  auto line = std::format("[{:04}-{:02}-{:02} {:02}:{:02}:{:02}] NyxPlayHostService: {}\r\n", time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond, message);
+
+  DWORD written;
+  WriteFile(log_file, line.data(), (DWORD) line.size(), &written, nullptr);
+}
+
+/**
+ * @brief Write a failure to the log file and, once per distinct failure, to the Application event log.
+ */
+static void ReportFailure(HANDLE log_file, const std::string &step, DWORD error, DWORD &last_reported_key) {
+  auto message = std::format("{} failed with error {}", step, error);
+  LogLine(log_file, message);
+
+  // Remember what was reported last so a crash loop does not flood the event log
+  DWORD key = (DWORD) (std::hash<std::string> {}(step.substr(0, step.find(" (retry"))) ^ (error * 2654435761u));
+  if (key == last_reported_key || event_source == nullptr) {
+    return;
+  }
+  last_reported_key = key;
+
+  auto wide = std::wstring(message.begin(), message.end());
+  LPCWSTR strings[] = {wide.c_str()};
+  ReportEventW(event_source, EVENTLOG_ERROR_TYPE, 0, 0, nullptr, 1, 0, strings, nullptr);
+}
 
 DWORD WINAPI HandlerEx(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, LPVOID lpContext) {
   switch (dwControl) {
@@ -38,10 +130,7 @@ DWORD WINAPI HandlerEx(DWORD dwControl, DWORD dwEventType, LPVOID lpEventData, L
       // The system is shutting down
     case SERVICE_CONTROL_STOP:
       // Let SCM know we're stopping in up to 30 seconds
-      service_status.dwCurrentState = SERVICE_STOP_PENDING;
-      service_status.dwControlsAccepted = 0;
-      service_status.dwWaitHint = 30 * 1000;
-      SetServiceStatus(service_status_handle, &service_status);
+      ReportStatus(SERVICE_STOP_PENDING, 0, STOP_WAIT_HINT_MS);
 
       // Trigger ServiceMain() to start cleanup
       SetEvent(stop_event);
@@ -77,7 +166,7 @@ HANDLE CreateJobObjectForChildProcess() {
 }
 
 LPPROC_THREAD_ATTRIBUTE_LIST AllocateProcThreadAttributeList(DWORD attribute_count) {
-  SIZE_T size;
+  SIZE_T size = 0;
   InitializeProcThreadAttributeList(nullptr, attribute_count, 0, &size);
 
   auto list = (LPPROC_THREAD_ATTRIBUTE_LIST) HeapAlloc(GetProcessHeap(), 0, size);
@@ -91,6 +180,13 @@ LPPROC_THREAD_ATTRIBUTE_LIST AllocateProcThreadAttributeList(DWORD attribute_cou
   }
 
   return list;
+}
+
+void FreeProcThreadAttributeList(LPPROC_THREAD_ATTRIBUTE_LIST list) {
+  if (list != nullptr) {
+    DeleteProcThreadAttributeList(list);
+    HeapFree(GetProcessHeap(), 0, list);
+  }
 }
 
 HANDLE DuplicateTokenForSession(DWORD console_session_id) {
@@ -117,12 +213,30 @@ HANDLE DuplicateTokenForSession(DWORD console_session_id) {
   return new_token;
 }
 
-HANDLE OpenLogFileHandle() {
-  WCHAR log_file_name[MAX_PATH];
+/**
+ * @brief Absolute path of this executable, without the truncation limit of MAX_PATH.
+ */
+static std::wstring GetModulePath() {
+  return svc::read_growing([](wchar_t *buffer, unsigned long size) {
+    return (unsigned long) GetModuleFileNameW(nullptr, buffer, size);
+  });
+}
 
-  // Create sunshine.log in the Temp folder (usually %SYSTEMROOT%\Temp)
-  GetTempPathW(_countof(log_file_name), log_file_name);
-  wcscat_s(log_file_name, L"nyxplay-host.log");
+/**
+ * @brief Create a fresh log file in the Temp folder (usually %SYSTEMROOT%\Temp).
+ *
+ * A previous log is kept as nyxplay-host.log.old (one generation) so the output of the last run
+ * survives a restart of the service.
+ */
+HANDLE OpenLogFileHandle() {
+  WCHAR temp_path[MAX_PATH + 1] = {};
+  auto temp_len = GetTempPathW(_countof(temp_path), temp_path);
+  if (temp_len == 0 || temp_len >= _countof(temp_path)) {
+    return INVALID_HANDLE_VALUE;
+  }
+
+  std::wstring log_file_name = std::wstring(temp_path) + L"nyxplay-host.log";
+  std::wstring old_log_file_name = log_file_name + L".old";
 
   // The file handle must be inheritable for our child process to use it.
   // %SystemRoot%\Temp is writable by every local user, so the log gets an explicit DACL
@@ -133,13 +247,16 @@ HANDLE OpenLogFileHandle() {
   }
 
   // Never reuse a file that already exists: a local user could have pre-created it with a DACL
-  // that keeps them able to read what we log. Delete it and create a fresh one exclusively
-  // (CREATE_NEW), without following a reparse point. A few attempts cover a user re-creating
-  // the file between the delete and the create.
+  // that keeps them able to read what we log. Move it out of the way (replacing an older
+  // generation) and create a fresh one exclusively (CREATE_NEW), without following a reparse point.
+  // A few attempts cover a user re-creating the file between the move and the create.
   HANDLE log_file = INVALID_HANDLE_VALUE;
   for (int attempt = 0; attempt < 5 && log_file == INVALID_HANDLE_VALUE; attempt++) {
-    DeleteFileW(log_file_name);
-    log_file = CreateFileW(log_file_name, GENERIC_WRITE, FILE_SHARE_READ, &security_attributes, CREATE_NEW, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (!MoveFileExW(log_file_name.c_str(), old_log_file_name.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+      // Nothing to keep or the file is busy: fall back to removing it
+      DeleteFileW(log_file_name.c_str());
+    }
+    log_file = CreateFileW(log_file_name.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &security_attributes, CREATE_NEW, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
   }
 
   if (log_file == INVALID_HANDLE_VALUE) {
@@ -153,8 +270,10 @@ HANDLE OpenLogFileHandle() {
 }
 
 bool RunTerminationHelper(HANDLE console_token, DWORD pid) {
-  WCHAR module_path[MAX_PATH];
-  GetModuleFileNameW(nullptr, module_path, _countof(module_path));
+  auto module_path = GetModulePath();
+  if (module_path.empty()) {
+    return false;
+  }
   std::wstring command;
 
   command += L'"';
@@ -168,16 +287,22 @@ bool RunTerminationHelper(HANDLE console_token, DWORD pid) {
 
   // Execute ourselves as a detached process in the user session with the --terminate argument.
   // This will allow us to attach to Sunshine's console and send it a Ctrl-C event.
-  PROCESS_INFORMATION process_info;
-  if (!CreateProcessAsUserW(console_token, module_path, (LPWSTR) command.c_str(), nullptr, nullptr, FALSE, CREATE_UNICODE_ENVIRONMENT | DETACHED_PROCESS, nullptr, nullptr, &startup_info, &process_info)) {
+  PROCESS_INFORMATION process_info = {};
+  if (!CreateProcessAsUserW(console_token, module_path.c_str(), command.data(), nullptr, nullptr, FALSE, CREATE_UNICODE_ENVIRONMENT | DETACHED_PROCESS, nullptr, nullptr, &startup_info, &process_info)) {
     return false;
   }
 
-  // Wait for the termination helper to complete
-  WaitForSingleObject(process_info.hProcess, INFINITE);
+  // Wait for the termination helper to complete, but never indefinitely: a helper stuck in a
+  // vanishing session must not keep the service in the stop pending state.
+  if (WaitReportingProgress(process_info.hProcess, TERMINATION_HELPER_TIMEOUT_MS) != WAIT_OBJECT_0) {
+    TerminateProcess(process_info.hProcess, ERROR_TIMEOUT);
+    CloseHandle(process_info.hProcess);
+    CloseHandle(process_info.hThread);
+    return false;
+  }
 
   // Check the exit status of the helper process
-  DWORD exit_code;
+  DWORD exit_code = 1;
   GetExitCodeProcess(process_info.hProcess, &exit_code);
 
   // Cleanup handles
@@ -186,6 +311,13 @@ bool RunTerminationHelper(HANDLE console_token, DWORD pid) {
 
   // If the helper process returned 0, it succeeded
   return exit_code == 0;
+}
+
+/**
+ * @brief Tell SCM that the service failed to start and stopped.
+ */
+static void FailStartup(DWORD error) {
+  ReportStatus(SERVICE_STOPPED, 0, 0, error != NO_ERROR ? error : ERROR_GEN_FAILURE);
 }
 
 VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
@@ -199,118 +331,127 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
   // Tell SCM we're starting
   service_status.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
   service_status.dwServiceSpecificExitCode = 0;
-  service_status.dwWin32ExitCode = NO_ERROR;
-  service_status.dwWaitHint = 0;
-  service_status.dwControlsAccepted = 0;
-  service_status.dwCheckPoint = 0;
-  service_status.dwCurrentState = SERVICE_START_PENDING;
-  SetServiceStatus(service_status_handle, &service_status);
+  ReportStatus(SERVICE_START_PENDING, 0, 10 * 1000);
 
   // Create a manual-reset stop event
   stop_event = CreateEventA(nullptr, TRUE, FALSE, nullptr);
   if (stop_event == nullptr) {
-    // Tell SCM we failed to start
-    service_status.dwWin32ExitCode = GetLastError();
-    service_status.dwCurrentState = SERVICE_STOPPED;
-    SetServiceStatus(service_status_handle, &service_status);
+    FailStartup(GetLastError());
     return;
   }
 
   // Create an auto-reset session change event
   session_change_event = CreateEventA(nullptr, FALSE, FALSE, nullptr);
   if (session_change_event == nullptr) {
-    // Tell SCM we failed to start
-    service_status.dwWin32ExitCode = GetLastError();
-    service_status.dwCurrentState = SERVICE_STOPPED;
-    SetServiceStatus(service_status_handle, &service_status);
+    FailStartup(GetLastError());
     return;
   }
+
+  event_source = RegisterEventSourceW(nullptr, L"" SERVICE_NAME);
 
   auto log_file_handle = OpenLogFileHandle();
   if (log_file_handle == INVALID_HANDLE_VALUE) {
-    // Tell SCM we failed to start
-    service_status.dwWin32ExitCode = GetLastError();
-    service_status.dwCurrentState = SERVICE_STOPPED;
-    SetServiceStatus(service_status_handle, &service_status);
-    return;
-  }
-
-  // We can use a single STARTUPINFOEXW for all the processes that we launch
-  STARTUPINFOEXW startup_info = {};
-  startup_info.StartupInfo.cb = sizeof(startup_info);
-  startup_info.StartupInfo.lpDesktop = (LPWSTR) L"winsta0\\default";
-  startup_info.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-  startup_info.StartupInfo.hStdInput = nullptr;
-  startup_info.StartupInfo.hStdOutput = log_file_handle;
-  startup_info.StartupInfo.hStdError = log_file_handle;
-
-  // Allocate an attribute list with space for 2 entries
-  startup_info.lpAttributeList = AllocateProcThreadAttributeList(2);
-  if (startup_info.lpAttributeList == nullptr) {
-    // Tell SCM we failed to start
-    service_status.dwWin32ExitCode = GetLastError();
-    service_status.dwCurrentState = SERVICE_STOPPED;
-    SetServiceStatus(service_status_handle, &service_status);
+    FailStartup(GetLastError());
     return;
   }
 
   // Start the host by absolute path next to the install directory of this executable
   // (<install dir>\tools\<this file>) instead of relying on the search path
-  WCHAR host_path[MAX_PATH] = {};
-  auto host_path_len = GetModuleFileNameW(nullptr, host_path, _countof(host_path));
-  if (host_path_len == 0 || host_path_len >= _countof(host_path)) {
-    // Tell SCM we failed to start
-    service_status.dwWin32ExitCode = host_path_len == 0 ? GetLastError() : ERROR_INSUFFICIENT_BUFFER;
-    service_status.dwCurrentState = SERVICE_STOPPED;
-    SetServiceStatus(service_status_handle, &service_status);
+  auto host_path = svc::strip_components(GetModulePath(), 2);
+  if (host_path.empty()) {
+    FailStartup(ERROR_INSUFFICIENT_BUFFER);
     return;
   }
-  for (auto i = 0; i < 2; i++) {
-    auto last_sep = wcsrchr(host_path, L'\\');
-    if (last_sep) {
-      *last_sep = 0;
-    }
-  }
-  wcscat_s(host_path, _countof(host_path), L"\\nyxplay-host.exe");
+  host_path += L"\\nyxplay-host.exe";
 
-  // Only allow Sunshine.exe to inherit the log file handle, not all inheritable handles
-  UpdateProcThreadAttribute(startup_info.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, &log_file_handle, sizeof(log_file_handle), nullptr, nullptr);
+  LogLine(log_file_handle, "service started");
 
   // Tell SCM we're running (and stoppable now)
-  service_status.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PRESHUTDOWN | SERVICE_ACCEPT_SESSIONCHANGE;
-  service_status.dwCurrentState = SERVICE_RUNNING;
-  SetServiceStatus(service_status_handle, &service_status);
+  ReportStatus(SERVICE_RUNNING, SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PRESHUTDOWN | SERVICE_ACCEPT_SESSIONCHANGE, 0);
 
-  // Loop every 3 seconds until the stop event is set or Sunshine.exe is running
-  while (WaitForSingleObject(stop_event, 3000) != WAIT_OBJECT_0) {
+  svc::restart_backoff_t backoff;
+  DWORD delay_ms = svc::backoff_initial_ms;
+  DWORD last_reported_key = 0;
+
+  // Loop until the stop event is set. The wait doubles as the pause between start attempts.
+  while (WaitForSingleObject(stop_event, delay_ms) != WAIT_OBJECT_0) {
+    // The pause for the next iteration is the base delay unless a failure below raises it
+    delay_ms = svc::backoff_initial_ms;
+
     auto console_session_id = WTSGetActiveConsoleSessionId();
     if (console_session_id == 0xFFFFFFFF) {
       // No console session yet
       continue;
     }
 
+    // Keep the log bounded: rotate between host runs, the handle is inherited per child
+    LARGE_INTEGER log_size = {};
+    if (GetFileSizeEx(log_file_handle, &log_size) && svc::should_rotate_log((std::uint64_t) log_size.QuadPart)) {
+      CloseHandle(log_file_handle);
+      log_file_handle = OpenLogFileHandle();
+      if (log_file_handle == INVALID_HANDLE_VALUE) {
+        FailStartup(GetLastError());
+        return;
+      }
+    }
+
     auto console_token = DuplicateTokenForSession(console_session_id);
     if (console_token == nullptr) {
+      ReportFailure(log_file_handle, "Creating the session token", GetLastError(), last_reported_key);
+      delay_ms = backoff.on_stopped(0);
       continue;
     }
 
     // Job objects cannot span sessions, so we must create one for each process
     auto job_handle = CreateJobObjectForChildProcess();
     if (job_handle == nullptr) {
+      ReportFailure(log_file_handle, "Creating the job object", GetLastError(), last_reported_key);
       CloseHandle(console_token);
+      delay_ms = backoff.on_stopped(0);
       continue;
     }
 
-    // Start Sunshine.exe inside our job object
-    UpdateProcThreadAttribute(startup_info.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST, &job_handle, sizeof(job_handle), nullptr, nullptr);
+    // The startup information is rebuilt for every child: the job and the (possibly rotated) log
+    // handle differ per iteration
+    STARTUPINFOEXW startup_info = {};
+    startup_info.StartupInfo.cb = sizeof(startup_info);
+    startup_info.StartupInfo.lpDesktop = (LPWSTR) L"winsta0\\default";
+    startup_info.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup_info.StartupInfo.hStdInput = nullptr;
+    startup_info.StartupInfo.hStdOutput = log_file_handle;
+    startup_info.StartupInfo.hStdError = log_file_handle;
 
-    PROCESS_INFORMATION process_info;
-    if (!CreateProcessAsUserW(console_token, host_path, nullptr, nullptr, nullptr, TRUE, CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr, (LPSTARTUPINFOW) &startup_info, &process_info)) {
+    // Allocate an attribute list with space for 2 entries
+    startup_info.lpAttributeList = AllocateProcThreadAttributeList(2);
+    HANDLE inherit_handles[] = {log_file_handle};
+    if (startup_info.lpAttributeList == nullptr ||
+        // Only allow Sunshine.exe to inherit the log file handle, not all inheritable handles
+        !UpdateProcThreadAttribute(startup_info.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherit_handles, sizeof(inherit_handles), nullptr, nullptr) ||
+        // Start Sunshine.exe inside our job object
+        !UpdateProcThreadAttribute(startup_info.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST, &job_handle, sizeof(job_handle), nullptr, nullptr)) {
+      ReportFailure(log_file_handle, "Preparing the host process attributes", GetLastError(), last_reported_key);
+      FreeProcThreadAttributeList(startup_info.lpAttributeList);
+      CloseHandle(console_token);
+      CloseHandle(job_handle);
+      delay_ms = backoff.on_stopped(0);
+      continue;
+    }
+
+    PROCESS_INFORMATION process_info = {};
+    auto start_tick = GetTickCount64();
+    if (!CreateProcessAsUserW(console_token, host_path.c_str(), nullptr, nullptr, nullptr, TRUE, CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr, (LPSTARTUPINFOW) &startup_info, &process_info)) {
+      auto error = GetLastError();
+      delay_ms = backoff.on_stopped(0);
+      ReportFailure(log_file_handle, std::format("Starting the host (retry in {} s)", delay_ms / 1000), error, last_reported_key);
+      FreeProcThreadAttributeList(startup_info.lpAttributeList);
       CloseHandle(console_token);
       CloseHandle(job_handle);
       continue;
     }
+    FreeProcThreadAttributeList(startup_info.lpAttributeList);
+    last_reported_key = 0;
 
+    bool planned_restart = false;
     bool still_running;
     do {
       // Wait for the stop event to be set, Sunshine.exe to terminate, or the console session to change
@@ -322,12 +463,13 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
             still_running = true;
             continue;
           }
+          planned_restart = true;
           // Fall-through to terminate Sunshine.exe and start it again.
         case WAIT_OBJECT_0:
           // The service is shutting down, so try to gracefully terminate Sunshine.exe.
-          // If it doesn't terminate in 20 seconds, we will forcefully terminate it.
+          // If it doesn't terminate in time, we will forcefully terminate it.
           if (!RunTerminationHelper(console_token, process_info.dwProcessId) ||
-              WaitForSingleObject(process_info.hProcess, 20000) != WAIT_OBJECT_0) {
+              WaitReportingProgress(process_info.hProcess, HOST_EXIT_TIMEOUT_MS) != WAIT_OBJECT_0) {
             // If it won't terminate gracefully, kill it now
             TerminateProcess(process_info.hProcess, ERROR_PROCESS_ABORTED);
           }
@@ -338,16 +480,34 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
           {
             // Sunshine terminated itself.
 
-            DWORD exit_code;
+            DWORD exit_code = 0;
             if (GetExitCodeProcess(process_info.hProcess, &exit_code) && exit_code == ERROR_SHUTDOWN_IN_PROGRESS) {
               // Sunshine is asking for us to shut down, so gracefully stop ourselves.
               SetEvent(stop_event);
+            } else {
+              auto ran_ms = GetTickCount64() - start_tick;
+              delay_ms = backoff.on_stopped(ran_ms);
+              LogLine(log_file_handle, std::format("The host exited with code {} after {} s, restarting in {} s", exit_code, ran_ms / 1000, delay_ms / 1000));
             }
+            still_running = false;
+            break;
+          }
+
+        default:
+          {
+            // WAIT_FAILED: do not spin on a broken handle, end this run and back off
+            ReportFailure(log_file_handle, "Waiting for the host", GetLastError(), last_reported_key);
+            TerminateProcess(process_info.hProcess, ERROR_PROCESS_ABORTED);
+            delay_ms = backoff.on_stopped(0);
             still_running = false;
             break;
           }
       }
     } while (still_running);
+
+    if (planned_restart) {
+      backoff.reset();
+    }
 
     CloseHandle(process_info.hThread);
     CloseHandle(process_info.hProcess);
@@ -355,9 +515,16 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
     CloseHandle(job_handle);
   }
 
+  LogLine(log_file_handle, "service stopped");
+  CloseHandle(log_file_handle);
+  if (event_source != nullptr) {
+    DeregisterEventSource(event_source);
+  }
+  CloseHandle(session_change_event);
+  CloseHandle(stop_event);
+
   // Let SCM know we've stopped
-  service_status.dwCurrentState = SERVICE_STOPPED;
-  SetServiceStatus(service_status_handle, &service_status);
+  ReportStatus(SERVICE_STOPPED, 0, 0);
 }
 
 // This will run in a child process in the user session
@@ -392,15 +559,10 @@ int main(int argc, char *argv[]) {
   // By default, services have their current directory set to %SYSTEMROOT%\System32.
   // We want to use the directory where Sunshine.exe is located instead of system32.
   // This requires stripping off 2 path components: the file name and the last folder
-  WCHAR module_path[MAX_PATH];
-  GetModuleFileNameW(nullptr, module_path, _countof(module_path));
-  for (auto i = 0; i < 2; i++) {
-    auto last_sep = wcsrchr(module_path, '\\');
-    if (last_sep) {
-      *last_sep = 0;
-    }
+  auto install_dir = svc::strip_components(GetModulePath(), 2);
+  if (!install_dir.empty()) {
+    SetCurrentDirectoryW(install_dir.c_str());
   }
-  SetCurrentDirectoryW(module_path);
 
   // Trigger our ServiceMain()
   return StartServiceCtrlDispatcher(service_table);

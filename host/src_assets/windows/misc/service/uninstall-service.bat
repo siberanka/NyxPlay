@@ -1,37 +1,36 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
+rem System tools come from the system folder first, also inside for /f commands where quoted program paths do not work
+set "PATH=%SystemRoot%\System32;%PATH%"
 
-set "SERVICE_CONFIG_DIR=%LOCALAPPDATA%\NyxPlay\Host"
-set "SERVICE_CONFIG_FILE=%SERVICE_CONFIG_DIR%\service_start_type.txt"
+set "SERVICE_NAME=NyxPlayHostService"
+set "SC=%SystemRoot%\System32\sc.exe"
+set "REGEXE=%SystemRoot%\System32\reg.exe"
+set "SETTINGS_KEY=HKLM\SOFTWARE\NyxPlay Host"
+set "SERVICE_KEY=HKLM\SYSTEM\CurrentControlSet\Services\%SERVICE_NAME%"
 
-rem Save the current service start type to a file if the service exists
-sc qc NyxPlayHostService >nul 2>&1
-if %ERRORLEVEL%==0 (
-    if not exist "%SERVICE_CONFIG_DIR%\" mkdir "%SERVICE_CONFIG_DIR%\"
+rem Save the current service start type if the service exists. It is read from the registry
+rem because the text printed by sc.exe depends on the system language.
+"%SC%" qc %SERVICE_NAME% >nul 2>&1
+if errorlevel 1 goto :stop_and_delete
 
-    rem Get the start type
-    for /f "tokens=3" %%i in ('sc qc NyxPlayHostService ^| findstr /C:"START_TYPE"') do (
-        set "CURRENT_START_TYPE=%%i"
-    )
+set "START_VALUE="
+for /f "tokens=3" %%i in ('reg.exe query "%SERVICE_KEY%" /v Start 2^>nul') do set "START_VALUE=%%i"
+set "DELAYED_VALUE=0x0"
+for /f "tokens=3" %%i in ('reg.exe query "%SERVICE_KEY%" /v DelayedAutostart 2^>nul') do set "DELAYED_VALUE=%%i"
 
-    rem Set the content to write
-    if "!CURRENT_START_TYPE!"=="2" (
-        sc qc NyxPlayHostService | findstr /C:"(DELAYED)" >nul
-        if !ERRORLEVEL!==0 (
-            set "CONTENT=2-delayed"
-        ) else (
-            set "CONTENT=2"
-        )
-    ) else if "!CURRENT_START_TYPE!" NEQ "" (
-        set "CONTENT=!CURRENT_START_TYPE!"
-    ) else (
-        set "CONTENT=unknown"
-    )
-
-    rem Write content to file
-    echo !CONTENT!> "%SERVICE_CONFIG_FILE%"
+set "CONTENT="
+if "%START_VALUE%"=="0x2" (
+    set "CONTENT=2"
+    if "%DELAYED_VALUE%"=="0x1" set "CONTENT=2-delayed"
 )
+if "%START_VALUE%"=="0x3" set "CONTENT=3"
+if "%START_VALUE%"=="0x4" set "CONTENT=4"
 
-rem Stop and delete the NyxPlayHostService service
-net stop NyxPlayHostService
-sc delete NyxPlayHostService
+if defined CONTENT "%REGEXE%" add "%SETTINGS_KEY%" /v ServiceStartType /t REG_SZ /d "%CONTENT%" /f /reg:64 >nul 2>&1
+
+:stop_and_delete
+rem Stop the service (bounded wait) and end remaining host processes, then delete the service
+call "%~dp0stop-host.bat"
+"%SC%" delete %SERVICE_NAME% >nul 2>&1
+exit /b 0

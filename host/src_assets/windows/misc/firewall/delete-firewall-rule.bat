@@ -3,4 +3,5 @@
 set "RULE_NAME=NyxPlay Host"
 
 rem Delete the rule
-netsh advfirewall firewall delete rule name="%RULE_NAME%"
+"%SystemRoot%\System32\netsh.exe" advfirewall firewall delete rule name="%RULE_NAME%"
+exit /b 0

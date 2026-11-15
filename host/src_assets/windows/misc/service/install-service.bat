@@ -1,63 +1,88 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
+rem System tools come from the system folder first, also inside for /f commands where quoted program paths do not work
+set "PATH=%SystemRoot%\System32;%PATH%"
 
 rem Get NyxPlay Host root directory
 for %%I in ("%~dp0\..") do set "ROOT_DIR=%%~fI"
 
-set SERVICE_NAME=NyxPlayHostService
+set "SERVICE_NAME=NyxPlayHostService"
 set "SERVICE_BIN=%ROOT_DIR%\tools\nyxplay-host-svc.exe"
-set "SERVICE_CONFIG_DIR=%LOCALAPPDATA%\NyxPlay\Host"
-set "SERVICE_CONFIG_FILE=%SERVICE_CONFIG_DIR%\service_start_type.txt"
+set "SC=%SystemRoot%\System32\sc.exe"
+set "NET=%SystemRoot%\System32\net.exe"
+set "REGEXE=%SystemRoot%\System32\reg.exe"
+set "SETTINGS_KEY=HKLM\SOFTWARE\NyxPlay Host"
+rem Location used by earlier versions to remember the start type
+set "LEGACY_FILE=%LOCALAPPDATA%\NyxPlay\Host\service_start_type.txt"
+
+if not exist "%SERVICE_BIN%" (
+    echo The service executable is missing.
+    exit /b 4
+)
 
 rem Set service to demand start. It will be changed to auto later if the user selected that option.
-set SERVICE_START_TYPE=demand
+set "START_TYPE=demand"
+set "RESTORED=0"
 
-rem Check if NyxPlayHostService already exists
-sc qc %SERVICE_NAME% > nul 2>&1
-if %ERRORLEVEL%==0 (
-    rem Stop the existing service if running
-    net stop %SERVICE_NAME%
-
-    rem Reconfigure the existing service
-    set SC_CMD=config
+rem Check if the service already exists
+"%SC%" qc %SERVICE_NAME% >nul 2>&1
+if errorlevel 1 (
+    set "SC_CMD=create"
 ) else (
-    rem Create a new service
-    set SC_CMD=create
+    rem Stop the existing service and any remaining host process
+    call "%~dp0stop-host.bat"
+    set "SC_CMD=config"
 )
 
-rem Check if we have a saved start type from previous installation
-if exist "%SERVICE_CONFIG_FILE%" (
-    rem Debug output file content
-    type "%SERVICE_CONFIG_FILE%"
+rem Check if we have a saved start type from the previous installation
+set "SAVED="
+for /f "tokens=2,*" %%A in ('reg.exe query "%SETTINGS_KEY%" /v ServiceStartType /reg:64 2^>nul') do set "SAVED=%%B"
+if not defined SAVED if exist "%LEGACY_FILE%" for /f "usebackq delims=" %%a in ("%LEGACY_FILE%") do set "SAVED=%%a"
 
-    rem Read the saved start type
-    for /f "usebackq delims=" %%a in ("%SERVICE_CONFIG_FILE%") do (
-        set "SAVED_START_TYPE=%%a"
-    )
-
-    echo Raw saved start type: [!SAVED_START_TYPE!]
-
-    rem Check start type
-    if "!SAVED_START_TYPE!"=="2-delayed" (
-        set SERVICE_START_TYPE=delayed-auto
-    ) else if "!SAVED_START_TYPE!"=="2" (
-        set SERVICE_START_TYPE=auto
-    ) else if "!SAVED_START_TYPE!"=="3" (
-        set SERVICE_START_TYPE=demand
-    ) else if "!SAVED_START_TYPE!"=="4" (
-        set SERVICE_START_TYPE=disabled
-    )
-
-    del "%SERVICE_CONFIG_FILE%"
+if "%SAVED%"=="2-delayed" (
+    set "START_TYPE=delayed-auto"
+    set "RESTORED=1"
+)
+if "%SAVED%"=="2" (
+    set "START_TYPE=auto"
+    set "RESTORED=1"
+)
+if "%SAVED%"=="3" (
+    set "START_TYPE=demand"
+    set "RESTORED=1"
+)
+if "%SAVED%"=="4" (
+    set "START_TYPE=disabled"
+    set "RESTORED=1"
 )
 
-echo Setting service start type set to: [!SERVICE_START_TYPE!]
+rem The saved value is consumed. Remember that the user's choice was restored, so the optional
+rem "launch on startup" step does not override it.
+"%REGEXE%" delete "%SETTINGS_KEY%" /v ServiceStartType /f /reg:64 >nul 2>&1
+if exist "%LEGACY_FILE%" del "%LEGACY_FILE%" >nul 2>&1
+"%REGEXE%" add "%SETTINGS_KEY%" /v StartTypeRestored /t REG_DWORD /d %RESTORED% /f /reg:64 >nul 2>&1
+
+echo Setting service start type set to: [%START_TYPE%]
 
 rem Run the sc command to create/reconfigure the service
-sc %SC_CMD% %SERVICE_NAME% binPath= "\"%SERVICE_BIN%\"" start= %SERVICE_START_TYPE% DisplayName= "NyxPlay Host Service"
+"%SC%" %SC_CMD% %SERVICE_NAME% binPath= "\"%SERVICE_BIN%\"" start= %START_TYPE% DisplayName= "NyxPlay Host Service"
+if errorlevel 1 (
+    echo Failed to configure the service.
+    exit /b 1
+)
 
 rem Set the description of the service
-sc description %SERVICE_NAME% "NyxPlay Host is a self-hosted game stream host for NyxPlay, Artemis and Moonlight clients."
+"%SC%" description %SERVICE_NAME% "NyxPlay Host is a self-hosted game stream host for NyxPlay, Artemis and Moonlight clients." >nul
+
+rem Restart the service after a failure: 5 s, then 30 s, no further action
+"%SC%" failure %SERVICE_NAME% reset= 86400 actions= restart/5000/restart/30000// >nul
+
+if /i "%START_TYPE%"=="disabled" exit /b 0
 
 rem Start the new service
-net start %SERVICE_NAME%
+"%NET%" start %SERVICE_NAME%
+if errorlevel 1 (
+    echo The service was configured but could not be started.
+    exit /b 3
+)
+exit /b 0

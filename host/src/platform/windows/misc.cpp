@@ -953,7 +953,7 @@ namespace platf {
     std::wstring start_dir = from_utf8(working_dir.string());
     HANDLE job = group ? group->native_handle() : nullptr;
     STARTUPINFOEXW startup_info = create_startup_info(file, job ? &job : nullptr, ec);
-    PROCESS_INFORMATION process_info;
+    PROCESS_INFORMATION process_info {};
 
     // Clone the environment to create a local copy. Boost.Process (bp) shares the environment with all spawned processes.
     // Since we're going to modify the 'env' variable by merging user-specific environment variables into it,
@@ -1001,7 +1001,7 @@ namespace platf {
       }
     });
 
-    BOOL ret;
+    BOOL ret = FALSE;
     if (is_running_as_system()) {
       // Duplicate the current user's token
       HANDLE user_token = retrieve_users_token(elevated);
@@ -1028,6 +1028,10 @@ namespace platf {
         std::wstring wcmd = resolve_command_string(cmd, start_dir, user_token, creation_flags);
         ret = CreateProcessAsUserW(user_token, nullptr, (LPWSTR) wcmd.c_str(), nullptr, nullptr, !!(startup_info.StartupInfo.dwFlags & STARTF_USESTDHANDLES), creation_flags, env_block.data(), start_dir.empty() ? nullptr : start_dir.c_str(), (LPSTARTUPINFOW) &startup_info, &process_info);
       });
+      if (ec) {
+        // The launch callback did not run, there is no process to report
+        return bp::child();
+      }
     }
     // Otherwise, launch the process using CreateProcessW()
     // This will inherit the elevation of whatever the user launched Sunshine with.

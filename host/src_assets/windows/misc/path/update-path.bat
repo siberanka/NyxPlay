@@ -1,133 +1,22 @@
 @echo off
-setlocal EnableDelayedExpansion
+setlocal
 
 rem Check if parameter is provided
-if "%~1"=="" (
-    echo Usage: %0 [add^|remove]
-    echo   add    - Adds NyxPlay Host directories to system PATH
-    echo   remove - Removes NyxPlay Host directories from system PATH
-    exit /b 1
-)
-
-rem Get NyxPlay Host root directory
-for %%I in ("%~dp0\..") do set "ROOT_DIR=%%~fI"
-echo NyxPlay Host root directory: !ROOT_DIR!
-
-rem Define directories to add to path
-set "PATHS_TO_MANAGE[0]=!ROOT_DIR!"
-set "PATHS_TO_MANAGE[1]=!ROOT_DIR!\tools"
-
-rem System path registry location
-set "KEY_NAME=HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
-set "VALUE_NAME=Path"
-
-rem Get the current path
-for /f "tokens=2*" %%A in ('reg query "%KEY_NAME%" /v "%VALUE_NAME%"') do set "CURRENT_PATH=%%B"
-echo Current path: !CURRENT_PATH!
-
-rem Check if adding to path
-if /i "%~1"=="add" (
-    set "NEW_PATH=!CURRENT_PATH!"
-
-    rem Process each directory to add
-    for /L %%i in (0,1,1) do (
-        set "DIR_TO_ADD=!PATHS_TO_MANAGE[%%i]!"
-
-        rem Check if path already contains this directory
-        echo "!CURRENT_PATH!" | findstr /i /c:"!DIR_TO_ADD!" > nul
-        if !ERRORLEVEL!==0 (
-            echo !DIR_TO_ADD! already in path
-        ) else (
-            echo Adding to path: !DIR_TO_ADD!
-            set "NEW_PATH=!NEW_PATH!;!DIR_TO_ADD!"
-        )
-    )
-
-    rem Only update if path was changed
-    if "!NEW_PATH!" neq "!CURRENT_PATH!" (
-        rem Set the new path in the registry
-        set "PATH_TO_WRITE=!NEW_PATH!"
-        call :write_path
-        if !ERRORLEVEL!==0 (
-            echo Successfully added NyxPlay Host directories to PATH
-        ) else (
-            echo Failed to add NyxPlay Host directories to PATH
-        )
-    ) else (
-        echo No changes needed to PATH
-    )
-    exit /b !ERRORLEVEL!
-)
-
-rem Check if removing from path
-if /i "%~1"=="remove" (
-    set "CHANGES_MADE=0"
-
-    rem Process each directory to remove
-    for /L %%i in (0,1,1) do (
-        set "DIR_TO_REMOVE=!PATHS_TO_MANAGE[%%i]!"
-
-        rem Check if path contains this directory
-        echo "!CURRENT_PATH!" | findstr /i /c:"!DIR_TO_REMOVE!" > nul
-        if !ERRORLEVEL!==0 (
-            echo Removing from path: !DIR_TO_REMOVE!
-
-            rem Build a new path by parsing and filtering the current path
-            set "NEW_PATH="
-            for %%p in ("!CURRENT_PATH:;=" "!") do (
-                set "PART=%%~p"
-                if /i "!PART!" NEQ "!DIR_TO_REMOVE!" (
-                    if defined NEW_PATH (
-                        set "NEW_PATH=!NEW_PATH!;!PART!"
-                    ) else (
-                        set "NEW_PATH=!PART!"
-                    )
-                )
-            )
-
-            set "CURRENT_PATH=!NEW_PATH!"
-            set "CHANGES_MADE=1"
-        ) else (
-            echo !DIR_TO_REMOVE! not found in path
-        )
-    )
-
-    rem Only update if path was changed
-    if "!CHANGES_MADE!"=="1" (
-        rem Set the new path in the registry
-        set "PATH_TO_WRITE=!CURRENT_PATH!"
-        call :write_path
-        if !ERRORLEVEL!==0 (
-            echo Successfully removed NyxPlay Host directories from PATH
-        ) else (
-            echo Failed to remove NyxPlay Host directories from PATH
-        )
-    ) else (
-        echo No changes needed to PATH
-    )
-    exit /b !ERRORLEVEL!
-)
+if "%~1"=="" goto :usage
+if /i "%~1"=="add" goto :run
+if /i "%~1"=="remove" goto :run
 
 echo Unknown parameter: %~1
+goto :usage
+
+:run
+rem The registry work is done by update-path.ps1 next to this file. It reads and writes the Path
+rem value through the registry API, so no character is lost by the console code page.
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0update-path.ps1" -Action %~1
+exit /b %ERRORLEVEL%
+
+:usage
 echo Usage: %0 [add^|remove]
+echo   add    - Adds NyxPlay Host directories to system PATH
+echo   remove - Removes NyxPlay Host directories from system PATH
 exit /b 1
-
-rem @brief Write PATH_TO_WRITE to KEY_NAME\VALUE_NAME without corrupting trailing backslashes.
-rem @return The exit code from reg.exe.
-:write_path
-set "REG_PATH=!PATH_TO_WRITE!"
-set "TRAILING_PATH=!PATH_TO_WRITE!"
-
-rem Windows argument parsing requires every backslash before the closing quote to be doubled.
-rem Escape a copy so PATH comparisons and the original entries remain unchanged.
-:escape_trailing_backslashes
-if "!TRAILING_PATH:~-1!"=="\" (
-    set "REG_PATH=!REG_PATH!\"
-    set "TRAILING_PATH=!TRAILING_PATH:~0,-1!"
-    goto escape_trailing_backslashes
-)
-
-rem Some localized systems may unexpectedly ignore /f at the end of the command.
-rem Keep it before /d so the installer never waits for overwrite confirmation.
-reg add "%KEY_NAME%" /v "%VALUE_NAME%" /t REG_EXPAND_SZ /f /d "!REG_PATH!"
-exit /b !ERRORLEVEL!

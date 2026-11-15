@@ -26,6 +26,40 @@ install(TARGETS audio-info RUNTIME DESTINATION "tools" COMPONENT audio)
 install(TARGETS sunshinesvc RUNTIME DESTINATION "tools" COMPONENT application)
 
 # Drivers
+# The SudoVDA payload (driver DLL and the signed device installer nefconc.exe) is third-party,
+# signed and git-ignored (*.dll, *.exe). It has to be placed next to the other driver files before
+# packaging, otherwise the installer would not be able to install the virtual display driver.
+# The files are pinned by SHA-256:
+#   SudoVDA.dll   SudoVDA driver 1.10.9.289 (SudoMaker, as shipped with Apollo)
+#   nefconc.exe   nefcon 1.12.0.0 (Nefarius Software Solutions e.U., BSD-3-Clause)
+set(SUDOVDA_DRIVER_DIR "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/drivers/sudovda")
+set(SUDOVDA_PAYLOAD
+        "nefconc.exe=9dba1f1a9e2b21843c4a0ca6c6ffa9e747250dd6e42c8c14325ca069ad43ea8f"
+        "SudoVDA.dll=47ee263cb5de9382c6630a2d7f3dafec4a49419f953beec869ca5dd0c460ff63")
+foreach(_entry IN LISTS SUDOVDA_PAYLOAD)
+    string(REGEX REPLACE "=.*$" "" _name "${_entry}")
+    if(NOT EXISTS "${SUDOVDA_DRIVER_DIR}/${_name}")
+        message(WARNING "SudoVDA driver file ${_name} is missing in ${SUDOVDA_DRIVER_DIR}: "
+                "the installer package cannot be created until it is added")
+    endif()
+endforeach()
+# Verified when the package is created, a missing or modified file stops the packaging step
+install(CODE "
+    foreach(_entry ${SUDOVDA_PAYLOAD})
+        string(REGEX REPLACE \"=.*\$\" \"\" _name \"\${_entry}\")
+        string(REGEX REPLACE \"^[^=]*=\" \"\" _expected \"\${_entry}\")
+        set(_file \"${SUDOVDA_DRIVER_DIR}/\${_name}\")
+        if(NOT EXISTS \"\${_file}\")
+            message(FATAL_ERROR \"SudoVDA driver file \${_name} is missing in ${SUDOVDA_DRIVER_DIR}. \"
+                    \"The installer cannot install the virtual display driver without it.\")
+        endif()
+        file(SHA256 \"\${_file}\" _actual)
+        if(NOT _actual STREQUAL _expected)
+            message(FATAL_ERROR \"SudoVDA driver file \${_name} does not match the expected release \"
+                    \"(SHA-256 \${_actual}, expected \${_expected}).\")
+        endif()
+    endforeach()
+    " COMPONENT sudovda)
 install(DIRECTORY "${SUNSHINE_SOURCE_ASSETS_DIR}/windows/drivers/sudovda"
         DESTINATION "drivers"
         COMPONENT sudovda)
@@ -101,7 +135,7 @@ set(CPACK_COMPONENT_ASSETS_REQUIRED true)
 
 # drivers
 set(CPACK_COMPONENT_SUDOVDA_DISPLAY_NAME "SudoVDA")
-set(CPACK_COMPONENT_SUDOVDA_DESCRIPTION "Driver required for Virtual Display to function. Shared with Apollo if it is installed.")
+set(CPACK_COMPONENT_SUDOVDA_DESCRIPTION "Driver required for Virtual Display to function. Shared with Apollo if it is installed. Adds its signing certificate to the machine Trusted Root and Trusted Publisher stores.")
 set(CPACK_COMPONENT_SUDOVDA_GROUP "Drivers")
 set(CPACK_COMPONENT_SUDOVDA_REQUIRED true)
 
