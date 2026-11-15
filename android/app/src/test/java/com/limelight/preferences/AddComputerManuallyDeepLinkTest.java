@@ -23,6 +23,7 @@ import com.limelight.ShortcutTrampoline;
 import com.limelight.TestLogSuppressor;
 import com.limelight.utils.LaunchToken;
 
+import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -31,6 +32,9 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowAlertDialog;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Config(sdk = {33}, shadows = {com.limelight.shadows.ShadowMoonBridge.class, com.limelight.shadows.ShadowGameManager.class})
 @RunWith(RobolectricTestRunner.class)
@@ -42,6 +46,23 @@ public class AddComputerManuallyDeepLinkTest {
         TestLogSuppressor.install();
     }
 
+    private final List<ActivityController<AddComputerManually>> opened = new ArrayList<>();
+
+    @After
+    public void closeActivities() {
+        // Destroying the activities stops the background add thread, so no work from one test
+        // can show dialogs or post to the looper while the next test runs
+        for (ActivityController<AddComputerManually> controller : opened) {
+            try {
+                controller.pause().stop().destroy();
+            } catch (RuntimeException ignored) {
+                // The activity may already be destroyed
+            }
+        }
+        opened.clear();
+        shadowOf(Looper.getMainLooper()).idle();
+    }
+
     private ActivityController<AddComputerManually> open(String uri) {
         Application app = ApplicationProvider.getApplicationContext();
         Intent intent = new Intent(app, AddComputerManually.class);
@@ -50,6 +71,7 @@ public class AddComputerManuallyDeepLinkTest {
         ActivityController<AddComputerManually> controller = Robolectric.buildActivity(AddComputerManually.class, intent);
         controller.create().start().resume();
         shadowOf(Looper.getMainLooper()).idle();
+        opened.add(controller);
         return controller;
     }
 
