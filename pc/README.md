@@ -96,6 +96,21 @@ for different architectures, which handle building deps and extra linking for yo
         * This build will lack windowed mode, Discord/Help links, and other features that don't make sense on an embedded device.
         * For platforms with poor GPU performance, add `"CONFIG+=gpuslow"` to prefer direct KMSDRM rendering over GL/Vulkan renderers. Direct KMSDRM rendering can use dedicated YUV/RGB conversion and scaling hardware rather than slower GPU shaders for these operations.
 
+## Portable package and privacy
+
+The portable zip (`NyxPlayPortable-x64-<version>.zip`) needs the Microsoft Visual C++ 2015-2022 x64
+runtime. Windows may show a SmartScreen warning on first start because the executable is not code signed.
+Build the zip with `scripts/package-portable.ps1`; it always packs from a clean staging directory.
+
+In portable mode (the `portable.dat` file next to the executable) NyxPlay stores its settings, including the
+client identity key and the paired hosts, in a `NyxPlay` folder beside the executable. Do not share or sync
+that folder.
+
+The client contacts a few services run by the Moonlight project: the compatibility list and the controller mapping
+database on `moonlight-stream.org`, the STUN server `stun.moonlight-stream.org` (to detect the public address)
+and `qt.conntest.moonlight-stream.org` (connection test). Update checks use the NyxPlay repository on GitHub.
+All of them are optional conveniences; streaming does not depend on them.
+
 ## Credits
 
 NyxPlay for PC is built on Moonlight PC by [Cameron Gutman](https://github.com/cgutman) and the Moonlight

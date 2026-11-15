@@ -548,6 +548,7 @@ win32 {
     QMAKE_TARGET_COMPANY = NyxPlay
     QMAKE_TARGET_DESCRIPTION = NyxPlay Game Streaming Client
     QMAKE_TARGET_PRODUCT = NyxPlay
+    QMAKE_TARGET_COPYRIGHT = "Copyright (C) NyxPlay contributors. Based on Moonlight (C) Cameron Gutman and the Moonlight Game Streaming Project. GPL-3.0"
 
     CONFIG -= embed_manifest_exe
     QMAKE_LFLAGS += /MANIFEST:embed /MANIFESTINPUT:$${PWD}/NyxPlay.exe.manifest

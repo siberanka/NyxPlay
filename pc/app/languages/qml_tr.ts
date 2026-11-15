@@ -312,8 +312,8 @@
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="335"/>
-        <source>If you are trying to stream over the Internet, install the Moonlight Internet Hosting Tool on your gaming PC and run the included Internet Streaming Tester to check your gaming PC&apos;s Internet connection.</source>
-        <translation>İnternet üzerinden akış yapmaya çalışıyorsanız, oyun bilgisayarınıza &quot;Moonlight Internet Hosting Tool&quot; kurun ve oyun bilgisayarınızın İnternet bağlantısını kontrol etmek için verilen &quot;Internet Streaming Tester&quot; uygulamasını çalıştırın.</translation>
+        <source>If you are trying to stream over the Internet, make sure the required ports are forwarded to your gaming PC on your router and that your Internet provider does not block them.</source>
+        <translation>İnternet üzerinden akış yapmaya çalışıyorsanız, gerekli bağlantı noktalarının yönlendiricinizde oyun bilgisayarınıza yönlendirildiğinden ve İnternet sağlayıcınız tarafından engellenmediğinden emin olun.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="339"/>
@@ -357,8 +357,8 @@
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="298"/>
-        <source>If your host PC is running Sunshine, navigate to the Sunshine web UI to enter the PIN.</source>
-        <translation>Ana bilgisayarınızda Sunshine çalışıyorsa, PIN&apos;i girmek için Sunshine web kullanıcı arayüzüne gidin.</translation>
+        <source>If your host PC is running NyxPlay Host, navigate to the NyxPlay Host web UI to enter the PIN.</source>
+        <translation>Ana bilgisayarınızda NyxPlay Host çalışıyorsa, PIN&apos;i girmek için NyxPlay Host web arayüzüne gidin.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="310"/>
@@ -1224,8 +1224,8 @@
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1702"/>
-        <source>This unlocks extremely high video bitrates for use with Sunshine hosts. It should only be used when streaming over an Ethernet LAN connection.</source>
-        <translation>Bu, Sunshine ana bilgisayarlarıyla kullanım için son derece yüksek video bit hızlarının kilidini açar. Yalnızca Ethernet LAN bağlantısı üzerinden akış yaparken kullanılmalıdır.</translation>
+        <source>This unlocks extremely high video bitrates for use with NyxPlay Host. It should only be used when streaming over an Ethernet LAN connection.</source>
+        <translation>Bu, NyxPlay Host ile kullanım için son derece yüksek video bit hızlarının kilidini açar. Yalnızca Ethernet LAN bağlantısı üzerinden akış yaparken kullanılmalıdır.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1708"/>
@@ -1303,11 +1303,6 @@
         <location filename="../gui/main.qml" line="291"/>
         <source>Version %1</source>
         <translation>Sürüm %1</translation>
-    </message>
-    <message>
-        <location filename="../gui/main.qml" line="307"/>
-        <source>Join our community on Discord</source>
-        <translation>Discord topluluğumuza katılın</translation>
     </message>
     <message>
         <location filename="../gui/main.qml" line="326"/>

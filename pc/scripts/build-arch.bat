@@ -233,6 +233,9 @@ echo Copying DLL dependencies
 copy %SOURCE_ROOT%\libs\windows\lib\%ARCH%\*.dll %DEPLOY_FOLDER%
 if !ERRORLEVEL! NEQ 0 goto Error
 
+rem Discord Rich Presence is not part of NyxPlay builds
+del "%DEPLOY_FOLDER%\discord-rpc.dll"
+
 echo Copying AntiHooking.dll
 copy %BUILD_FOLDER%\AntiHooking\%BUILD_CONFIG%\AntiHooking.dll %DEPLOY_FOLDER%
 if !ERRORLEVEL! NEQ 0 goto Error

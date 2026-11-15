@@ -291,7 +291,7 @@ CenteredGridView {
 
         // Using Setup-Guide here instead of Troubleshooting because it's likely that users
         // will arrive here by forgetting to enable GameStream or not forwarding ports.
-        helpUrl: "https://github.com/moonlight-stream/moonlight-docs/wiki/Setup-Guide"
+        helpUrl: "https://github.com/siberanka/NyxPlay"
     }
 
     NavigableMessageDialog {
@@ -301,7 +301,7 @@ CenteredGridView {
         // don't allow edits to the rest of the window while open
         property string pin : "0000"
         text:qsTr("Please enter %1 on your host PC. This dialog will close when pairing is completed.").arg(pin)+"\n\n"+
-             qsTr("If your host PC is running Sunshine, navigate to the Sunshine web UI to enter the PIN.")
+             qsTr("If your host PC is running NyxPlay Host, navigate to the NyxPlay Host web UI to enter the PIN.")
         standardButtons: Dialog.Cancel
         onRejected: {
             // FIXME: We should interrupt pairing here
@@ -338,7 +338,7 @@ CenteredGridView {
                 imageSrc = "qrc:/res/baseline-warning-24px.svg"
             }
             else if (result === 0) {
-                text = qsTr("This network does not appear to be blocking NyxPlay. If you still have trouble connecting, check your PC's firewall settings.") + "\n\n" + qsTr("If you are trying to stream over the Internet, install the Moonlight Internet Hosting Tool on your gaming PC and run the included Internet Streaming Tester to check your gaming PC's Internet connection.")
+                text = qsTr("This network does not appear to be blocking NyxPlay. If you still have trouble connecting, check your PC's firewall settings.") + "\n\n" + qsTr("If you are trying to stream over the Internet, make sure the required ports are forwarded to your gaming PC on your router and that your Internet provider does not block them.")
                 imageSrc = "qrc:/res/baseline-check_circle_outline-24px.svg"
             }
             else {

@@ -1758,7 +1758,7 @@ Flickable {
                     ToolTip.delay: 1000
                     ToolTip.timeout: 5000
                     ToolTip.visible: hovered
-                    ToolTip.text: qsTr("This unlocks extremely high video bitrates for use with Sunshine hosts. It should only be used when streaming over an Ethernet LAN connection.")
+                    ToolTip.text: qsTr("This unlocks extremely high video bitrates for use with NyxPlay Host. It should only be used when streaming over an Ethernet LAN connection.")
                 }
 
                 CheckBox {

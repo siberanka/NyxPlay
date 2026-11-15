@@ -4,6 +4,26 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QUrl>
+
+namespace {
+
+// Only HTTPS links into the project's own repository may be opened from the manifest
+bool isTrustedUpdateUrl(const QString& urlString)
+{
+    QUrl url(urlString, QUrl::StrictMode);
+    if (!url.isValid() || url.scheme() != QLatin1String("https")) {
+        return false;
+    }
+    if (url.host() != QLatin1String("github.com") || url.port() != -1 || !url.userInfo().isEmpty()) {
+        return false;
+    }
+    const QString path = url.path();
+    return path == QLatin1String("/siberanka/NyxPlay") ||
+           path.startsWith(QLatin1String("/siberanka/NyxPlay/"));
+}
+
+}
 
 AutoUpdateChecker::AutoUpdateChecker(QObject *parent) :
     QObject(parent)
@@ -136,7 +156,7 @@ void AutoUpdateChecker::handleUpdateCheckRequestFinished(QNetworkReply* reply)
 
         QJsonArray array = jsonDoc.array();
         if (array.isEmpty()) {
-            qWarning() << "Update manifest doesn't contain an array";
+            qDebug() << "Update manifest has no entries";
             return;
         }
 
@@ -156,6 +176,11 @@ void AutoUpdateChecker::handleUpdateCheckRequestFinished(QNetworkReply* reply)
                         !updateObj["version"].isString() ||
                         !updateObj["browser_url"].isString()) {
                     qWarning() << "Update manifest entry has unexpected vital field type";
+                    continue;
+                }
+
+                if (!isTrustedUpdateUrl(updateObj["browser_url"].toString())) {
+                    qWarning() << "Update manifest entry has an untrusted download URL";
                     continue;
                 }
 
