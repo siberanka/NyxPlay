@@ -334,15 +334,16 @@ public class CachedAppAssetLoader {
     public boolean populateImageView(NvApp app, ImageView imgView, TextView textView) {
         LoaderTuple tuple = new LoaderTuple(computer, app);
 
+        // Always set the name text so we have it if needed later. This also has to happen when
+        // a load for the same image is already running, because the app may have been renamed.
+        textView.setText(app.getAppName());
+
         // If there's already a task in progress for this view,
         // cancel it. If the task is already loading the same image,
         // we return and let that load finish.
         if (!cancelPendingLoad(tuple, imgView)) {
             return true;
         }
-
-        // Always set the name text so we have it if needed later
-        textView.setText(app.getAppName());
 
         // First, try the memory cache in the current context
         ScaledBitmap bmp = memoryLoader.loadBitmapFromCache(tuple);

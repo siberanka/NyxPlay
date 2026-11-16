@@ -915,9 +915,32 @@ public class ComputerManagerService extends Service {
         private final ComputerDetails computer;
         private final Object pollEvent = new Object();
         private boolean receivedAppList = false;
+        private volatile Runnable failureListener;
+        private volatile int consecutiveFailures;
+
+        // Number of failed polls in a row before the failure listener is told
+        public static final int FAILURES_BEFORE_REPORT = 2;
 
         public ApplistPoller(ComputerDetails computer) {
             this.computer = computer;
+        }
+
+        // The listener runs on the polling thread once polling keeps failing
+        public void setFailureListener(Runnable listener) {
+            this.failureListener = listener;
+        }
+
+        // Starts counting failures from zero, so the listener can report again
+        public void resetFailures() {
+            consecutiveFailures = 0;
+        }
+
+        private void reportFailure() {
+            int failures = ++consecutiveFailures;
+            Runnable currentListener = failureListener;
+            if (failures == FAILURES_BEFORE_REPORT && currentListener != null) {
+                currentListener.run();
+            }
         }
 
         public void pollNow() {
@@ -1026,6 +1049,7 @@ public class ComputerManagerService extends Service {
                                 // Update the computer
                                 computer.rawAppList = appList;
                                 receivedAppList = true;
+                                consecutiveFailures = 0;
 
                                 // Notify that the app list has been updated
                                 // and ensure that the thread is still active
@@ -1039,11 +1063,14 @@ public class ComputerManagerService extends Service {
                             }
                         } catch (IOException e) {
                             e.printStackTrace();
+                            reportFailure();
                         } catch (XmlPullParserException e) {
                             e.printStackTrace();
+                            reportFailure();
                         } catch (RuntimeException e) {
                             // Treat unexpected content as a failed poll
                             e.printStackTrace();
+                            reportFailure();
                         }
                     } while (waitPollingDelay());
                 }

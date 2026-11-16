@@ -29,7 +29,10 @@ import com.limelight.R;
 import com.limelight.nvstream.http.ComputerDetails;
 import com.limelight.preferences.PreferenceConfiguration;
 
+import java.util.Collections;
 import java.util.Locale;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 public class UiHelper {
 
@@ -74,9 +77,31 @@ public class UiHelper {
         setGameModeStatus(context, false, false);
     }
 
+    // Language each open activity was created with, to notice a change made on another screen
+    private static final Map<Activity, String> appliedLanguages =
+            Collections.synchronizedMap(new WeakHashMap<Activity, String>());
+
+    // Recreates the activity if the language setting changed since it applied its locale.
+    // Returns true when a recreation was requested, so the caller can skip the rest of its resume work.
+    public static boolean recreateIfLanguageChanged(Activity activity)
+    {
+        String applied = appliedLanguages.get(activity);
+        if (applied == null || activity.isFinishing() || activity.isDestroyed()) {
+            return false;
+        }
+
+        if (applied.equals(PreferenceConfiguration.readPreferences(activity).language)) {
+            return false;
+        }
+
+        activity.recreate();
+        return true;
+    }
+
     public static void setLocale(Activity activity)
     {
         String locale = PreferenceConfiguration.readPreferences(activity).language;
+        appliedLanguages.put(activity, locale);
         Configuration config = new Configuration(activity.getResources().getConfiguration());
         if (locale.equals(PreferenceConfiguration.DEFAULT_LANGUAGE)) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

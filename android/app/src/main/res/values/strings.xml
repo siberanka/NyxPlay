@@ -116,6 +116,7 @@
     <string name="conn_starting">Starting</string>
     <string name="conn_error_title">Connection Error</string>
     <string name="conn_error_msg">Failed to start</string>
+    <string name="conn_error_rtsp_timeout">The host did not answer while the stream was starting. Make sure the host is running and reachable, then try again.</string>
     <string name="conn_error_rtsp_reset">The host closed the connection while the stream was starting. Try again; if it keeps happening, restart the host.</string>
     <string name="conn_terminated_title">Connection Terminated</string>
     <string name="conn_terminated_msg">The connection was terminated.</string>
@@ -168,6 +169,8 @@
     <string name="applist_refresh_title">App List</string>
     <string name="applist_refresh_msg">Refreshing apps…</string>
     <string name="applist_refresh_error_title">Error</string>
+    <string name="applist_refresh_failed_msg">The app list could not be loaded. The host did not answer or sent a response that is too large.</string>
+    <string name="applist_retry">Retry</string>
     <string name="applist_refresh_error_msg">Failed to get app list</string>
     <string name="applist_quit_app">Quitting</string>
     <string name="applist_quit_success">Successfully quit</string>

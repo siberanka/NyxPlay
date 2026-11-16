@@ -422,6 +422,11 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
     protected void onResume() {
         super.onResume();
 
+        // The language may have been changed in the settings
+        if (UiHelper.recreateIfLanguageChanged(this)) {
+            return;
+        }
+
         // Display a decoder crash notification if we've returned after a crash
         UiHelper.showDecoderCrashDialog(this);
 

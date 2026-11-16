@@ -54,6 +54,33 @@ public class NvHttpServerInfoTest {
                 "0123456789ABCDEF", null, mock(LimelightCryptoProvider.class));
     }
 
+    private static String serverInfoWithCodecField(String field) {
+        return "<?xml version=\"1.0\" encoding=\"utf-8\"?><root status_code=\"200\">" + field + "</root>";
+    }
+
+    @Test
+    public void codecModeSupport_missingField_usesBaseline() throws Exception {
+        assertEquals(NvHTTP.DEFAULT_CODEC_MODE_SUPPORT, newHttp().getServerCodecModeSupport(serverInfoWithCodecField("")));
+        assertTrue(NvHTTP.DEFAULT_CODEC_MODE_SUPPORT != 0);
+    }
+
+    @Test
+    public void codecModeSupport_zeroOrUnreadable_usesBaseline() throws Exception {
+        NvHTTP http = newHttp();
+        assertEquals(NvHTTP.DEFAULT_CODEC_MODE_SUPPORT,
+                http.getServerCodecModeSupport(serverInfoWithCodecField("<ServerCodecModeSupport>0</ServerCodecModeSupport>")));
+        assertEquals(NvHTTP.DEFAULT_CODEC_MODE_SUPPORT,
+                http.getServerCodecModeSupport(serverInfoWithCodecField("<ServerCodecModeSupport>abc</ServerCodecModeSupport>")));
+        assertEquals(NvHTTP.DEFAULT_CODEC_MODE_SUPPORT,
+                http.getServerCodecModeSupport(serverInfoWithCodecField("<ServerCodecModeSupport></ServerCodecModeSupport>")));
+    }
+
+    @Test
+    public void codecModeSupport_reportedValue_isKept() throws Exception {
+        assertEquals(0x30301L, newHttp().getServerCodecModeSupport(
+                serverInfoWithCodecField("<ServerCodecModeSupport>197377</ServerCodecModeSupport>")));
+    }
+
     @Test
     public void serverinfo_exactlyCap_accepted() throws Exception {
         String body = TestHostResponses.serverInfoOfSize("3f2b1c4e-9a7d-4e21-8c55-0a1b2c3d4e5f", CAP);

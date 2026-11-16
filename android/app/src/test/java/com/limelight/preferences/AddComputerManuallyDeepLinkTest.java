@@ -92,6 +92,33 @@ public class AddComputerManuallyDeepLinkTest {
     }
 
     @Test
+    public void invalidHostIdInLaunchLinkStillShowsTheErrorAfterTheLinkScreenCloses() {
+        ActivityController<AddComputerManually> c = open("art://launch?host_uuid=..%2Fevil&app_id=1");
+        Intent started = shadowOf(c.get()).getNextStartedActivity();
+        assertNotNull(started);
+
+        // The trampoline shows its message while the link screen is still being torn down
+        ActivityController<ShortcutTrampoline> trampoline =
+                Robolectric.buildActivity(ShortcutTrampoline.class, started);
+        trampoline.create().start().resume();
+        shadowOf(Looper.getMainLooper()).idle();
+        AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
+        assertNotNull(dialog);
+        assertTrue(dialog.isShowing());
+
+        c.pause().stop().destroy();
+        shadowOf(Looper.getMainLooper()).idle();
+
+        assertTrue("the error dialog was closed", dialog.isShowing());
+        assertEquals(trampoline.get().getString(R.string.scut_invalid_uuid), String.valueOf(shadowOf(dialog).getMessage()));
+
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+        shadowOf(Looper.getMainLooper()).idle();
+        assertTrue(trampoline.get().isFinishing());
+        trampoline.pause().stop().destroy();
+    }
+
+    @Test
     public void pairConfirmationShowsTheAddressNotTheSuppliedName() {
         open("art://10.0.2.2:57989?pin=1234&passphrase=abcd&name=Trusted%20Bank");
 

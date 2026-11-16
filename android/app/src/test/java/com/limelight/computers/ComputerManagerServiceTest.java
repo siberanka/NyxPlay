@@ -254,6 +254,36 @@ public class ComputerManagerServiceTest {
     }
 
     @Test
+    public void applistPoller_keepsFailing_reportsFailureOnceAndAgainAfterReset() throws Exception {
+        startService();
+
+        // No usable address, so every poll fails the same way a rejected response does
+        ComputerDetails details = new ComputerDetails();
+        details.name = "Host";
+        details.uuid = HOST_ID;
+        details.state = ComputerDetails.State.ONLINE;
+        details.pairState = com.limelight.nvstream.http.PairingManager.PairState.PAIRED;
+
+        final CountDownLatch firstReport = new CountDownLatch(1);
+        final CountDownLatch secondReport = new CountDownLatch(2);
+        ComputerManagerService.ApplistPoller poller = binder.createAppListPoller(details);
+        poller.setFailureListener(() -> {
+            firstReport.countDown();
+            secondReport.countDown();
+        });
+        poller.start();
+
+        try {
+            assertTrue("no failure report", firstReport.await(15, TimeUnit.SECONDS));
+
+            poller.resetFailures();
+            assertTrue("no second report after a reset", secondReport.await(15, TimeUnit.SECONDS));
+        } finally {
+            poller.stop();
+        }
+    }
+
+    @Test
     public void sharedPollingFields_areVolatile() throws Exception {
         for (String name : new String[] { "listener", "pollingActive" }) {
             Field f = ComputerManagerService.class.getDeclaredField(name);

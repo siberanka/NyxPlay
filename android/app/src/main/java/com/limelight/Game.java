@@ -3694,10 +3694,10 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
                     String dialogText = getResources().getString(R.string.conn_error_msg) + " " + stage +" (error "+errorCode+")";
 
                     // A reset while the stream is being negotiated is not a blocked port
-                    boolean hostResetDuringRtsp = stage.toLowerCase(java.util.Locale.ROOT).contains("rtsp") &&
-                            isConnectionResetError(errorCode);
+                    int rtspHint = rtspFailureHint(stage, errorCode);
+                    boolean hostResetDuringRtsp = rtspHint != 0;
                     if (hostResetDuringRtsp) {
-                        dialogText += "\n\n" + getResources().getString(R.string.conn_error_rtsp_reset);
+                        dialogText += "\n\n" + getResources().getString(rtspHint);
                     }
 
                     switch (errorCode) {
@@ -3761,17 +3761,41 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         return result.toString();
     }
 
-    // errno values (Linux and Windows) for a peer reset, abort, broken pipe, timeout or oversized message
+    // Explains a failure during the RTSP handshake, or returns 0 if the error is not one of those
+    static int rtspFailureHint(String stage, int errorCode) {
+        if (stage == null || !stage.toLowerCase(java.util.Locale.ROOT).contains("rtsp")) {
+            return 0;
+        }
+
+        if (isConnectionTimeoutError(errorCode)) {
+            return R.string.conn_error_rtsp_timeout;
+        }
+        if (isConnectionResetError(errorCode)) {
+            return R.string.conn_error_rtsp_reset;
+        }
+        return 0;
+    }
+
+    // errno values (Linux and Windows) for a timeout
+    private static boolean isConnectionTimeoutError(int errorCode) {
+        switch (errorCode) {
+            case 110: // ETIMEDOUT
+            case 10060: // WSAETIMEDOUT
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // errno values (Linux and Windows) for a peer reset, abort, broken pipe or oversized message
     private static boolean isConnectionResetError(int errorCode) {
         switch (errorCode) {
             case 104: // ECONNRESET
             case 103: // ECONNABORTED
             case 32:  // EPIPE
-            case 110: // ETIMEDOUT
             case 90:  // EMSGSIZE
             case 10054: // WSAECONNRESET
             case 10053: // WSAECONNABORTED
-            case 10060: // WSAETIMEDOUT
                 return true;
             default:
                 return false;

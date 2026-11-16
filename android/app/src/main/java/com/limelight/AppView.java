@@ -25,6 +25,7 @@ import com.limelight.utils.SpinnerDialog;
 import com.limelight.utils.UiHelper;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Service;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -62,6 +63,7 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
 
     private ComputerDetails computer;
     private ComputerManagerService.ApplistPoller poller;
+    private AlertDialog appListErrorDialog;
     private SpinnerDialog blockingLoadSpinner;
     private String lastRawApplist;
     private int lastRunningAppId;
@@ -270,6 +272,7 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
                         blockingLoadSpinner.dismiss();
                         blockingLoadSpinner = null;
                     }
+                    dismissAppListError();
                 } catch (XmlPullParserException | IOException e) {
                     e.printStackTrace();
                 }
@@ -278,8 +281,50 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
 
         if (poller == null) {
             poller = managerBinder.createAppListPoller(computer);
+            poller.setFailureListener(this::onAppListFailed);
         }
         poller.start();
+    }
+
+    // The host keeps failing to deliver a usable app list: stop the spinner and let the user retry
+    private void onAppListFailed() {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed() || blockingLoadSpinner == null) {
+                // Either leaving, or a cached list is on screen and nothing is waiting
+                return;
+            }
+
+            blockingLoadSpinner.dismiss();
+            blockingLoadSpinner = null;
+
+            dismissAppListError();
+            appListErrorDialog = new AlertDialog.Builder(this)
+                    .setTitle(R.string.applist_refresh_error_title)
+                    .setMessage(R.string.applist_refresh_failed_msg)
+                    .setCancelable(false)
+                    .setPositiveButton(R.string.applist_retry, (dialog, which) -> {
+                        appListErrorDialog = null;
+                        if (poller != null) {
+                            poller.resetFailures();
+                            poller.pollNow();
+                        }
+                        loadAppsBlocking();
+                    })
+                    .setNegativeButton(android.R.string.cancel, (dialog, which) -> {
+                        appListErrorDialog = null;
+                        finish();
+                    })
+                    .show();
+        });
+    }
+
+    private void dismissAppListError() {
+        runOnUiThread(() -> {
+            if (appListErrorDialog != null) {
+                appListErrorDialog.dismiss();
+                appListErrorDialog = null;
+            }
+        });
     }
 
     private void stopComputerUpdates() {
@@ -391,6 +436,11 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
         SpinnerDialog.closeDialogs(this);
         Dialog.closeDialogs();
 
+        if (appListErrorDialog != null) {
+            appListErrorDialog.dismiss();
+            appListErrorDialog = null;
+        }
+
         if (managerBinder != null) {
             unbindService(serviceConnection);
         }
@@ -399,6 +449,11 @@ public class AppView extends AppCompatActivity implements AdapterFragmentCallbac
     @Override
     protected void onResume() {
         super.onResume();
+
+        // The language may have been changed on a screen above this one
+        if (UiHelper.recreateIfLanguageChanged(this)) {
+            return;
+        }
 
         // Display a decoder crash notification if we've returned after a crash
         UiHelper.showDecoderCrashDialog(this);

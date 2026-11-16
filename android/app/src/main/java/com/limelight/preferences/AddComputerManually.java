@@ -48,6 +48,9 @@ public class AddComputerManually extends AppCompatActivity {
     private final LinkedBlockingQueue<String> computersToAdd = new LinkedBlockingQueue<>();
     private Thread addThread;
     private volatile boolean destroyed;
+
+    // Set once a launch link has been passed on; the next screen owns the dialogs from then on
+    private boolean launchHandedOff;
     private boolean serviceBound;
     private final ServiceConnection serviceConnection = new ServiceConnection() {
         public void onServiceConnected(ComponentName className, final IBinder binder) {
@@ -292,7 +295,9 @@ public class AddComputerManually extends AppCompatActivity {
     protected void onStop() {
         super.onStop();
 
-        Dialog.closeDialogs();
+        if (!launchHandedOff) {
+            Dialog.closeDialogs();
+        }
         SpinnerDialog.closeDialogs(this);
     }
 
@@ -302,7 +307,9 @@ public class AddComputerManually extends AppCompatActivity {
 
         destroyed = true;
         joinAddThread();
-        Dialog.closeDialogs();
+        if (!launchHandedOff) {
+            Dialog.closeDialogs();
+        }
         SpinnerDialog.closeDialogs(this);
 
         if (serviceBound) {
@@ -344,6 +351,7 @@ public class AddComputerManually extends AppCompatActivity {
 
                     // This link can be opened by any app or web page. It carries no launch token, so
                     // the trampoline asks first and names the host and app from this app's own records.
+                    launchHandedOff = true;
                     startActivity(intent);
                     finish();
 

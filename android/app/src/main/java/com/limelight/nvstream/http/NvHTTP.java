@@ -83,6 +83,9 @@ public class NvHTTP {
     public static final int LAUNCH_CALL_TIMEOUT = 120000;
     public static final int CANCEL_CALL_TIMEOUT = 30000;
 
+    // Codec support assumed when the host does not report any (H.264 only)
+    public static final long DEFAULT_CODEC_MODE_SUPPORT = 0x1;
+
     // Largest accepted text response (the app list is the biggest legitimate one)
     private static final long MAX_RESPONSE_SIZE = 4 * 1024 * 1024;
 
@@ -673,10 +676,18 @@ public class NvHTTP {
         // ServerCodecModeSupport wasn't present on old GFE versions
         String str = getXmlString(serverInfo, "ServerCodecModeSupport", false);
         if (str != null) {
-            return Long.parseLong(str);
-        } else {
-            return 0;
+            try {
+                long value = Long.parseLong(str.trim());
+                if (value != 0) {
+                    return value;
+                }
+            } catch (NumberFormatException e) {
+                LimeLog.warning("Ignoring an unreadable ServerCodecModeSupport value");
+            }
         }
+
+        // The field is missing or unusable, so only assume the baseline every host supports
+        return DEFAULT_CODEC_MODE_SUPPORT;
     }
     
     public String getGpuType(String serverInfo) throws XmlPullParserException, IOException {

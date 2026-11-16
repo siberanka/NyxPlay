@@ -10,6 +10,7 @@
     <string name="conn_error_title">Bağlantı Hatası</string>
     <string name="conn_starting">Başlatılıyor</string>
     <string name="conn_error_msg">Başlatma başarısız</string>
+    <string name="conn_error_rtsp_timeout">Yayın başlatılırken bilgisayar yanıt vermedi. Bilgisayarın çalıştığından ve erişilebilir olduğundan emin olup tekrar deneyin.</string>
     <string name="conn_error_rtsp_reset">Yayın başlatılırken bilgisayar bağlantıyı kapattı. Tekrar deneyin; sorun sürerse bilgisayarı yeniden başlatın.</string>
     <string name="summary_audio_config_list">Ev-sinema sistemleri için 5.1 yada 7.1 surround sesi etkinleştir</string>
     <string name="title_checkbox_host_audio">Sesleri bilgisayarda oynat</string>
@@ -113,6 +114,8 @@
     <string name="applist_menu_hide_app">Uygulamayı Gizle</string>
     <string name="applist_refresh_title">Uygulama Listesi</string>
     <string name="applist_quit_success">Başarıyla çıkıldı</string>
+    <string name="applist_refresh_failed_msg">Uygulama listesi yüklenemedi. Bilgisayar yanıt vermedi veya çok büyük bir yanıt gönderdi.</string>
+    <string name="applist_retry">Yeniden dene</string>
     <string name="applist_refresh_error_msg">Uygulama listesi alınamadı</string>
     <string name="applist_quit_app">Çıkılıyor</string>
     <string name="applist_quit_fail">Çıkılamadı</string>

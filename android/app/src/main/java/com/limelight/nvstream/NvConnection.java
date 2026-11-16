@@ -14,6 +14,7 @@ import android.net.RouteInfo;
 import android.os.Build;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -118,6 +119,16 @@ public class NvConnection {
 
         // Now a pending connection can be processed
         releasePermit();
+    }
+
+    // True if the failure is a request that exceeded its time limit
+    static boolean isTimeout(Throwable t) {
+        for (int depth = 0; t != null && depth < 8; depth++, t = t.getCause()) {
+            if (t instanceof InterruptedIOException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Sleeps in short slices so that stop() takes effect quickly. Returns false if stopped.
@@ -465,8 +476,14 @@ public class NvConnection {
                         }
                         e.printStackTrace();
                         context.connListener.displayMessage(e.getMessage());
-                        retry = context.connListener.stageFailed(appName, MoonBridge.ML_PORT_FLAG_TCP_47984 | MoonBridge.ML_PORT_FLAG_TCP_47989, tryCount < 2 ? 0 : -408);
-                        if (!retry) {
+
+                        // A request that already ran into its time limit is not tried again. The user
+                        // gets the error and decides, so a stalled host is never asked to launch again
+                        // in the background.
+                        boolean timedOut = isTimeout(e);
+                        retry = context.connListener.stageFailed(appName, MoonBridge.ML_PORT_FLAG_TCP_47984 | MoonBridge.ML_PORT_FLAG_TCP_47989,
+                                (timedOut || tryCount >= 2) ? -408 : 0);
+                        if (!retry || timedOut) {
                             return;
                         }
                     }
