@@ -541,7 +541,6 @@ namespace config_import {
       if (!troot.contains("named_devices") || !troot["named_devices"].is_array()) {
         troot["named_devices"] = json::array();
       }
-      auto &named = troot["named_devices"];
 
       // The legacy layout has no per device settings and is loaded with full access: convert it
       if (auto devices = troot.find("devices"); devices != troot.end()) {
@@ -551,7 +550,7 @@ namespace config_import {
             if (device.is_object() && certs != device.end() && certs->is_array()) {
               for (auto &cert : *certs) {
                 if (cert.is_string()) {
-                  named.push_back({{"name", ""}, {"cert", cert}, {"uuid", uuid_util::uuid_t::generate().string()}, {"perm", static_cast<uint32_t>(crypto::PERM::_default)}, {"allow_client_commands", false}});
+                  troot["named_devices"].push_back({{"name", ""}, {"cert", cert}, {"uuid", uuid_util::uuid_t::generate().string()}, {"perm", static_cast<uint32_t>(crypto::PERM::_default)}, {"allow_client_commands", false}});
                   ++stats.defaulted;
                 }
               }
@@ -560,6 +559,9 @@ namespace config_import {
         }
         troot.erase("devices");
       }
+
+      // Taken after the erase above, which moves the remaining members of the object
+      auto &named = troot["named_devices"];
 
       constexpr auto elevated_bits = static_cast<uint32_t>(crypto::PERM::file_upload) | static_cast<uint32_t>(crypto::PERM::file_dwnload) | static_cast<uint32_t>(crypto::PERM::server_cmd) | static_cast<uint32_t>(crypto::PERM::clipboard_set) | static_cast<uint32_t>(crypto::PERM::clipboard_read);
       std::set<std::string> seen_certs;

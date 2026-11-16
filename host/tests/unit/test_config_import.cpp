@@ -226,6 +226,22 @@ TEST_F(ConfigImportTest, LegacyDevicesLayoutIsCarriedOver) {
   EXPECT_FALSE(state["root"]["named_devices"][0]["allow_client_commands"].get<bool>());
 }
 
+TEST_F(ConfigImportTest, LegacyDevicesAreNormalizedLikeNamedDevices) {
+  populate_source();
+  write(src / "sunshine_state.json", nlohmann::json({{"root", {{"uniqueid", "ID"}, {"devices", nlohmann::json::array({{{"uniqueid", "x"}, {"certs", nlohmann::json::array({"C1", "C1", "C2"})}}})}}}}).dump(4));
+  options_t o;
+  o.settings = o.apps = false;
+  auto r = import_from(src, dst, o);
+  ASSERT_TRUE(r.ok) << r.error;
+  auto state = read_json(dst / "sunshine_state.json");
+  EXPECT_FALSE(state["root"].contains("devices"));
+  // The repeated certificate is dropped and every client keeps its own identifier
+  ASSERT_EQ(state["root"]["named_devices"].size(), 2u);
+  EXPECT_EQ(state["root"]["named_devices"][0]["cert"], "C1");
+  EXPECT_EQ(state["root"]["named_devices"][1]["cert"], "C2");
+  EXPECT_NE(state["root"]["named_devices"][0]["uuid"], state["root"]["named_devices"][1]["uuid"]);
+}
+
 TEST_F(ConfigImportTest, MissingIdentitySkipsClientsWithWarning) {
   populate_source(false);
   options_t o;
