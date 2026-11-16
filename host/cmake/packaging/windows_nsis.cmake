@@ -28,6 +28,7 @@ set(NYX_STRINGS_TEMPLATE "
         Function NYX_FN_NAME
           StrCmp $LANGUAGE 1055 0 english
           StrCpy $NYX_MSG_IMPORT 'Bir Apollo veya Sunshine kurulumu bulundu. Ayarları, uygulamaları ve eşleştirilmiş cihazları ${PROJECT_DISPLAY_NAME} içine aktarmak istiyor musunuz?${NYX_NL}${NYX_NL}İki sunucu aynı bağlantı noktalarını kullanamaz: sonrasında diğer sunucuyu durdurun veya kaldırın ya da ayarlardan bağlantı noktasını değiştirin.'
+          StrCpy $NYX_MSG_OLD '${PROJECT_DISPLAY_NAME} zaten kurulu. Yenisini kurmadan önce eski sürüm kaldırılsın mı?'
           StrCpy $NYX_MSG_FAILED 'Kurulum sırasında bazı adımlar tamamlanamadı. Ayrıntılar için kurulum günlüğüne bakın:'
           StrCpy $NYX_MSG_GAMEPAD 'Sanal Oyun Kumandası (ViGEmBus) kaldırılsın mı?'
           StrCpy $NYX_MSG_SUDOVDA 'SudoVDA Sanal Ekran Sürücüsü kaldırılsın mı? Apollo veya başka bir sunucu hâlâ kullanıyorsa kaldırmayın.'
@@ -35,6 +36,7 @@ set(NYX_STRINGS_TEMPLATE "
           Return
         english:
           StrCpy $NYX_MSG_IMPORT 'An Apollo or Sunshine installation was found. Import its settings, applications and paired devices into ${PROJECT_DISPLAY_NAME}?${NYX_NL}${NYX_NL}Both hosts cannot use the same ports: stop or uninstall the other host afterwards, or change the port in the settings.'
+          StrCpy $NYX_MSG_OLD '${PROJECT_DISPLAY_NAME} is already installed. Do you want to remove the old version before installing the new one?'
           StrCpy $NYX_MSG_FAILED 'Some installation steps did not complete. See the installation log for details:'
           StrCpy $NYX_MSG_GAMEPAD 'Do you want to remove Virtual Gamepad?'
           StrCpy $NYX_MSG_SUDOVDA 'Do you want to remove the SudoVDA Virtual Display Driver? Keep it if Apollo or another host still uses it.'
@@ -54,6 +56,7 @@ set(CPACK_NSIS_PAGE_COMPONENTS
         Var NYX_FOUND
         Var NYX_SOURCE
         Var NYX_MSG_IMPORT
+        Var NYX_MSG_OLD
         Var NYX_MSG_FAILED
         Var NYX_MSG_GAMEPAD
         Var NYX_MSG_SUDOVDA
@@ -197,6 +200,51 @@ set(CPACK_NSIS_PAGE_COMPONENTS
         nyx_import_done:
         FunctionEnd
 
+        # Runs before the files of the new version are copied (the component sections follow): reads the start type
+        # of the service of a previous version (a value left by an earlier uninstall is dropped first), then
+        # removes that version
+        Section '-Previous version'
+        Call NyxInitStrings
+        SetRegView 64
+        DeleteRegValue HKLM 'Software${NYX_BS}NyxPlay Host' 'ServiceStartType'
+        ClearErrors
+        ReadRegDWORD $0 HKLM 'SYSTEM${NYX_BS}CurrentControlSet${NYX_BS}Services${NYX_BS}NyxPlayHostService' 'Start'
+        IfErrors nyx_st_done
+        StrCmp $0 2 nyx_st_auto
+        StrCmp $0 3 nyx_st_write
+        StrCmp $0 4 nyx_st_write
+        Goto nyx_st_done
+        nyx_st_auto:
+        ClearErrors
+        ReadRegDWORD $1 HKLM 'SYSTEM${NYX_BS}CurrentControlSet${NYX_BS}Services${NYX_BS}NyxPlayHostService' 'DelayedAutostart'
+        IfErrors nyx_st_write
+        StrCmp $1 1 0 nyx_st_write
+        StrCpy $0 '2-delayed'
+        nyx_st_write:
+        WriteRegStr HKLM 'Software${NYX_BS}NyxPlay Host' 'ServiceStartType' '$0'
+        nyx_st_done:
+        SetRegView default
+        ReadRegStr $0 HKLM 'Software${NYX_BS}Microsoft${NYX_BS}Windows${NYX_BS}CurrentVersion${NYX_BS}Uninstall${NYX_BS}${PROJECT_DISPLAY_NAME}' 'UninstallString'
+        StrCmp $0 '' nyx_old_done
+        StrCpy $2 $0 1 0
+        StrCmp $2 '${NYX_Q}' 0 +2
+        StrCpy $0 $0 '' 1
+        StrCpy $2 $0 1 -1
+        StrCmp $2 '${NYX_Q}' 0 +2
+        StrCpy $0 $0 -1
+        IfFileExists '$0' 0 nyx_old_done
+        StrLen $2 '${NYX_BS}Uninstall.exe'
+        StrCpy $3 $0 -$2
+        MessageBox MB_YESNOCANCEL|MB_ICONEXCLAMATION '$NYX_MSG_OLD' /SD IDYES IDYES nyx_old_run IDNO nyx_old_done
+        Abort
+        nyx_old_run:
+        ClearErrors
+        ExecWait '${NYX_Q}$0${NYX_Q} /S _?=$3' $0
+        StrCpy $1 'Removing the previous version'
+        Call NyxOptional
+        nyx_old_done:
+        SectionEnd
+
         !insertmacro MUI_PAGE_COMPONENTS
         ")
 
@@ -337,8 +385,9 @@ set(CPACK_NSIS_DELETE_ICONS_EXTRA
         Delete '\$SMPROGRAMS\\\\$MUI_TEMP\\\\${PROJECT_DISPLAY_NAME}.lnk'
         ")
 
-# Checking for previous installed versions
-set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL "ON")
+# Previous versions are removed by the '-Previous version' section above, after the start type of the service was read
+# (the generator's own step runs too early for that)
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL "OFF")
 
 # set(CPACK_NSIS_HELP_LINK "https://docs.lizardbyte.dev/projects/sunshine/latest/md_docs_2getting__started.html")
 # set(CPACK_NSIS_URL_INFO_ABOUT "${CMAKE_PROJECT_HOMEPAGE_URL}")

@@ -12,7 +12,7 @@ set "SC=%SystemRoot%\System32\sc.exe"
 set "NET=%SystemRoot%\System32\net.exe"
 set "REGEXE=%SystemRoot%\System32\reg.exe"
 set "SETTINGS_KEY=HKLM\SOFTWARE\NyxPlay Host"
-rem Location used by earlier versions to remember the start type
+rem Location used by earlier versions to remember the start type (no longer read, removed if present)
 set "LEGACY_FILE=%LOCALAPPDATA%\NyxPlay\Host\service_start_type.txt"
 
 if not exist "%SERVICE_BIN%" (
@@ -34,10 +34,10 @@ if errorlevel 1 (
     set "SC_CMD=config"
 )
 
-rem Check if we have a saved start type from the previous installation
+rem The installer stores the start type of the service it is replacing (read from the service itself before
+rem the previous version is removed). Without that value this is a fresh installation.
 set "SAVED="
 for /f "tokens=2,*" %%A in ('reg.exe query "%SETTINGS_KEY%" /v ServiceStartType /reg:64 2^>nul') do set "SAVED=%%B"
-if not defined SAVED if exist "%LEGACY_FILE%" for /f "usebackq delims=" %%a in ("%LEGACY_FILE%") do set "SAVED=%%a"
 
 if "%SAVED%"=="2-delayed" (
     set "START_TYPE=delayed-auto"
