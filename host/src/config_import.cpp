@@ -88,6 +88,26 @@ namespace config_import {
       return fs::is_regular_file(p, ec);
     }
 
+    // The key and certificate paths come from the other host's configuration, so only a parsable PEM
+    // certificate with its matching private key is taken over as the host identity
+    bool is_identity_pair(const fs::path &key_path, const fs::path &cert_path) {
+      constexpr std::uintmax_t max_pem_size = 64 * 1024;
+      std::error_code ec;
+      if (fs::file_size(key_path, ec) > max_pem_size || ec || fs::file_size(cert_path, ec) > max_pem_size || ec) {
+        return false;
+      }
+
+      std::string key_text;
+      std::string cert_text;
+      if (!read_file(key_path, key_text) || !read_file(cert_path, cert_text)) {
+        return false;
+      }
+
+      auto key = crypto::pkey(key_text);
+      auto cert = crypto::x509(cert_text);
+      return key && cert && X509_check_private_key(cert.get(), key.get()) == 1;
+    }
+
     bool is_dir(const fs::path &p) {
       std::error_code ec;
       return fs::is_directory(p, ec);
@@ -813,9 +833,13 @@ namespace config_import {
         }
 
         const size_t clients = root ? count_clients(*root) : 0;
-        const bool identity = have_key && have_cert;
+        const bool identity = have_key && have_cert && is_identity_pair(src_loc.pkey, src_loc.cert);
         bool take_state = root != nullptr;
         bool take_identity = identity;
+
+        if (have_key && have_cert && !identity) {
+          result.warnings.push_back("clients: host certificate and private key are not a valid matching PEM pair, identity skipped");
+        }
 
         if (clients > 0 && !identity) {
           // Paired clients pin the host certificate, so they are useless without it.

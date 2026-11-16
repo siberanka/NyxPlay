@@ -54,8 +54,14 @@ namespace {
     return false;
   }
 
-  const std::string key_bytes = std::string("PRIVATE\0KEY\r\n\xFF\x01", 17);
-  const std::string cert_bytes = "CERTIFICATE\r\nDATA";
+  // The import only takes over a certificate with its matching private key, so the fixtures use a real pair
+  const crypto::creds_t &test_identity() {
+    static const auto creds = crypto::gen_creds("NyxPlay Import Test", 2048);
+    return creds;
+  }
+
+  const std::string key_bytes = test_identity().pkey;
+  const std::string cert_bytes = test_identity().x509;
 }  // namespace
 
 class ConfigImportTest: public ::testing::Test {
@@ -473,4 +479,22 @@ TEST_F(ConfigImportTest, ConfFileWithByteOrderMarkKeepsItsFirstKey) {
   const auto conf = read(dst / "sunshine.conf");
   EXPECT_EQ(conf.find("\xEF\xBB\xBF"), std::string::npos);
   EXPECT_NE(conf.find("sunshine_name = Bom PC"), std::string::npos);
+}
+
+TEST_F(ConfigImportTest, IdentityThatIsNotAMatchingPemPairIsSkipped) {
+  populate_source();
+  write(src / "credentials" / "cakey.pem", "PRIVATE KEY\r\nDATA");
+  auto r = import_from(src, dst);
+  ASSERT_TRUE(r.ok) << r.error;
+  EXPECT_TRUE(has_warning(r, "not a valid matching PEM pair"));
+  EXPECT_FALSE(fs::exists(dst / "credentials" / "cakey.pem"));
+  EXPECT_FALSE(fs::exists(dst / "credentials" / "cacert.pem"));
+
+  // A valid certificate with the key of another host is rejected as well
+  auto other = crypto::gen_creds("Other Host", 2048);
+  write(src / "credentials" / "cakey.pem", other.pkey);
+  r = import_from(src, dst);
+  ASSERT_TRUE(r.ok) << r.error;
+  EXPECT_TRUE(has_warning(r, "not a valid matching PEM pair"));
+  EXPECT_FALSE(fs::exists(dst / "credentials" / "cakey.pem"));
 }
