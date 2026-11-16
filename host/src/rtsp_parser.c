@@ -307,6 +307,7 @@ void insertOption(POPTION_ITEM* optionsHead, POPTION_ITEM opt) {
         // Check for duplicate option; if so, replace the option currently there
         if (!strcmp(current->option, opt->option)) {
             current->content = opt->content;
+            free(opt);
             return;
         }
         if (current->next == NULL) {

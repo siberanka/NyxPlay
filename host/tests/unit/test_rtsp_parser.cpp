@@ -82,3 +82,21 @@ TEST(RtspParser, MessageEndingInsideAValueIsMalformed) {
   EXPECT_EQ(parse("OPTIONS x RTSP/1.0\r\nFoo:\r\n\r\nBar", msg), RTSP_ERROR_MALFORMED);
   EXPECT_EQ(parse("", msg), RTSP_ERROR_MALFORMED);
 }
+
+TEST(RtspParser, RepeatedHeaderKeepsTheLastValue) {
+  RTSP_MESSAGE msg;
+  ASSERT_EQ(parse("OPTIONS x RTSP/1.0\r\nA: 1\r\nCSeq: 4\r\nA: 2\r\n\r\n", msg), RTSP_ERROR_SUCCESS);
+  EXPECT_EQ(option(msg, "A"), "2");
+  EXPECT_EQ(msg.sequenceNumber, 4);
+  // Every repeated header node must be released by freeMessage
+  freeMessage(&msg);
+
+  std::string many = "OPTIONS x RTSP/1.0\r\n";
+  for (int i = 0; i < 100; i++) {
+    many += "A: 1\r\n";
+  }
+  many += "\r\n";
+  ASSERT_EQ(parse(many, msg), RTSP_ERROR_SUCCESS);
+  EXPECT_EQ(option(msg, "A"), "1");
+  freeMessage(&msg);
+}
