@@ -31,9 +31,48 @@ bool NvComputer::isValidUuid(const QString& uuid)
     return uuidRegex.match(uuid).hasMatch();
 }
 
+QString NvComputer::sanitizeName(const QString& name)
+{
+    // Longest host name kept, in code points
+    const int maxLength = 64;
+
+    QString result;
+    int count = 0;
+    for (int i = 0; i < name.size() && count < maxLength; i++) {
+        char32_t cp = name.at(i).unicode();
+        if (QChar::isHighSurrogate(cp) && i + 1 < name.size() && name.at(i + 1).isLowSurrogate()) {
+            cp = QChar::surrogateToUcs4(name.at(i), name.at(i + 1));
+            i++;
+        }
+
+        switch (QChar::category(cp)) {
+        case QChar::Other_Control:
+        case QChar::Other_Format:
+        case QChar::Other_Surrogate:
+        case QChar::Separator_Line:
+        case QChar::Separator_Paragraph:
+            continue;
+        default:
+            break;
+        }
+
+        if (QChar::requiresSurrogates(cp)) {
+            result.append(QChar(QChar::highSurrogate(cp)));
+            result.append(QChar(QChar::lowSurrogate(cp)));
+        }
+        else {
+            result.append(QChar(cp));
+        }
+        count++;
+    }
+
+    return result.trimmed();
+}
+
 NvComputer::NvComputer(QSettings& settings)
 {
-    this->name = settings.value(SER_NAME).toString();
+    // Entries saved by older versions may hold an unchecked host name
+    this->name = sanitizeName(settings.value(SER_NAME).toString());
     this->uuid = settings.value(SER_UUID).toString();
     this->hasCustomName = settings.value(SER_CUSTOMNAME).toBool();
     this->macAddress = settings.value(SER_MAC).toByteArray();
@@ -140,7 +179,7 @@ NvComputer::NvComputer(NvHTTP& http, QString serverInfo)
     this->serverCert = http.serverCert();
 
     this->hasCustomName = false;
-    this->name = NvHTTP::getXmlString(serverInfo, "hostname");
+    this->name = sanitizeName(NvHTTP::getXmlString(serverInfo, "hostname"));
     if (this->name.isEmpty()) {
         this->name = "UNKNOWN";
     }

@@ -442,7 +442,7 @@ public class NvHTTP {
     public ComputerDetails getComputerDetails(String serverInfo) throws IOException, XmlPullParserException {
         ComputerDetails details = new ComputerDetails();
 
-        details.name = getXmlString(serverInfo, "hostname", false);
+        details.name = ComputerDetails.sanitizeName(getXmlString(serverInfo, "hostname", false));
         if (details.name == null || details.name.isEmpty()) {
             details.name = "UNKNOWN";
         }

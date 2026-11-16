@@ -47,6 +47,10 @@ public:
     // Host IDs are used to build cache paths, so only a strict safe charset is accepted
     static bool isValidUuid(const QString& uuid);
 
+    // Host names come from the host, so they are cut to a sane length and stripped of control
+    // and formatting characters that could hide or reorder text in the UI
+    static QString sanitizeName(const QString& name);
+
     void
     setRemoteAddress(QHostAddress);
 

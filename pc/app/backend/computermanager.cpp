@@ -607,7 +607,7 @@ void ComputerManager::renameHost(NvComputer* computer, QString name)
     {
         QWriteLocker lock(&computer->lock);
 
-        computer->name = name;
+        computer->name = NvComputer::sanitizeName(name);
         computer->hasCustomName = true;
     }
 

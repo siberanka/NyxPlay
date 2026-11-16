@@ -159,6 +159,24 @@ private slots:
         QFETCH(bool, valid);
         QCOMPARE(NvComputer::isValidUuid(uuid), valid);
     }
+
+    void hostName()
+    {
+        QCOMPARE(NvComputer::sanitizeName("Living Room PC"), QString("Living Room PC"));
+        // A right-to-left override would make the following text read backwards
+        QCOMPARE(NvComputer::sanitizeName(QString::fromUtf8("PC\xe2\x80\xae" "exe.txt")), QString("PCexe.txt"));
+        QCOMPARE(NvComputer::sanitizeName(QString("A\r\n\tB  ")), QString("AB"));
+        QCOMPARE(NvComputer::sanitizeName(QString(2 * 1024 * 1024, 'x')).size(), 64);
+
+        // Characters outside the BMP count once and are never split
+        QString emoji;
+        for (int i = 0; i < 100; i++) {
+            emoji += QString::fromUtf8("\xf0\x9f\x8e\xae");
+        }
+        QString cut = NvComputer::sanitizeName(emoji);
+        QCOMPARE(cut.size(), 128);
+        QVERIFY(cut.back().isLowSurrogate());
+    }
 };
 
 class IdentityStoreTest : public QObject

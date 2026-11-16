@@ -170,7 +170,8 @@ public class ComputerDatabaseManager {
         ComputerDetails details = new ComputerDetails();
 
         details.uuid = c.getString(0);
-        details.name = c.getString(1);
+        // Entries saved by older versions may hold an unchecked host name
+        details.name = ComputerDetails.sanitizeName(c.getString(1));
         try {
             JSONObject addresses = new JSONObject(c.getString(2));
             details.localAddress = tupleFromJson(addresses, AddressFields.LOCAL);

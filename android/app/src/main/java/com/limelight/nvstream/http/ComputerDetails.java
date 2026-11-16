@@ -97,6 +97,35 @@ public class ComputerDetails {
     // Server commands
     public List<String> serverCommands;
 
+    // Longest host name kept, in code points
+    public static final int MAX_NAME_LENGTH = 64;
+
+    // The host chooses its own name, so it is limited in length and stripped of control and
+    // formatting characters, which could otherwise reorder or hide text around it in the UI
+    public static String sanitizeName(String name) {
+        if (name == null) {
+            return null;
+        }
+
+        StringBuilder sb = new StringBuilder(Math.min(name.length(), MAX_NAME_LENGTH * 2));
+        int count = 0;
+        for (int i = 0; i < name.length() && count < MAX_NAME_LENGTH; ) {
+            int cp = name.codePointAt(i);
+            i += Character.charCount(cp);
+
+            int type = Character.getType(cp);
+            if (type == Character.CONTROL || type == Character.FORMAT || type == Character.SURROGATE ||
+                    type == Character.LINE_SEPARATOR || type == Character.PARAGRAPH_SEPARATOR) {
+                continue;
+            }
+
+            sb.appendCodePoint(cp);
+            count++;
+        }
+
+        return sb.toString().trim();
+    }
+
     public ComputerDetails() {
         // Use defaults
         state = State.UNKNOWN;
