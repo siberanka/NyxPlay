@@ -11,6 +11,7 @@
 // standard includes
 #include <fcntl.h>
 #include <ifaddrs.h>
+#include <thread>
 
 // platform includes
 #include <arpa/inet.h>
@@ -194,6 +195,10 @@ namespace platf {
       }
     }
     // clang-format on
+  }
+
+  void run_detached(std::function<void()> fn) {
+    std::thread {std::move(fn)}.detach();
   }
 
   /**

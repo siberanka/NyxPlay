@@ -731,6 +731,14 @@ namespace platf {
   std::unique_ptr<deinit_t> enable_socket_qos(uintptr_t native_socket, boost::asio::ip::address &address, uint16_t port, qos_data_type_e data_type, bool dscp_tagging);
 
   /**
+   * @brief Run a function on a new detached thread.
+   * @details Detaching a `std::thread` leaks one event handle per thread with the winpthreads runtime,
+   *          so Windows creates the thread through the Win32 API and releases its handle immediately.
+   * @param fn The function to run.
+   */
+  void run_detached(std::function<void()> fn);
+
+  /**
    * @brief Open a url in the default web browser.
    * @param url The url to open.
    */

@@ -11,6 +11,7 @@
 // standard includes
 #include <fstream>
 #include <iostream>
+#include <thread>
 
 // platform includes
 #include <arpa/inet.h>
@@ -337,6 +338,10 @@ std::string get_local_ip_for_gateway() {
       }
     }
     // clang-format on
+  }
+
+  void run_detached(std::function<void()> fn) {
+    std::thread {std::move(fn)}.detach();
   }
 
   /**

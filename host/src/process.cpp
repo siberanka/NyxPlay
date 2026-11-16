@@ -547,7 +547,7 @@ namespace proc {
       _hdr_cancel = hdr_cancel;
     }
 
-    auto resetHDRThread = std::thread([this, hdr_cancel, enable_hdr = launch_session->enable_hdr]{
+    platf::run_detached([this, hdr_cancel, enable_hdr = launch_session->enable_hdr]{
       // Windows doesn't seem to be able to set HDR correctly when a display is just connected / changed resolution,
       // so we have tooggle HDR for the virtual display manually after a delay.
       auto retryInterval = 200ms;
@@ -610,8 +610,6 @@ namespace proc {
         }
       }
     });
-
-    resetHDRThread.detach();
   #endif
 
     fg.disable();
@@ -672,7 +670,7 @@ namespace proc {
     BOOST_LOG(info) << "Session resuming for app [" << _app_name << "].";
 
     if (!_app.state_cmds.empty()) {
-      auto exec_thread = std::thread([cmd_list = _app.state_cmds, app_working_dir = _app.working_dir, _env = _env]() mutable {
+      platf::run_detached([cmd_list = _app.state_cmds, app_working_dir = _app.working_dir, _env = _env]() mutable {
 
         _env["APOLLO_APP_STATUS"] = "RESUMING";
         _env["NYXPLAY_APP_STATUS"] = "RESUMING";
@@ -708,8 +706,6 @@ namespace proc {
           }
         }
       });
-
-      exec_thread.detach();
     }
   }
 
@@ -730,7 +726,7 @@ namespace proc {
     BOOST_LOG(info) << "Session pausing for app [" << _app_name << "].";
 
     if (!_app.state_cmds.empty()) {
-      auto exec_thread = std::thread([cmd_list = _app.state_cmds, app_working_dir = _app.working_dir, _env = _env]() mutable {
+      platf::run_detached([cmd_list = _app.state_cmds, app_working_dir = _app.working_dir, _env = _env]() mutable {
         _env["APOLLO_APP_STATUS"] = "PAUSING";
         _env["NYXPLAY_APP_STATUS"] = "PAUSING";
 
@@ -765,8 +761,6 @@ namespace proc {
           }
         }
       });
-
-      exec_thread.detach();
     }
 
 #if defined SUNSHINE_TRAY && SUNSHINE_TRAY >= 1

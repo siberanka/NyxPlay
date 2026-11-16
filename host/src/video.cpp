@@ -1940,12 +1940,11 @@ namespace video {
     // streaming to continue without requiring a full restart of Sunshine.
     auto fail_guard = util::fail_guard([&encoder, &session] {
       if (encoder.flags & ASYNC_TEARDOWN) {
-        std::thread encoder_teardown_thread {[session = std::move(session)]() mutable {
+        platf::run_detached([session = std::make_shared<decltype(session)>(std::move(session))]() {
           BOOST_LOG(info) << "Starting async encoder teardown";
-          session.reset();
+          session->reset();
           BOOST_LOG(info) << "Async encoder teardown complete";
-        }};
-        encoder_teardown_thread.detach();
+        });
       }
     });
 

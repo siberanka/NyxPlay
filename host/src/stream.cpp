@@ -1197,7 +1197,7 @@ namespace stream {
         auto cmd = config::sunshine.server_cmds[cmdIndex];
         BOOST_LOG(info) << "Executing server command: " << cmd.cmd_name;
 
-        auto exec_thread = std::thread([cmd = std::move(cmd)]{
+        platf::run_detached([cmd = std::move(cmd)]{
           std::error_code ec;
           auto env = proc::proc.get_env();
           boost::filesystem::path working_dir = proc::find_working_directory(cmd.cmd_val, env);
@@ -1209,8 +1209,6 @@ namespace stream {
             child.detach();
           }
         });
-
-        exec_thread.detach();
       } else {
         BOOST_LOG(error) << "Invalid server command index: " << (int)cmdIndex;
       }
@@ -2267,7 +2265,7 @@ namespace stream {
       input::reset(session.input);
 
       if (!session.undo_cmds.empty()) {
-        auto exec_thread = std::thread([cmd_list = session.undo_cmds]{
+        platf::run_detached([cmd_list = session.undo_cmds]{
           for (auto &cmd : cmd_list) {
             std::error_code ec;
             auto env = proc::proc.get_env();
@@ -2281,8 +2279,6 @@ namespace stream {
             }
           }
         });
-
-        exec_thread.detach();
       }
 
       // If this is the last session, invoke the platform callbacks
@@ -2352,7 +2348,7 @@ namespace stream {
       }
 
       if (!session.do_cmds.empty()) {
-        auto exec_thread = std::thread([cmd_list = session.do_cmds]{
+        platf::run_detached([cmd_list = session.do_cmds]{
           for (auto &cmd : cmd_list) {
             std::error_code ec;
             auto env = proc::proc.get_env();
@@ -2366,8 +2362,6 @@ namespace stream {
             }
           }
         });
-
-        exec_thread.detach();
       }
 
       return 0;

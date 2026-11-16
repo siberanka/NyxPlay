@@ -11,6 +11,7 @@
 #include <mutex>
 #include <set>
 #include <sstream>
+#include <thread>
 
 #ifndef BOOST_PROCESS_VERSION
  #define BOOST_PROCESS_VERSION 1
@@ -1059,6 +1060,30 @@ namespace platf {
 
     // Use the results of the launch to create a bp::child object
     return create_boost_child_from_results(ret, cmd, ec, process_info);
+  }
+
+  void run_detached(std::function<void()> fn) {
+    struct holder_t {
+      std::function<void()> fn;
+    };
+
+    auto holder = std::make_unique<holder_t>(holder_t {std::move(fn)});
+    HANDLE thread = CreateThread(nullptr, 0, [](LPVOID param) -> DWORD {
+      std::unique_ptr<holder_t> owned {static_cast<holder_t *>(param)};
+      owned->fn();
+      return 0;
+    }, holder.get(), 0, nullptr);
+
+    if (thread) {
+      holder.release();
+      CloseHandle(thread);
+      return;
+    }
+
+    BOOST_LOG(warning) << "CreateThread() failed, falling back to std::thread: "sv << GetLastError();
+    std::thread {[fn = std::move(holder->fn)]() {
+      fn();
+    }}.detach();
   }
 
   /**
