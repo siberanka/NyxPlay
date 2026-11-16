@@ -12,7 +12,10 @@
 ### Fixed
 - Concurrent clients no longer reset each other; launch/resume/cancel/terminate are serialised per slot.
 - Android discovery, polling, pairing and teardown robustness; IME text ordering; RTSP and server info parsing.
-- PC keeps the host address you typed and recovers from connection resets.
+- PC keeps the host address you typed and recovers from connection resets; the `pair` and `list` commands always exit with a result code.
+- Idle TLS connections no longer block new HTTPS handshakes on the host.
+- Upgrades keep the start type of the host service; a missing ViGEmBus driver is logged as a warning.
+- Android shows clear errors for invalid links, app lists that cannot be loaded and launch timeouts.
 
 ### Added
 - Host: import of settings, apps and paired devices from Apollo or Sunshine.
