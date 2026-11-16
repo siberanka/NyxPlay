@@ -203,8 +203,8 @@ namespace platf {
       client_t client {vigem_alloc()};
       VIGEM_ERROR status = vigem_connect(client.get());
       if (!VIGEM_SUCCESS(status)) {
-        // Log a special fatal message for this case to show the error in the web UI
-        BOOST_LOG(fatal) << "ViGEmBus is not installed or running. You must install ViGEmBus for gamepad support!"sv;
+        // The host works without gamepad support, so a missing driver is a warning rather than a fatal error
+        BOOST_LOG(warning) << "ViGEmBus is not installed or running. Install it if you need gamepad support."sv;
       } else {
         vigem_disconnect(client.get());
       }
