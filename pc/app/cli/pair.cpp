@@ -4,11 +4,18 @@
 #include "backend/computerseeker.h"
 #include <QCoreApplication>
 #include <QTimer>
+#include <cstdio>
 
 #define COMPUTER_SEEK_TIMEOUT 10000
 
 // The host keeps a pending pairing request for about this long
 #define PAIRING_TIMEOUT 120000
+
+// Process exit codes of the pair command
+#define EXIT_PAIR_OK 0
+#define EXIT_PAIR_FAILED 1
+#define EXIT_PAIR_ALREADY_PAIRED 2
+#define EXIT_PAIR_TIMEOUT 3
 
 namespace CliPair
 {
@@ -47,6 +54,20 @@ class LauncherPrivate
 public:
     LauncherPrivate(Launcher *q) : q_ptr(q) {}
 
+    // Reports the final result on the console and ends the event loop, so the
+    // command never waits for a dialog to be closed.
+    void finish(int exitCode, const QString& message)
+    {
+        QByteArray text = message.toLocal8Bit();
+        FILE* out = exitCode == EXIT_PAIR_OK ? stdout : stderr;
+        fprintf(out, "%s\n", text.constData());
+        fflush(out);
+
+        QTimer::singleShot(0, QCoreApplication::instance(), [exitCode]() {
+            QCoreApplication::exit(exitCode);
+        });
+    }
+
     void handleEvent(Event event)
     {
         Q_Q(Launcher);
@@ -82,6 +103,7 @@ public:
                     m_State = StateFailure;
                     QString msg = QObject::tr("%1 is already paired").arg(event.computer->name);
                     emit q->failed(msg);
+                    finish(EXIT_PAIR_ALREADY_PAIRED, msg);
                 }
                 else {
                     Q_ASSERT(!m_PredefinedPin.isEmpty());
@@ -100,10 +122,12 @@ public:
                 if (event.errorMessage.isEmpty()) {
                     m_State = StateComplete;
                     emit q->success();
+                    finish(EXIT_PAIR_OK, QObject::tr("Pairing completed successfully"));
                 }
                 else {
                     m_State = StateFailure;
                     emit q->failed(event.errorMessage);
+                    finish(EXIT_PAIR_FAILED, event.errorMessage);
                 }
             }
             break;
@@ -111,11 +135,15 @@ public:
         case Event::Timedout:
             if (m_State == StateSeekComputer) {
                 m_State = StateFailure;
-                emit q->failed(QObject::tr("Failed to connect to %1").arg(m_ComputerName));
+                QString msg = QObject::tr("Failed to connect to %1").arg(m_ComputerName);
+                emit q->failed(msg);
+                finish(EXIT_PAIR_TIMEOUT, msg);
             }
             else if (m_State == StatePairing) {
                 m_State = StateFailure;
-                emit q->failed(QObject::tr("Pairing timed out"));
+                QString msg = QObject::tr("Pairing timed out");
+                emit q->failed(msg);
+                finish(EXIT_PAIR_TIMEOUT, msg);
             }
             break;
         }

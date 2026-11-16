@@ -3716,7 +3716,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
                     if (portFlags != 0 && !hostResetDuringRtsp) {
                         dialogText += "\n\n" + getResources().getString(R.string.check_ports_msg) + "\n" +
-                                MoonBridge.stringifyPortFlags(portFlags, "\n");
+                                describePorts(portFlags);
                     }
 
                     if (portTestResult != MoonBridge.ML_TEST_RESULT_INCONCLUSIVE && portTestResult != 0)  {
@@ -3730,6 +3730,35 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
         });
 
         return false;
+    }
+
+    // The native port names assume the default base port (HTTP 47989). The host derives its
+    // other ports from the configured HTTP port, so shift each listed port by the same amount.
+    private String describePorts(int portFlags) {
+        String names = MoonBridge.stringifyPortFlags(portFlags, "\n");
+        int offset = port - NvHTTP.DEFAULT_HTTP_PORT;
+        if (offset == 0 || names == null) {
+            return names;
+        }
+
+        StringBuilder result = new StringBuilder();
+        for (String line : names.split("\n")) {
+            int space = line.lastIndexOf(' ');
+            if (result.length() != 0) {
+                result.append('\n');
+            }
+            try {
+                int shifted = Integer.parseInt(line.substring(space + 1)) + offset;
+                if (space > 0 && shifted > 0 && shifted <= 65535) {
+                    result.append(line, 0, space + 1).append(shifted);
+                    continue;
+                }
+            } catch (NumberFormatException ignored) {
+                // Keep the original text
+            }
+            result.append(line);
+        }
+        return result.toString();
     }
 
     // errno values (Linux and Windows) for a peer reset, abort, broken pipe, timeout or oversized message
@@ -3844,7 +3873,7 @@ public class Game extends AppCompatActivity implements SurfaceHolder.Callback,
 
                         if (portFlags != 0) {
                             message += "\n\n" + getResources().getString(R.string.check_ports_msg) + "\n" +
-                                    MoonBridge.stringifyPortFlags(portFlags, "\n");
+                                    describePorts(portFlags);
                         }
 
                         Dialog.displayDialog(Game.this, getResources().getString(R.string.conn_terminated_title),

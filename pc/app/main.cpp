@@ -1005,6 +1005,7 @@ int main(int argc, char *argv[])
     QString initialView;
     bool hasGUI = true;
     ComputerManager* listComputerManager = nullptr;
+    bool pairCommand = false;
 
     switch (commandLineParserResult) {
     case GlobalCommandLineParser::NormalStartRequested:
@@ -1037,6 +1038,7 @@ int main(int argc, char *argv[])
             PairCommandLineParser pairParser;
             pairParser.parse(app.arguments());
             auto launcher = new CliPair::Launcher(pairParser.getHost(), pairParser.getPredefinedPin(), &app);
+            pairCommand = true;
             engine.rootContext()->setContextProperty("launcher", launcher);
             break;
         }
@@ -1064,8 +1066,8 @@ int main(int argc, char *argv[])
 
     int err = app.exec();
 
-    if (listComputerManager != nullptr) {
-        // The list command is meant for scripts, so make sure that a stuck
+    if (listComputerManager != nullptr || pairCommand) {
+        // The list and pair commands are meant for scripts, so make sure that a stuck
         // teardown can never keep the process alive.
         std::thread([err]() {
             std::this_thread::sleep_for(std::chrono::seconds(20));

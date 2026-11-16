@@ -475,6 +475,11 @@
     </message>
     <message>
         <location filename="../cli/pair.cpp" line="1"/>
+        <source>Pairing completed successfully</source>
+        <translation>Eşleştirme başarıyla tamamlandı</translation>
+    </message>
+    <message>
+        <location filename="../cli/pair.cpp" line="1"/>
         <source>Pairing timed out</source>
         <translation>Eşleştirme zaman aşımına uğradı</translation>
     </message>
