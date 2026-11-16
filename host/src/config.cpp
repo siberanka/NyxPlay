@@ -800,7 +800,11 @@ namespace config {
     if (val.size() >= 2 && val.substr(0, 2) == "0x"sv) {
       input = util::from_hex<int>(val.substr(2));
     } else {
-      input = util::from_view(val);
+      try {
+        input = util::from_view_as<int>(val);
+      } catch (const std::out_of_range &) {
+        BOOST_LOG(warning) << "config: ignoring out of range value for "sv << name;
+      }
     }
 
     vars.erase(it);
@@ -824,7 +828,11 @@ namespace config {
     if (val.size() >= 2 && val.substr(0, 2) == "0x"sv) {
       input = util::from_hex<int>(val.substr(2));
     } else {
-      input = util::from_view(val);
+      try {
+        input = util::from_view_as<int>(val);
+      } catch (const std::out_of_range &) {
+        BOOST_LOG(warning) << "config: ignoring out of range value for "sv << name;
+      }
     }
 
     vars.erase(it);
@@ -936,7 +944,10 @@ namespace config {
     auto pos = begin;
     while (pos < std::cend(string)) {
       if (*pos == '[') {
-        pos = skip_list(pos + 1, std::cend(string)) + 1;
+        pos = skip_list(pos + 1, std::cend(string));
+        if (pos != std::cend(string)) {
+          ++pos;
+        }
       } else if (*pos == ']') {
         break;
       } else if (*pos == ',') {
@@ -966,15 +977,20 @@ namespace config {
     // We need to add a wrapping object to make it valid JSON, otherwise ptree cannot parse it.
     jsonStream << "{\"prep_cmd\":" << string << "}";
 
-    boost::property_tree::ptree jsonTree;
-    boost::property_tree::read_json(jsonStream, jsonTree);
+    try {
+      boost::property_tree::ptree jsonTree;
+      boost::property_tree::read_json(jsonStream, jsonTree);
 
-    for (auto &[_, prep_cmd] : jsonTree.get_child("prep_cmd"s)) {
-      auto do_cmd = prep_cmd.get_optional<std::string>("do"s);
-      auto undo_cmd = prep_cmd.get_optional<std::string>("undo"s);
-      auto elevated = prep_cmd.get_optional<bool>("elevated"s);
+      for (auto &[_, prep_cmd] : jsonTree.get_child("prep_cmd"s)) {
+        auto do_cmd = prep_cmd.get_optional<std::string>("do"s);
+        auto undo_cmd = prep_cmd.get_optional<std::string>("undo"s);
+        auto elevated = prep_cmd.get_optional<bool>("elevated"s);
 
-      input.emplace_back(do_cmd.value_or(""), undo_cmd.value_or(""), elevated.value_or(false));
+        input.emplace_back(do_cmd.value_or(""), undo_cmd.value_or(""), elevated.value_or(false));
+      }
+    } catch (const boost::property_tree::ptree_error &err) {
+      BOOST_LOG(error) << "config: ignoring invalid JSON in "sv << name << ": "sv << err.what();
+      input.clear();
     }
   }
 
@@ -992,15 +1008,20 @@ namespace config {
     // We need to add a wrapping object to make it valid JSON, otherwise ptree cannot parse it.
     jsonStream << "{\"server_cmd\":" << string << "}";
 
-    boost::property_tree::ptree jsonTree;
-    boost::property_tree::read_json(jsonStream, jsonTree);
+    try {
+      boost::property_tree::ptree jsonTree;
+      boost::property_tree::read_json(jsonStream, jsonTree);
 
-    for (auto &[_, prep_cmd] : jsonTree.get_child("server_cmd"s)) {
-      auto cmd_name = prep_cmd.get_optional<std::string>("name"s);
-      auto cmd_val = prep_cmd.get_optional<std::string>("cmd"s);
-      auto elevated = prep_cmd.get_optional<bool>("elevated"s);
+      for (auto &[_, prep_cmd] : jsonTree.get_child("server_cmd"s)) {
+        auto cmd_name = prep_cmd.get_optional<std::string>("name"s);
+        auto cmd_val = prep_cmd.get_optional<std::string>("cmd"s);
+        auto elevated = prep_cmd.get_optional<bool>("elevated"s);
 
-      input.emplace_back(cmd_name.value_or(""), cmd_val.value_or(""), elevated.value_or(false));
+        input.emplace_back(cmd_name.value_or(""), cmd_val.value_or(""), elevated.value_or(false));
+      }
+    } catch (const boost::property_tree::ptree_error &err) {
+      BOOST_LOG(error) << "config: ignoring invalid JSON in "sv << name << ": "sv << err.what();
+      input.clear();
     }
   }
 
@@ -1031,7 +1052,12 @@ namespace config {
       if (val.size() >= 2 && val.substr(0, 2) == "0x"sv) {
         tmp = util::from_hex<int>(val.substr(2));
       } else {
-        tmp = util::from_view(val);
+        try {
+          tmp = util::from_view_as<int>(val);
+        } catch (const std::out_of_range &) {
+          BOOST_LOG(warning) << "config: ignoring out of range value in "sv << name;
+          continue;
+        }
       }
       input.emplace_back(tmp);
     }
