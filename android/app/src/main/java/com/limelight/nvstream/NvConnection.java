@@ -486,6 +486,16 @@ public class NvConnection {
                         if (!retry || timedOut) {
                             return;
                         }
+                    } catch (RuntimeException e) {
+                        // A host response that cannot be interpreted must end this attempt with an
+                        // error instead of terminating the app from the connection thread
+                        if (stopRequested) {
+                            return;
+                        }
+                        e.printStackTrace();
+                        context.connListener.displayMessage("Malformed response from the host");
+                        context.connListener.stageFailed(appName, 0, 0);
+                        return;
                     }
 
                     if (!retry) break;
