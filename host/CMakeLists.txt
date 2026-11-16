@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.20)
 # `cmake_path(CONVERT ... TO_NATIVE_PATH_LIST ...)` requires 3.20
 # todo - set this conditionally
 
-project(NyxPlayHost VERSION 2026.11.14.1
+project(NyxPlayHost VERSION 2026.11.16.1
         DESCRIPTION "Self-hosted game stream host for NyxPlay"
         HOMEPAGE_URL "https://github.com/siberanka/NyxPlay")
 

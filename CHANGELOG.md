@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026.11.16.1
+
+### Security
+- Host: integers sent by clients are range-checked (stream parameters, session key id, frame rate) instead of being truncated.
+- Host: the RTSP parser frees repeated headers; empty ANNOUNCE attribute values are handled.
+- Host: settings import takes over the host certificate only as a valid, matching certificate and private key pair.
+- Android and PC: host names are limited to 64 characters and stripped of control and text-direction characters.
+
+### Fixed
+- Host: no longer leaks a Windows handle on every app launch, pause, resume and stream session.
+- Host: invalid JSON in `global_prep_cmd`, `global_state_cmd` or `server_cmd` is logged and ignored instead of stopping the host.
+- Host: clients imported from the legacy `devices` layout get the same duplicate and ID checks as other clients.
+- Host: unterminated nested lists in the configuration are no longer read past their end.
+- Android: unreadable numbers in host responses (ports, current game, app index, version) no longer crash the app; a stream start ends with an error instead.
+- Installer: the startup component name is no longer cut off.
+
+### Known issues
+- `/cancel` waits up to the app's exit timeout (5 s by default) and other requests to the host wait meanwhile, as in upstream.
+
 ## 2026.11.14.1
 
 ### Security
