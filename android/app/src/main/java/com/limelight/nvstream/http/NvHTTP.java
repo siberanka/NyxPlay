@@ -648,20 +648,26 @@ public class NvHTTP {
         // MaxLumaPixelsH264 wasn't present on old GFE versions
         String str = getXmlString(serverInfo, "MaxLumaPixelsH264", false);
         if (str != null) {
-            return Long.parseLong(str);
-        } else {
-            return 0;
+            try {
+                return Long.parseLong(str.trim());
+            } catch (NumberFormatException e) {
+                LimeLog.warning("Ignoring an unreadable MaxLumaPixelsH264 value");
+            }
         }
+        return 0;
     }
     
     public long getMaxLumaPixelsHEVC(String serverInfo) throws XmlPullParserException, IOException {
         // MaxLumaPixelsHEVC wasn't present on old GFE versions
         String str = getXmlString(serverInfo, "MaxLumaPixelsHEVC", false);
         if (str != null) {
-            return Long.parseLong(str);
-        } else {
-            return 0;
+            try {
+                return Long.parseLong(str.trim());
+            } catch (NumberFormatException e) {
+                LimeLog.warning("Ignoring an unreadable MaxLumaPixelsHEVC value");
+            }
         }
+        return 0;
     }
 
     // Possible meaning of bits
@@ -715,7 +721,11 @@ public class NvHTTP {
         // has the semantics that its name would indicate. To contain the effects of this change as much
         // as possible, we'll force the current game to zero if the server isn't in a streaming session.
         if (getXmlString(serverInfo, "state", true).endsWith("_SERVER_BUSY")) {
-            return Integer.parseInt(getXmlString(serverInfo, "currentgame", true));
+            try {
+                return Integer.parseInt(getXmlString(serverInfo, "currentgame", true).trim());
+            } catch (NumberFormatException e) {
+                throw new XmlPullParserException("Malformed currentgame in host response");
+            }
         }
         else {
             return 0;
@@ -724,7 +734,10 @@ public class NvHTTP {
 
     public int getHttpsPort(String serverInfo) {
         try {
-            return Integer.parseInt(getXmlString(serverInfo, "HttpsPort", true));
+            return Integer.parseInt(getXmlString(serverInfo, "HttpsPort", true).trim());
+        } catch (NumberFormatException e) {
+            LimeLog.warning("Ignoring an unreadable HttpsPort value");
+            return DEFAULT_HTTPS_PORT;
         } catch (XmlPullParserException e) {
             e.printStackTrace();
             return DEFAULT_HTTPS_PORT;
@@ -738,7 +751,10 @@ public class NvHTTP {
         // This is an extension which is not present in GFE. It is present for Sunshine to be able
         // to support dynamic HTTP WAN ports without requiring the user to manually enter the port.
         try {
-            return Integer.parseInt(getXmlString(serverInfo, "ExternalPort", true));
+            return Integer.parseInt(getXmlString(serverInfo, "ExternalPort", true).trim());
+        } catch (NumberFormatException e) {
+            LimeLog.warning("Ignoring an unreadable ExternalPort value");
+            return baseUrlHttp.port();
         } catch (XmlPullParserException e) {
             // Expected on non-Sunshine servers
             return baseUrlHttp.port();
@@ -865,7 +881,7 @@ public class NvHTTP {
                 } else if (currentTag.peek().equals("UUID")) {
                     app.setAppUUID(xpp.getText());
                 } else if (currentTag.peek().equals("IDX")) {
-                    app.setAppIndex(Integer.parseInt(xpp.getText()));
+                    app.setAppIndex(xpp.getText());
                 } else if (currentTag.peek().equals("ID")) {
                     app.setAppId(xpp.getText());
                 } else if (currentTag.peek().equals("IsHdrSupported")) {
@@ -953,15 +969,19 @@ public class NvHTTP {
     public int[] getServerAppVersionQuad(String serverInfo) throws XmlPullParserException, IOException {
         String serverVersion = getServerVersion(serverInfo);
         if (serverVersion == null) {
-            throw new IllegalArgumentException("Missing server version field");
+            throw new XmlPullParserException("Missing server version field");
         }
         String[] serverVersionSplit = serverVersion.split("\\.");
         if (serverVersionSplit.length != 4) {
-            throw new IllegalArgumentException("Malformed server version field: "+serverVersion);
+            throw new XmlPullParserException("Malformed server version field: "+serverVersion);
         }
         int[] ret = new int[serverVersionSplit.length];
         for (int i = 0; i < ret.length; i++) {
-            ret[i] = Integer.parseInt(serverVersionSplit[i]);
+            try {
+                ret[i] = Integer.parseInt(serverVersionSplit[i]);
+            } catch (NumberFormatException e) {
+                throw new XmlPullParserException("Malformed server version field: "+serverVersion);
+            }
         }
         return ret;
     }

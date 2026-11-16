@@ -230,4 +230,50 @@ public class NvHttpServerInfoTest {
         }
         assertTrue(System.currentTimeMillis() - start < 5000);
     }
+
+    @Test
+    public void malformedPorts_fallBackToDefaults() throws Exception {
+        NvHTTP http = newHttp();
+        assertEquals(47984, http.getHttpsPort(serverInfoWithCodecField("<HttpsPort>abc</HttpsPort>")));
+        assertEquals(47984, http.getHttpsPort(serverInfoWithCodecField("<HttpsPort>99999999999</HttpsPort>")));
+        assertEquals(47984, http.getHttpsPort(serverInfoWithCodecField("<HttpsPort></HttpsPort>")));
+        assertEquals(47990, http.getHttpsPort(serverInfoWithCodecField("<HttpsPort>47990</HttpsPort>")));
+        assertEquals(server.getPort(), http.getExternalPort(serverInfoWithCodecField("<ExternalPort>x</ExternalPort>")));
+    }
+
+    @Test
+    public void malformedLumaPixels_areTreatedAsMissing() throws Exception {
+        NvHTTP http = newHttp();
+        assertEquals(0, http.getMaxLumaPixelsH264(serverInfoWithCodecField("<MaxLumaPixelsH264>x</MaxLumaPixelsH264>")));
+        assertEquals(0, http.getMaxLumaPixelsHEVC(serverInfoWithCodecField("<MaxLumaPixelsHEVC>1e9</MaxLumaPixelsHEVC>")));
+        assertEquals(8294400, http.getMaxLumaPixelsH264(serverInfoWithCodecField("<MaxLumaPixelsH264>8294400</MaxLumaPixelsH264>")));
+    }
+
+    @Test
+    public void malformedCurrentGame_isAMalformedResponse() throws Exception {
+        NvHTTP http = newHttp();
+        try {
+            http.getCurrentGame(serverInfoWithCodecField("<state>SUNSHINE_SERVER_BUSY</state><currentgame>x</currentgame>"));
+            fail("Expected XmlPullParserException");
+        } catch (XmlPullParserException expected) {
+            // expected
+        }
+        assertEquals(12, http.getCurrentGame(serverInfoWithCodecField("<state>SUNSHINE_SERVER_BUSY</state><currentgame>12</currentgame>")));
+        assertEquals(0, http.getCurrentGame(serverInfoWithCodecField("<state>SUNSHINE_SERVER_FREE</state><currentgame>x</currentgame>")));
+    }
+
+    @Test
+    public void malformedAppVersion_isAMalformedResponse() throws Exception {
+        NvHTTP http = newHttp();
+        String[] bad = {"1.2.3", "a.b.c.d", "7.1.431.x", "7.1.431.", "1..2.3"};
+        for (String version : bad) {
+            try {
+                http.getServerMajorVersion(serverInfoWithCodecField("<appversion>" + version + "</appversion>"));
+                fail("Expected XmlPullParserException for " + version);
+            } catch (XmlPullParserException expected) {
+                // expected
+            }
+        }
+        assertEquals(7, http.getServerMajorVersion(serverInfoWithCodecField("<appversion>7.1.431.0</appversion>")));
+    }
 }
