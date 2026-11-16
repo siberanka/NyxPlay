@@ -4,10 +4,12 @@
  */
 #include <src/audio.h>
 #include <src/rtsp_validation.h>
+#include <src/utility.h>
 #include <src/video.h>
 
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
 #include <tuple>
 
 #include "../tests_common.h"
@@ -166,4 +168,34 @@ TEST(AudioParams, InvalidCustomParamsAreRejectedByConfig) {
   config.flags[audio::config_t::CUSTOM_SURROUND_PARAMS] = true;
   config.customStreamParams = {6, 0, 6, {0, 1, 2, 3, 4, 5}};
   EXPECT_FALSE(audio::config_valid(config));
+}
+
+TEST(IntegerParsing, PlainValues) {
+  EXPECT_EQ(util::from_view(""), 0);
+  EXPECT_EQ(util::from_view("0"), 0);
+  EXPECT_EQ(util::from_view("1920"), 1920);
+  EXPECT_EQ(util::from_view("-42"), -42);
+  EXPECT_EQ(util::from_view("9223372036854775807"), std::numeric_limits<std::int64_t>::max());
+  EXPECT_EQ(util::from_view("-9223372036854775808"), std::numeric_limits<std::int64_t>::min());
+}
+
+TEST(IntegerParsing, OverflowIsClamped) {
+  EXPECT_EQ(util::from_view("9223372036854775808"), std::numeric_limits<std::int64_t>::max());
+  EXPECT_EQ(util::from_view("99999999999999999999"), std::numeric_limits<std::int64_t>::max());
+  EXPECT_EQ(util::from_view("-99999999999999999999"), std::numeric_limits<std::int64_t>::min());
+}
+
+TEST(IntegerParsing, StopsAtTheFirstNonDigit) {
+  EXPECT_EQ(util::from_view("12abc"), 12);
+  EXPECT_EQ(util::from_view("abc"), 0);
+}
+
+TEST(IntegerParsing, NarrowingRejectsOutOfRangeValues) {
+  EXPECT_EQ(util::from_view_as<int>("1920"), 1920);
+  EXPECT_EQ(util::from_view_as<int>("-2147483648"), std::numeric_limits<int>::min());
+  EXPECT_EQ(util::from_view_as<int>("2147483647"), std::numeric_limits<int>::max());
+  // 2^32 + 1920 would wrap to a valid width
+  EXPECT_THROW(util::from_view_as<int>("4294969216"), std::out_of_range);
+  EXPECT_THROW(util::from_view_as<int>("2147483648"), std::out_of_range);
+  EXPECT_THROW(util::from_view_as<int>("99999999999999999999"), std::out_of_range);
 }

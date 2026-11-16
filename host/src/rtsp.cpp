@@ -418,7 +418,7 @@ namespace rtsp_stream {
         socket->read_plaintext_payload();
       });
 
-      auto content_length = 0;
+      std::int64_t content_length = 0;
       for (auto option = req->options; option != nullptr; option = option->next) {
         if ("Content-length"sv == option->option) {
           BOOST_LOG(debug) << "Found Content-Length: "sv << option->content << " bytes"sv;
@@ -1373,7 +1373,7 @@ namespace rtsp_stream {
         auto name = line.substr(2, pos - 2);
         auto val = line.substr(pos + 1);
 
-        if (val[val.size() - 1] == ' ') {
+        if (!val.empty() && val.back() == ' ') {
           val = val.substr(0, val.size() - 1);
         }
         args.emplace(name, val);
@@ -1401,37 +1401,37 @@ namespace rtsp_stream {
     std::int64_t configuredBitrateKbps;
     config.audio.flags[audio::config_t::HOST_AUDIO] = session.host_audio;
     try {
-      config.audio.channels = util::from_view(args.at("x-nv-audio.surround.numChannels"sv));
-      config.audio.mask = util::from_view(args.at("x-nv-audio.surround.channelMask"sv));
-      config.audio.packetDuration = util::from_view(args.at("x-nv-aqos.packetDuration"sv));
+      config.audio.channels = util::from_view_as<int>(args.at("x-nv-audio.surround.numChannels"sv));
+      config.audio.mask = util::from_view_as<int>(args.at("x-nv-audio.surround.channelMask"sv));
+      config.audio.packetDuration = util::from_view_as<int>(args.at("x-nv-aqos.packetDuration"sv));
 
       config.audio.flags[audio::config_t::HIGH_QUALITY] =
-        util::from_view(args.at("x-nv-audio.surround.AudioQuality"sv));
+        util::from_view_as<int>(args.at("x-nv-audio.surround.AudioQuality"sv));
 
-      config.controlProtocolType = util::from_view(args.at("x-nv-general.useReliableUdp"sv));
-      config.packetsize = util::from_view(args.at("x-nv-video[0].packetSize"sv));
-      config.minRequiredFecPackets = util::from_view(args.at("x-nv-vqos[0].fec.minRequiredFecPackets"sv));
-      config.mlFeatureFlags = util::from_view(args.at("x-ml-general.featureFlags"sv));
-      config.audioQosType = util::from_view(args.at("x-nv-aqos.qosTrafficType"sv));
-      config.videoQosType = util::from_view(args.at("x-nv-vqos[0].qosTrafficType"sv));
-      config.encryptionFlagsEnabled = util::from_view(args.at("x-ss-general.encryptionEnabled"sv));
+      config.controlProtocolType = util::from_view_as<int>(args.at("x-nv-general.useReliableUdp"sv));
+      config.packetsize = util::from_view_as<int>(args.at("x-nv-video[0].packetSize"sv));
+      config.minRequiredFecPackets = util::from_view_as<int>(args.at("x-nv-vqos[0].fec.minRequiredFecPackets"sv));
+      config.mlFeatureFlags = util::from_view_as<int>(args.at("x-ml-general.featureFlags"sv));
+      config.audioQosType = util::from_view_as<int>(args.at("x-nv-aqos.qosTrafficType"sv));
+      config.videoQosType = util::from_view_as<int>(args.at("x-nv-vqos[0].qosTrafficType"sv));
+      config.encryptionFlagsEnabled = util::from_view_as<int>(args.at("x-ss-general.encryptionEnabled"sv));
 
       // Legacy clients use nvFeatureFlags to indicate support for audio encryption
-      if (util::from_view(args.at("x-nv-general.featureFlags"sv)) & 0x20) {
+      if (util::from_view_as<int>(args.at("x-nv-general.featureFlags"sv)) & 0x20) {
         config.encryptionFlagsEnabled |= SS_ENC_AUDIO;
       }
 
-      config.monitor.height = util::from_view(args.at("x-nv-video[0].clientViewportHt"sv));
-      config.monitor.width = util::from_view(args.at("x-nv-video[0].clientViewportWd"sv));
-      config.monitor.framerate = util::from_view(args.at("x-nv-video[0].maxFPS"sv));
+      config.monitor.height = util::from_view_as<int>(args.at("x-nv-video[0].clientViewportHt"sv));
+      config.monitor.width = util::from_view_as<int>(args.at("x-nv-video[0].clientViewportWd"sv));
+      config.monitor.framerate = util::from_view_as<int>(args.at("x-nv-video[0].maxFPS"sv));
       config.monitor.bitrate = util::from_view(args.at("x-nv-vqos[0].bw.maximumBitrateKbps"sv));
-      config.monitor.slicesPerFrame = util::from_view(args.at("x-nv-video[0].videoEncoderSlicesPerFrame"sv));
-      config.monitor.numRefFrames = util::from_view(args.at("x-nv-video[0].maxNumReferenceFrames"sv));
-      config.monitor.encoderCscMode = util::from_view(args.at("x-nv-video[0].encoderCscMode"sv));
-      config.monitor.videoFormat = util::from_view(args.at("x-nv-vqos[0].bitStreamFormat"sv));
-      config.monitor.dynamicRange = util::from_view(args.at("x-nv-video[0].dynamicRangeMode"sv));
-      config.monitor.chromaSamplingType = util::from_view(args.at("x-ss-video[0].chromaSamplingType"sv));
-      config.monitor.enableIntraRefresh = util::from_view(args.at("x-ss-video[0].intraRefresh"sv));
+      config.monitor.slicesPerFrame = util::from_view_as<int>(args.at("x-nv-video[0].videoEncoderSlicesPerFrame"sv));
+      config.monitor.numRefFrames = util::from_view_as<int>(args.at("x-nv-video[0].maxNumReferenceFrames"sv));
+      config.monitor.encoderCscMode = util::from_view_as<int>(args.at("x-nv-video[0].encoderCscMode"sv));
+      config.monitor.videoFormat = util::from_view_as<int>(args.at("x-nv-vqos[0].bitStreamFormat"sv));
+      config.monitor.dynamicRange = util::from_view_as<int>(args.at("x-nv-video[0].dynamicRangeMode"sv));
+      config.monitor.chromaSamplingType = util::from_view_as<int>(args.at("x-ss-video[0].chromaSamplingType"sv));
+      config.monitor.enableIntraRefresh = util::from_view_as<int>(args.at("x-ss-video[0].intraRefresh"sv));
 
       // A launch without an explicit rate uses 60 fps, apply the same to the ANNOUNCE
       if (config.monitor.framerate == 0 && session.fps > 4000) {

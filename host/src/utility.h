@@ -7,10 +7,12 @@
 // standard includes
 #include <algorithm>
 #include <condition_variable>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <ostream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -509,24 +511,63 @@ namespace util {
     return *reinterpret_cast<std::underlying_type_t<T> *>(&val);
   }
 
+  /**
+   * @brief Convert a decimal string to an integer.
+   * @details Parsing stops at the first character that is not a digit. A value that does not fit into 64 bits is
+   *          clamped to the nearest limit.
+   */
   inline std::int64_t from_chars(const char *begin, const char *end) {
     if (begin == end) {
       return 0;
     }
 
-    std::int64_t res {};
-    std::int64_t mul = 1;
-    while (begin != --end) {
-      res += (std::int64_t) (*end - '0') * mul;
-
-      mul *= 10;
+    const bool negative = *begin == '-';
+    if (negative) {
+      ++begin;
     }
 
-    return *begin != '-' ? res + (std::int64_t) (*begin - '0') * mul : -res;
+    // The magnitude is accumulated unsigned, so the minimum value is representable
+    constexpr std::uint64_t max_magnitude = std::uint64_t {std::numeric_limits<std::int64_t>::max()} + 1;
+    std::uint64_t res {};
+    for (; begin != end; ++begin) {
+      if (*begin < '0' || *begin > '9') {
+        break;
+      }
+
+      auto digit = (std::uint64_t) (*begin - '0');
+      if (res > (max_magnitude - digit) / 10) {
+        res = max_magnitude;
+        break;
+      }
+
+      res = res * 10 + digit;
+    }
+
+    if (negative) {
+      return res == max_magnitude ? std::numeric_limits<std::int64_t>::min() : -(std::int64_t) res;
+    }
+
+    return res >= max_magnitude ? std::numeric_limits<std::int64_t>::max() : (std::int64_t) res;
   }
 
   inline std::int64_t from_view(const std::string_view &number) {
     return from_chars(std::begin(number), std::end(number));
+  }
+
+  /**
+   * @brief Convert a decimal string to an integer of type T.
+   * @throws std::out_of_range when the value is not representable in T.
+   */
+  template<class T>
+  T from_view_as(const std::string_view &number) {
+    static_assert(std::is_integral_v<T> && sizeof(T) < sizeof(std::int64_t));
+
+    auto value = from_view(number);
+    if (value < std::numeric_limits<T>::min() || value > std::numeric_limits<T>::max()) {
+      throw std::out_of_range("integer out of range");
+    }
+
+    return (T) value;
   }
 
   template<class X, class Y>

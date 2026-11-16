@@ -9,8 +9,10 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <format>
+#include <limits>
 #include <mutex>
 #include <set>
 #include <string>
@@ -583,7 +585,13 @@ namespace nvhttp {
       RAND_bytes((unsigned char *) &launch_session->control_connect_data, sizeof(launch_session->control_connect_data));
 
       launch_session->iv.resize(16);
-      uint32_t prepend_iv = util::endian::big<uint32_t>(util::from_view(get_arg(args, "rikeyid")));
+      // Clients send the id as a signed or unsigned 32 bit value
+      auto rikeyid = util::from_view(get_arg(args, "rikeyid"));
+      if (rikeyid < std::numeric_limits<std::int32_t>::min() || rikeyid > std::numeric_limits<std::uint32_t>::max()) {
+        BOOST_LOG(warning) << "Rejecting out of range rikeyid from client"sv;
+        return nullptr;
+      }
+      uint32_t prepend_iv = util::endian::big<uint32_t>((uint32_t) rikeyid);
       auto prepend_iv_p = (uint8_t *) &prepend_iv;
       std::copy(prepend_iv_p, prepend_iv_p + sizeof(prepend_iv), std::begin(launch_session->iv));
     }
@@ -613,7 +621,8 @@ namespace nvhttp {
         if (fps < 1000) {
           fps *= 1000;
         };
-        launch_session->fps = (int)fps;
+        // NaN and values beyond the int range cannot be converted; the range check below rejects the mode
+        launch_session->fps = std::isfinite(fps) && fps >= 0 && fps <= 1000000 ? (int) fps : -1;
         break;
       }
       x++;
