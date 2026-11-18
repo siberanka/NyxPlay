@@ -23,12 +23,12 @@
     <message>
         <location filename="../gui/AppView.qml" line="310"/>
         <source>Direct Launch</source>
-        <translation>Direkt çalıştır</translation>
+        <translation>Doğrudan başlat</translation>
     </message>
     <message>
         <location filename="../gui/AppView.qml" line="314"/>
         <source>Launch this app immediately when the host is selected, bypassing the app selection grid.</source>
-        <translation>Ana bilgisayar seçildiğinde, uygulama seçim kılavuzunu atlayarak bu uygulamayı hemen başlatın.</translation>
+        <translation>Ana bilgisayar seçildiğinde uygulama seçim ızgarasını atlayarak bu uygulamayı hemen başlatır.</translation>
     </message>
     <message>
         <location filename="../gui/AppView.qml" line="322"/>
@@ -38,7 +38,7 @@
     <message>
         <location filename="../gui/AppView.qml" line="326"/>
         <source>Hide this game from the app grid. To access hidden games, right-click on the host and choose %1.</source>
-        <translation>Bu oyunu uygulama kılavuzundan gizleyin. Gizli oyunlara erişmek için sunucuya sağ tıklayın ve %1&apos;i seçin.</translation>
+        <translation>Bu oyunu uygulama ızgarasından gizler. Gizli oyunlara erişmek için host bilgisayara sağ tıklayıp %1 seçeneğini seçin.</translation>
     </message>
     <message>
         <location filename="../gui/AppView.qml" line="326"/>
@@ -48,12 +48,12 @@
     <message>
         <location filename="../gui/AppView.qml" line="341"/>
         <source>This computer doesn&apos;t seem to have any applications or some applications are hidden</source>
-        <translation>Bu bilgisayarda hiç uygulama yok gibi görünüyor ya da bazı uygulamalar gizlenmiş</translation>
+        <translation>Bu bilgisayarda hiç uygulama yok gibi görünüyor veya bazı uygulamalar gizlenmiş.</translation>
     </message>
     <message>
         <location filename="../gui/AppView.qml" line="354"/>
         <source>Are you sure you want to quit %1? Any unsaved progress will be lost.</source>
-        <translation>%1 den çıkmak istediğinize emin misiniz? Tüm kaydedilmemiş ilerlemeniz silinecektir.</translation>
+        <translation>%1 uygulamasından çıkmak istediğinizden emin misiniz? Kaydedilmemiş tüm ilerleme kaybolacak.</translation>
     </message>
 </context>
 <context>
@@ -61,12 +61,12 @@
     <message>
         <location filename="../gui/CliPair.qml" line="8"/>
         <source>Establishing connection to PC...</source>
-        <translation>Bilgisayar ile bağlantı kuruluyor...</translation>
+        <translation>Bilgisayarla bağlantı kuruluyor...</translation>
     </message>
     <message>
         <location filename="../gui/CliPair.qml" line="12"/>
         <source>Pairing... Please enter &apos;%1&apos; on %2.</source>
-        <translation>Eşleniyor... Lütfen %2&apos;de &apos;%1&apos; girin.</translation>
+        <translation>Eşleştiriliyor... Lütfen %2 üzerinde &apos;%1&apos; girin.</translation>
     </message>
     <message>
         <location filename="../gui/CliPair.qml" line="81"/>
@@ -79,7 +79,7 @@
     <message>
         <location filename="../gui/CliQuitStreamSegue.qml" line="9"/>
         <source>Establishing connection to PC...</source>
-        <translation>Bilgisayar ile bağlantı kuruluyor...</translation>
+        <translation>Bilgisayarla bağlantı kuruluyor...</translation>
     </message>
     <message>
         <location filename="../gui/CliQuitStreamSegue.qml" line="13"/>
@@ -92,7 +92,7 @@
     <message>
         <location filename="../gui/CliStartStreamSegue.qml" line="8"/>
         <source>Establishing connection to PC...</source>
-        <translation>Bilgisayar ile bağlantı kuruluyor...</translation>
+        <translation>Bilgisayarla bağlantı kuruluyor...</translation>
     </message>
     <message>
         <location filename="../gui/CliStartStreamSegue.qml" line="12"/>
@@ -102,7 +102,7 @@
     <message>
         <location filename="../gui/CliStartStreamSegue.qml" line="78"/>
         <source>Are you sure you want to quit %1? Any unsaved progress will be lost.</source>
-        <translation>%1&apos;den çıkmak istediğinize emin misiniz? Tüm kaydedilmemiş ilerlemeniz silinecektir.</translation>
+        <translation>%1 uygulamasından çıkmak istediğinizden emin misiniz? Kaydedilmemiş tüm ilerleme kaybolacak.</translation>
     </message>
 </context>
 <context>
@@ -124,7 +124,7 @@
         <location filename="../gui/computermodel.cpp" line="82"/>
         <location filename="../gui/computermodel.cpp" line="83"/>
         <source>Unknown</source>
-        <translation>Tanınmamış</translation>
+        <translation>Bilinmiyor</translation>
     </message>
     <message>
         <location filename="../gui/computermodel.cpp" line="62"/>
@@ -134,12 +134,12 @@
     <message>
         <location filename="../gui/computermodel.cpp" line="65"/>
         <source>Unpaired</source>
-        <translation>Eşleşmesi kaldırıldı</translation>
+        <translation>Eşleştirilmedi</translation>
     </message>
     <message>
         <location filename="../gui/computermodel.cpp" line="72"/>
         <source>Name: %1</source>
-        <translation>İsim: %1</translation>
+        <translation>Ad: %1</translation>
     </message>
     <message>
         <location filename="../gui/computermodel.cpp" line="73"/>
@@ -149,7 +149,7 @@
     <message>
         <location filename="../gui/computermodel.cpp" line="74"/>
         <source>Active Address: %1</source>
-        <translation>Aktif Adres: %1</translation>
+        <translation>Etkin Adres: %1</translation>
     </message>
     <message>
         <location filename="../gui/computermodel.cpp" line="75"/>
@@ -174,12 +174,12 @@
     <message>
         <location filename="../gui/computermodel.cpp" line="79"/>
         <source>Manual Address: %1</source>
-        <translation>Manuel Adres: %1</translation>
+        <translation>Elle Girilen Adres: %1</translation>
     </message>
     <message>
         <location filename="../gui/computermodel.cpp" line="80"/>
         <source>MAC Address: %1</source>
-        <translation>MAC Adres: %1</translation>
+        <translation>MAC Adresi: %1</translation>
     </message>
     <message>
         <location filename="../gui/computermodel.cpp" line="81"/>
@@ -189,12 +189,12 @@
     <message>
         <location filename="../gui/computermodel.cpp" line="82"/>
         <source>Running Game ID: %1</source>
-        <translation>Çalışan Oyunun IDsi: %1</translation>
+        <translation>Çalışan Oyun Kimliği: %1</translation>
     </message>
     <message>
         <location filename="../gui/computermodel.cpp" line="83"/>
         <source>HTTPS Port: %1</source>
-        <translation>HTTPS Port: %1</translation>
+        <translation>HTTPS Bağlantı Noktası: %1</translation>
     </message>
 </context>
 <context>
@@ -202,7 +202,7 @@
     <message>
         <location filename="../gui/GamepadMapper.qml" line="4"/>
         <source>Gamepad Mapping</source>
-        <translation>Oyun kumandası ayarları</translation>
+        <translation>Oyun Kumandası Eşlemesi</translation>
     </message>
 </context>
 <context>
@@ -210,7 +210,7 @@
     <message>
         <location filename="../backend/nvhttp.cpp" line="381"/>
         <source>Missing audio capture device. Reinstalling GeForce Experience should resolve this error.</source>
-        <translation>Ses yakalama aygıtı eksik. GeForce Experience&apos;ı yeniden yüklemek bu hatayı çözmelidir.</translation>
+        <translation>Ses yakalama aygıtı eksik. GeForce Experience uygulamasını yeniden yüklemek bu hatayı çözmelidir.</translation>
     </message>
     <message>
         <location filename="../backend/nvhttp.cpp" line="1"/>
@@ -225,12 +225,12 @@
     <message>
         <location filename="../backend/nvhttp.cpp" line="1"/>
         <source>The host closed the connection unexpectedly. Try again; if it keeps happening, restart the host.</source>
-        <translation>Ana bilgisayar bağlantıyı beklenmedik şekilde kapattı. Yeniden deneyin; sorun sürerse ana bilgisayarı yeniden başlatın.</translation>
+        <translation>Host bilgisayar bağlantıyı beklenmedik şekilde kapattı. Yeniden deneyin; sorun sürerse host bilgisayarı yeniden başlatın.</translation>
     </message>
     <message>
         <location filename="../backend/nvhttp.cpp" line="1"/>
         <source>The host could not be reached. Check your firewall and port forwarding rules.</source>
-        <translation>Ana bilgisayara ulaşılamadı. Güvenlik duvarı ve bağlantı noktası yönlendirme kurallarınızı kontrol edin.</translation>
+        <translation>Host bilgisayara ulaşılamadı. Güvenlik duvarı ve bağlantı noktası yönlendirme kurallarınızı kontrol edin.</translation>
     </message>
     <message>
         <location filename="../backend/nvhttp.cpp" line="1"/>
@@ -243,22 +243,22 @@
     <message>
         <location filename="../gui/PcView.qml" line="33"/>
         <source>Your hosts and settings were imported from an existing Moonlight installation. Each host must be paired once with NyxPlay before you can stream.</source>
-        <translation>Ana bilgisayarlarınız ve ayarlarınız mevcut bir Moonlight kurulumundan içe aktarıldı. Yayın yapmadan önce her ana bilgisayarın NyxPlay ile bir kez eşleştirilmesi gerekir.</translation>
+        <translation>Host bilgisayarlarınız ve ayarlarınız mevcut bir Moonlight kurulumundan içe aktarıldı. Yayın yapabilmek için her host bilgisayarın NyxPlay ile bir kez eşleştirilmesi gerekir.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="47"/>
         <source>The saved client identity could not be read right now. It was kept unchanged; a temporary identity is used for this session, so paired hosts may ask for pairing. Restart NyxPlay to try again.</source>
-        <translation>Kayıtlı istemci kimliği şu anda okunamadı. Kimlik değiştirilmeden saklandı; bu oturum için geçici bir kimlik kullanılıyor, bu yüzden eşleştirilmiş ana bilgisayarlar yeniden eşleştirme isteyebilir. Yeniden denemek için NyxPlay'i yeniden başlatın.</translation>
+        <translation>Kayıtlı istemci kimliği şu anda okunamadı. Kimlik değiştirilmeden bırakıldı; bu oturumda geçici bir kimlik kullanılıyor, bu nedenle eşleştirilmiş host bilgisayarlar yeniden eşleştirme isteyebilir. Yeniden denemek için NyxPlay&apos;i yeniden başlatın.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="51"/>
         <source>The new client identity could not be stored securely on this account, so it is only valid until NyxPlay is closed.</source>
-        <translation>Yeni istemci kimliği bu hesapta güvenli olarak saklanamadığı için yalnızca NyxPlay kapatılana kadar geçerlidir.</translation>
+        <translation>Yeni istemci kimliği bu hesapta güvenli şekilde saklanamadığı için yalnızca NyxPlay kapatılana kadar geçerlidir.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="37"/>
         <source>The saved client identity could not be used on this computer or account, so a new one was created. Please pair each of your hosts again.</source>
-        <translation>Kayıtlı istemci kimliği bu bilgisayarda veya hesapta kullanılamadığı için yeni bir kimlik oluşturuldu. Lütfen ana bilgisayarlarınızın her birini yeniden eşleştirin.</translation>
+        <translation>Kayıtlı istemci kimliği bu bilgisayarda veya hesapta kullanılamadığı için yeni bir kimlik oluşturuldu. Lütfen host bilgisayarlarınızın her birini yeniden eşleştirin.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="21"/>
@@ -268,42 +268,42 @@
     <message>
         <location filename="../gui/PcView.qml" line="63"/>
         <source>Unable to connect to the specified PC.</source>
-        <translation>Belirtilen bilgisayara bağlantı kurulamıyor.</translation>
+        <translation>Belirtilen bilgisayara bağlanılamıyor.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="66"/>
         <source>This PC&apos;s Internet connection is blocking NyxPlay. Streaming over the Internet may not work while connected to this network.</source>
-        <translation>Bu bilgisayarın İnternet bağlantısı NyxPlay&apos;ı engelliyor. İnternet üzerinden akış, bu ağa bağlıyken çalışmayabilir.</translation>
+        <translation>Bu bilgisayarın internet bağlantısı NyxPlay&apos;i engelliyor. Bu ağa bağlıyken internet üzerinden yayın çalışmayabilir.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="69"/>
         <source>Click the Help button for possible solutions.</source>
-        <translation>Olası çözümler için Yardım butonuna tıklayın.</translation>
+        <translation>Olası çözümler için Yardım düğmesine tıklayın.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="100"/>
         <source>Automatic PC discovery is disabled. Add your PC manually.</source>
-        <translation>Otomatik bilgisayar keşfi devre dışı bırakıldı. PC&apos;nizi manuel olarak ekleyin.</translation>
+        <translation>Otomatik bilgisayar keşfi devre dışı. Bilgisayarınızı elle ekleyin.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="99"/>
         <source>Searching for compatible hosts on your local network...</source>
-        <translation>Yerel ağınızda uyumlu ana bilgisayarlar aranıyor...</translation>
+        <translation>Yerel ağınızda uyumlu host bilgisayarlar aranıyor...</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="184"/>
         <source>Wake PC</source>
-        <translation>PC&apos;yi uyandır</translation>
+        <translation>Bilgisayarı uyandır</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="189"/>
         <source>Test Network</source>
-        <translation>Ağı Test Et</translation>
+        <translation>Ağı test et</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="197"/>
         <source>Rename PC</source>
-        <translation>PC&apos;yi yeniden adlandır</translation>
+        <translation>Bilgisayarı yeniden adlandır</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="205"/>
@@ -313,42 +313,42 @@
     <message>
         <location filename="../gui/PcView.qml" line="213"/>
         <source>View Details</source>
-        <translation>Ayrıntıları Görüntüle</translation>
+        <translation>Ayrıntıları görüntüle</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="225"/>
         <source>The version of GeForce Experience on %1 is not supported by this build of NyxPlay. You must update NyxPlay to stream from %1.</source>
-        <translation>%1&apos;deki olan GeForce Experience sürümü NyxPlay&apos;ın bu derlemesi tarafından desteklenmiyor. %1&apos;den yayın sağlamak için NyxPlay&apos;ı güncellemeniz gerekir.</translation>
+        <translation>%1 üzerindeki GeForce Experience sürümü bu NyxPlay derlemesi tarafından desteklenmiyor. %1 üzerinden yayın yapmak için NyxPlay&apos;i güncellemeniz gerekir.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="324"/>
         <source>This may take a few seconds…</source>
-        <translation>Bu bir kaç saniye alabilir…</translation>
+        <translation>Bu işlem birkaç saniye sürebilir…</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="335"/>
         <source>This network does not appear to be blocking NyxPlay. If you still have trouble connecting, check your PC&apos;s firewall settings.</source>
-        <translation>Bu ağ NyxPlay&apos;ı engellemiyor gibi görünüyor. Hala bağlantı sorunu yaşıyorsanız, bilgisayarınızın güvenlik duvarı ayarlarını kontrol edin.</translation>
+        <translation>Bu ağ NyxPlay&apos;i engelliyor gibi görünmüyor. Yine de bağlantı sorunu yaşıyorsanız bilgisayarınızın güvenlik duvarı ayarlarını kontrol edin.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="335"/>
         <source>If you are trying to stream over the Internet, make sure the required ports are forwarded to your gaming PC on your router and that your Internet provider does not block them.</source>
-        <translation>İnternet üzerinden akış yapmaya çalışıyorsanız, gerekli bağlantı noktalarının yönlendiricinizde oyun bilgisayarınıza yönlendirildiğinden ve İnternet sağlayıcınız tarafından engellenmediğinden emin olun.</translation>
+        <translation>İnternet üzerinden yayın yapmaya çalışıyorsanız, gerekli bağlantı noktalarının yönlendiricinizde oyun bilgisayarınıza yönlendirildiğinden ve internet servis sağlayıcınızın bunları engellemediğinden emin olun.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="339"/>
         <source>Your PC&apos;s current network connection seems to be blocking NyxPlay. Streaming over the Internet may not work while connected to this network.</source>
-        <translation>PC&apos;nizin mevcut ağ bağlantısı NyxPlay&apos;ı engelliyor gibi görünüyor. İnternet üzerinden akış, bu ağa bağlıyken çalışmayabilir.</translation>
+        <translation>Bilgisayarınızın mevcut ağ bağlantısı NyxPlay&apos;i engelliyor gibi görünüyor. Bu ağa bağlıyken internet üzerinden yayın çalışmayabilir.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="339"/>
         <source>The following network ports were blocked:</source>
-        <translation>Aşağıdaki ağ bağlantı noktaları engellendi:</translation>
+        <translation>Şu ağ bağlantı noktaları engellendi:</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="331"/>
         <source>The network test could not be performed because none of NyxPlay&apos;s connection testing servers were reachable from this PC. Check your Internet connection or try again later.</source>
-        <translation>NyxPlay&apos;ın bağlantı testi sunucularından hiçbirine bu bilgisayardan erişilemediği için ağ testi gerçekleştirilemedi. İnternet bağlantınızı kontrol edin veya daha sonra tekrar deneyin.</translation>
+        <translation>NyxPlay&apos;in bağlantı testi sunucularının hiçbirine bu bilgisayardan ulaşılamadığı için ağ testi yapılamadı. İnternet bağlantınızı kontrol edin veya daha sonra tekrar deneyin.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="170"/>
@@ -368,22 +368,22 @@
     <message>
         <location filename="../gui/PcView.qml" line="175"/>
         <source>View All Apps</source>
-        <translation>Tüm Uygulamaları Görüntüle</translation>
+        <translation>Tüm uygulamaları görüntüle</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="297"/>
         <source>Please enter %1 on your host PC. This dialog will close when pairing is completed.</source>
-        <translation>Lütfen ana bilgisayarınıza %1 girin. Eşleştirme tamamlandığında bu iletişim kutusu kapanacaktır.</translation>
+        <translation>Lütfen host bilgisayarınızda %1 girin. Eşleştirme tamamlandığında bu iletişim kutusu kapanacaktır.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="298"/>
         <source>If your host PC is running NyxPlay Host, navigate to the NyxPlay Host web UI to enter the PIN.</source>
-        <translation>Ana bilgisayarınızda NyxPlay Host çalışıyorsa, PIN&apos;i girmek için NyxPlay Host web arayüzüne gidin.</translation>
+        <translation>Host bilgisayarınızda NyxPlay Host çalışıyorsa, PIN&apos;i girmek için NyxPlay Host Web arayüzüne gidin.</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="310"/>
         <source>Are you sure you want to remove &apos;%1&apos;?</source>
-        <translation>&apos;%1&apos;i kaldırmak istediğinizden emin misiniz?</translation>
+        <translation>&apos;%1&apos; öğesini kaldırmak istediğinizden emin misiniz?</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="324"/>
@@ -401,12 +401,12 @@
     <message>
         <location filename="../backend/computermanager.cpp" line="604"/>
         <source>The PIN from the PC didn&apos;t match. Please try again.</source>
-        <translation>PC&apos;den gelen PIN eşleşmedi. Lütfen tekrar deneyin.</translation>
+        <translation>Bilgisayardan gelen PIN eşleşmedi. Lütfen tekrar deneyin.</translation>
     </message>
     <message>
         <location filename="../backend/computermanager.cpp" line="608"/>
         <source>You cannot pair while a previous session is still running on the host PC. Quit any running games or reboot the host PC, then try pairing again.</source>
-        <translation>Ana bilgisayarda önceki bir oturum devam ederken eşleştirme yapamazsınız. Çalışan tüm oyunlardan çıkın veya ana bilgisayarı yeniden başlatın, ardından yeniden eşleştirmeyi deneyin.</translation>
+        <translation>Host bilgisayarda önceki bir oturum hâlâ çalışırken eşleştirme yapamazsınız. Çalışan oyunlardan çıkın veya host bilgisayarı yeniden başlatın, ardından yeniden eşleştirmeyi deneyin.</translation>
     </message>
     <message>
         <location filename="../backend/computermanager.cpp" line="611"/>
@@ -434,7 +434,7 @@
     <message>
         <location filename="../backend/computermanager.cpp" line="675"/>
         <source>The running game wasn&apos;t started by this PC. You must quit the game on the host PC manually or use the device that originally started the game.</source>
-        <translation>Çalışan oyun bu bilgisayar tarafından başlatılmadı. Ana bilgisayardaki oyundan manuel olarak çıkmalı veya oyunu ilk başlatan cihazı kullanmalısınız.</translation>
+        <translation>Çalışan oyun bu bilgisayar tarafından başlatılmadı. Oyundan host bilgisayarda elle çıkmalı veya oyunu ilk başlatan cihazı kullanmalısınız.</translation>
     </message>
 </context>
 <context>
@@ -449,13 +449,13 @@
         <location filename="../cli/quitstream.cpp" line="76"/>
         <location filename="../cli/startstream.cpp" line="133"/>
         <source>Failed to connect to %1</source>
-        <translation>%1&apos;e bağlanılamadı</translation>
+        <translation>%1 ile bağlantı kurulamadı</translation>
     </message>
     <message>
         <location filename="../cli/quitstream.cpp" line="88"/>
         <location filename="../cli/startstream.cpp" line="89"/>
         <source>Computer %1 has not been paired. Please open NyxPlay to pair before streaming.</source>
-        <translation>%1 bilgisayarı eşleştirilmedi. Yayından önce eşleştirmek için lütfen NyxPlay&apos;ı açın.</translation>
+        <translation>%1 bilgisayarı eşleştirilmemiş. Yayın yapmadan önce eşleştirmek için lütfen NyxPlay&apos;i açın.</translation>
     </message>
     <message>
         <location filename="../cli/quitstream.cpp" line="102"/>
@@ -471,7 +471,7 @@
     <message>
         <location filename="../cli/listapps.cpp" line="108"/>
         <source>Computer %1 has not been paired. Please open NyxPlay to pair before retrieving games list.</source>
-        <translation>%1 bilgisayarı eşleştirilmedi. Lütfen oyun listesini almadan önce eşleştirmek için NyxPlay&apos;ı açın.</translation>
+        <translation>%1 bilgisayarı eşleştirilmemiş. Oyun listesini almadan önce eşleştirmek için lütfen NyxPlay&apos;i açın.</translation>
     </message>
     <message>
         <location filename="../cli/pair.cpp" line="1"/>
@@ -486,12 +486,12 @@
     <message>
         <location filename="../cli/quitstream.cpp" line="1"/>
         <source>Timed out</source>
-        <translation>Zaman aşımı</translation>
+        <translation>Zaman aşımına uğradı</translation>
     </message>
     <message>
         <location filename="../cli/listapps.cpp" line="1"/>
         <source>Timed out while listing apps</source>
-        <translation>Uygulama listesi alınırken zaman aşımı oluştu</translation>
+        <translation>Uygulamalar listelenirken zaman aşımına uğradı</translation>
     </message>
 </context>
 <context>
@@ -527,7 +527,7 @@
     <message>
         <location filename="../gui/QuitSegue.qml" line="13"/>
         <source>Quitting %1...</source>
-        <translation>%1&apos;den çıkılıyor...</translation>
+        <translation>%1 uygulamasından çıkılıyor...</translation>
     </message>
 </context>
 <context>
@@ -535,27 +535,27 @@
     <message>
         <location filename="../streaming/session.cpp" line="104"/>
         <source>No video received from host.</source>
-        <translation>Ana bilgisayardan görüntü alınmadı.</translation>
+        <translation>Host bilgisayardan görüntü alınmadı.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="105"/>
         <source>Check your firewall and port forwarding rules for port(s): %1</source>
-        <translation>Bağlantı noktaları için güvenlik duvarınızı ve bağlantı noktası iletme kurallarınızı kontrol edin: %1</translation>
+        <translation>Şu bağlantı noktaları için güvenlik duvarı ve bağlantı noktası yönlendirme kurallarınızı kontrol edin: %1</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="110"/>
         <source>Your network connection isn&apos;t performing well. Reduce your video bitrate setting or try a faster connection.</source>
-        <translation>Ağ bağlantınız iyi performans göstermiyor. Video bit hızı ayarınızı azaltın veya daha hızlı bir bağlantı deneyin.</translation>
+        <translation>Ağ bağlantınız yeterince iyi çalışmıyor. Video bit hızı ayarını düşürün veya daha hızlı bir bağlantı deneyin.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="116"/>
         <source>Something went wrong on your host PC when starting the stream.</source>
-        <translation>Akışı başlatırken ana bilgisayarınızda bir şeyler ters gitti.</translation>
+        <translation>Yayın başlatılırken host bilgisayarınızda bir sorun oluştu.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="117"/>
         <source>Make sure you don&apos;t have any DRM-protected content open on your host PC. You can also try restarting your host PC.</source>
-        <translation>Ana bilgisayarınızda DRM korumalı içeriğin açık olmadığından emin olun. Ana bilgisayarınızı yeniden başlatmayı da deneyebilirsiniz.</translation>
+        <translation>Host bilgisayarınızda DRM korumalı bir içeriğin açık olmadığından emin olun. Host bilgisayarı yeniden başlatmayı da deneyebilirsiniz.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="131"/>
@@ -565,82 +565,82 @@
     <message>
         <location filename="../streaming/session.cpp" line="958"/>
         <source>The version of GeForce Experience on %1 is not supported by this build of NyxPlay. You must update NyxPlay to stream from %1.</source>
-        <translation>%1 üzerindeki GeForce Experience sürümü, bu NyxPlay yapısı tarafından desteklenmiyor. %1 kaynağından akış yapmak için NyxPlay&apos;ı güncellemelisiniz.</translation>
+        <translation>%1 üzerindeki GeForce Experience sürümü bu NyxPlay derlemesi tarafından desteklenmiyor. %1 üzerinden yayın yapmak için NyxPlay&apos;i güncellemeniz gerekir.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="963"/>
         <source>Your selection to enable remote desktop mouse mode may cause problems in games.</source>
-        <translation>Uzak masaüstü fare modu oyunlarda sorunlara neden olabilir.</translation>
+        <translation>Uzak masaüstü fare modunu etkinleştirme seçiminiz oyunlarda sorunlara neden olabilir.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="967"/>
         <source>Your settings selection to force software decoding may cause poor streaming performance.</source>
-        <translation>Yazılım kod çözme için yaptığınız ayar seçimi, yayın performansında sorunlara neden olabilir.</translation>
+        <translation>Yazılım kod çözmeyi zorlama ayarınız yayın performansının düşmesine neden olabilir.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1003"/>
         <source>Your host PC doesn&apos;t support encoding HEVC.</source>
-        <translation>Ana bilgisayarınız HEVC kodlamayı desteklemiyor.</translation>
+        <translation>Host bilgisayarınız HEVC kodlamayı desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1021"/>
         <source>Using software decoding due to your selection to force HEVC without GPU support. This may cause poor streaming performance.</source>
-        <translation>GPU desteği olmadan HEVC&apos;yi zorlamak için yaptığınız seçim nedeniyle yazılım kod çözme kullanılıyor. Bu, düşük yayın performansına neden olabilir.</translation>
+        <translation>GPU desteği olmadan HEVC&apos;yi zorlama seçiminiz nedeniyle yazılım kod çözme kullanılıyor. Bu, yayın performansının düşmesine neden olabilir.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="973"/>
         <source>Your host software or GPU doesn&apos;t support encoding AV1.</source>
-        <translation>Ana bilgisayar yazılımınız veya ekran kartınız AV1 kodlamayı desteklemiyor.</translation>
+        <translation>Host yazılımınız veya ekran kartınız AV1 kodlamayı desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="991"/>
         <source>Using software decoding due to your selection to force AV1 without GPU support. This may cause poor streaming performance.</source>
-        <translation>Ekran kartı desteği olmadan AV1&apos;i zorlamak için yaptığınız seçim nedeniyle yazılım kod çözme kullanılıyor. Bu, düşük yayın performansına neden olabilir.</translation>
+        <translation>GPU desteği olmadan AV1&apos;i zorlama seçiminiz nedeniyle yazılım kod çözme kullanılıyor. Bu, yayın performansının düşmesine neden olabilir.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1068"/>
         <source>Your host PC doesn&apos;t support HDR streaming.</source>
-        <translation>Ana bilgisayarınız HDR akışını desteklemiyor.</translation>
+        <translation>Host bilgisayarınız HDR yayınını desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1060"/>
         <source>HDR is not supported using the H.264 codec.</source>
-        <translation>HDR, H.264 codec bileşeni tarafından desteklenmiyor.</translation>
+        <translation>HDR, H.264 kodeği ile desteklenmiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1083"/>
         <source>This PC&apos;s GPU doesn&apos;t support AV1 Main10 decoding for HDR streaming.</source>
-        <translation>Bu bilgisayarın ekran kartı, HDR akış için AV1 Main10 kod çözmeyi desteklemiyor.</translation>
+        <translation>Bu bilgisayarın ekran kartı, HDR yayını için AV1 Main10 kod çözmeyi desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1064"/>
         <source>This PC&apos;s GPU doesn&apos;t support 10-bit HEVC or AV1 decoding for HDR streaming.</source>
-        <translation>Bu bilgisayarın ekran artı HDR yayını için 10-bit HEVC veya AV1 kod çözmesini desteklemiyor.</translation>
+        <translation>Bu bilgisayarın ekran kartı, HDR yayını için 10 bit HEVC veya AV1 kod çözmeyi desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1116"/>
         <source>Your host PC and client PC don&apos;t support the same HDR video codecs.</source>
-        <translation>Ana bilgisayarınız ve istemci bilgisayarınız aynı HDR video codeclerini desteklemiyor.</translation>
+        <translation>Host bilgisayarınız ve istemci bilgisayarınız aynı HDR video kodeklerini desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1209"/>
         <source>Video resolutions over 4K are not supported by the H.264 codec.</source>
-        <translation>4K&apos;nın üzerindeki video çözünürlükleri H.264 codec bileşeni tarafından desteklenmiyor.</translation>
+        <translation>4K üzerindeki video çözünürlükleri H.264 kodeği tarafından desteklenmiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1606"/>
         <source>Host returned error: %1</source>
-        <translation>Ana bilgisayar hata verdi: %1</translation>
+        <translation>Host bilgisayar şu hatayı bildirdi: %1</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="122"/>
         <source>The host PC reported a fatal video encoding error.</source>
-        <translation>Ana bilgisayar ölümcül bir video kodlama hatası bildirdi.</translation>
+        <translation>Host bilgisayar ölümcül bir video kodlama hatası bildirdi.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="123"/>
         <source>Try disabling HDR mode, changing the streaming resolution, or changing your host PC&apos;s display resolution.</source>
-        <translation>HDR modunu devre dışı bırakmayı, akış çözünürlüğünü değiştirmeyi veya ana bilgisayarınızın ekran çözünürlüğünü değiştirmeyi deneyin.</translation>
+        <translation>HDR modunu kapatmayı, yayın çözünürlüğünü değiştirmeyi veya host bilgisayarınızın ekran çözünürlüğünü değiştirmeyi deneyin.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="132"/>
@@ -650,88 +650,88 @@
     <message>
         <location filename="../streaming/session.cpp" line="1040"/>
         <source>Using software decoding due to your selection to force H.264 without GPU support. This may cause poor streaming performance.</source>
-        <translation>Ekran kartı desteği olmadan H.264&apos;ü zorlamaya çalıştığınız için yazılım kod çözme kullanılıyor. Bu, düşük yayın performansına neden olabilir.</translation>
+        <translation>GPU desteği olmadan H.264&apos;ü zorlama seçiminiz nedeniyle yazılım kod çözme kullanılıyor. Bu, yayın performansının düşmesine neden olabilir.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1050"/>
         <source>Your host PC and client PC don&apos;t support the same video codecs. This may cause poor streaming performance.</source>
-        <translation>Ana bilgisayarınız ve istemci bilgisayarınız aynı video codeclerini desteklemiyor. Bu, düşük yayın performansına neden olabilir.</translation>
+        <translation>Host bilgisayarınız ve istemci bilgisayarınız aynı video kodeklerini desteklemiyor. Bu, yayın performansının düşmesine neden olabilir.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1053"/>
         <source>Your client GPU doesn&apos;t support H.264 decoding. This may cause poor streaming performance.</source>
-        <translation>İstemci ekran kartınız H.264 kod çözmeyi desteklemiyor. Bu, düşük yayın performansına neden olabilir.</translation>
+        <translation>İstemci ekran kartınız H.264 kod çözmeyi desteklemiyor. Bu, yayın performansının düşmesine neden olabilir.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1089"/>
         <location filename="../streaming/session.cpp" line="1107"/>
         <source>Using software decoding due to your selection to force HDR without GPU support. This may cause poor streaming performance.</source>
-        <translation>Ekran kartı desteği olmadan HDR&apos;yi zorlamak için yaptığınız seçim nedeniyle yazılım kod çözme kullanılıyor. Bu, düşük yayın performansına neden olabilir.</translation>
+        <translation>GPU desteği olmadan HDR&apos;yi zorlama seçiminiz nedeniyle yazılım kod çözme kullanılıyor. Bu, yayın performansının düşmesine neden olabilir.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1101"/>
         <source>This PC&apos;s GPU doesn&apos;t support HEVC Main10 decoding for HDR streaming.</source>
-        <translation>Bu bilgisayarın ekran kartı HDR yayını için HEVC Main10 kod çözmesini desteklemiyor.</translation>
+        <translation>Bu bilgisayarın ekran kartı, HDR yayını için HEVC Main10 kod çözmeyi desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1123"/>
         <source>Your host PC doesn&apos;t support YUV 4:4:4 streaming.</source>
-        <translation>Ana bilgisayarınız YUV 4:4:4 akışını desteklemiyor.</translation>
+        <translation>Host bilgisayarınız YUV 4:4:4 yayınını desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1131"/>
         <source>Your host PC doesn&apos;t support YUV 4:4:4 streaming for selected video codec.</source>
-        <translation>Ana bilgisayarınız seçilen video codec&apos;i için YUV 4:4:4 akışını desteklemiyor.</translation>
+        <translation>Host bilgisayarınız seçilen video kodeği için YUV 4:4:4 yayınını desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1146"/>
         <source>Using software decoding due to your selection to force YUV 4:4:4 without GPU support. This may cause poor streaming performance.</source>
-        <translation>GPU desteği olmadan YUV 4:4:4&apos;ü zorlamak için yaptığınız seçim nedeniyle yazılım kod çözme kullanılıyor. Bu düşük akış performansına neden olabilir.</translation>
+        <translation>GPU desteği olmadan YUV 4:4:4&apos;ü zorlama seçiminiz nedeniyle yazılım kod çözme kullanılıyor. Bu, yayın performansının düşmesine neden olabilir.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1152"/>
         <source>This PC&apos;s GPU doesn&apos;t support YUV 4:4:4 decoding for selected video codec.</source>
-        <translation>Bu bilgisayarın ekran kartı seçilen video codec&apos;i için YUV 4:4:4 kod çözmeyi desteklemiyor.</translation>
+        <translation>Bu bilgisayarın ekran kartı, seçilen video kodeği için YUV 4:4:4 kod çözmeyi desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1161"/>
         <source>GeForce Experience 3.0 or higher is required for 4K streaming.</source>
-        <translation>4K yayın için GeForce Experience 3.0 veya üstü gereklidir.</translation>
+        <translation>4K yayın için GeForce Experience 3.0 veya üzeri gereklidir.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1176"/>
         <source>Your selected surround sound setting is not supported by the current audio device.</source>
-        <translation>Seçtiğiniz surround ses ayarı mevcut ses cihazı tarafından desteklenmiyor.</translation>
+        <translation>Seçtiğiniz çevresel ses ayarı geçerli ses aygıtı tarafından desteklenmiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1182"/>
         <source>Failed to open audio device. Audio will be unavailable during this session.</source>
-        <translation>Ses cihazı açılamadı. Bu oturum sırasında ses kullanılamayacaktır.</translation>
+        <translation>Ses aygıtı açılamadı. Bu oturum boyunca ses kullanılamayacak.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1187"/>
         <source>An attached gamepad has no mapping and won&apos;t be usable. Visit the NyxPlay help to resolve this.</source>
-        <translation>Takılı bir gamepad&apos;in haritalaması yoktur ve kullanılamayacaktır. Bunu çözmek için NyxPlay yardımını ziyaret edin.</translation>
+        <translation>Takılı bir oyun kumandasının eşlemesi yok ve kullanılamayacak. Çözmek için NyxPlay yardımını ziyaret edin.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1205"/>
         <source>Your host PC&apos;s GPU doesn&apos;t support streaming video resolutions over 4K.</source>
-        <translation>Ana bilgisayarınızın ekran kartı 4K&apos;nın üzerindeki video çözünürlüklerini desteklemiyor.</translation>
+        <translation>Host bilgisayarınızın ekran kartı 4K üzerindeki yayın çözünürlüklerini desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1223"/>
         <source>Your selection to force hardware decoding cannot be satisfied due to missing hardware decoding support on this PC&apos;s GPU.</source>
-        <translation>Donanım kod çözmeyi zorlama seçiminiz, bu bilgisayarın ekran kartındaki eksik donanım kod çözme desteği nedeniyle yerine getirilemiyor.</translation>
+        <translation>Donanım kod çözmeyi zorlama seçiminiz, bu bilgisayarın ekran kartında donanım kod çözme desteği bulunmadığı için karşılanamıyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="1226"/>
         <source>Your codec selection and force hardware decoding setting are not compatible. This PC&apos;s GPU lacks support for decoding your chosen codec.</source>
-        <translation>Codec seçiminiz ve donanım kod çözüm zorlama ayarları uyumlu değil. Bu bilgisayarın ekran kartı, seçtiğiniz codec&apos;in kod çözümünü desteklemiyor.</translation>
+        <translation>Kodek seçiminiz ile donanım kod çözmeyi zorlama ayarı uyumlu değil. Bu bilgisayarın ekran kartı, seçtiğiniz kodeğin kodunu çözmeyi desteklemiyor.</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="2204"/>
         <source>Unable to initialize video decoder. Please check your streaming settings and try again.</source>
-        <translation>Video kod çözücü başlatılamıyor. Lütfen yayın ayarlarınızı kontrol edin ve tekrar deneyin.</translation>
+        <translation>Video kod çözücü başlatılamadı. Lütfen yayın ayarlarınızı kontrol edip tekrar deneyin.</translation>
     </message>
 </context>
 <context>
@@ -749,7 +749,7 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="124"/>
         <source>Setting values too high for your PC or network connection may cause lag, stuttering, or errors.</source>
-        <translation>Bilgisayarınız veya ağ bağlantınız için çok yüksek değerler ayarlamak gecikme, takılma veya hatalara neden olabilir.</translation>
+        <translation>Bilgisayarınız veya ağ bağlantınız için çok yüksek değerler ayarlamak gecikmeye, takılmaya veya hatalara neden olabilir.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="106"/>
@@ -779,12 +779,12 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="375"/>
         <source>Custom resolutions are not officially supported by GeForce Experience, so it will not set your host display resolution. You will need to set it manually while in game.</source>
-        <translation>Özel çözünürlükler GeForce Experience tarafından resmi olarak desteklenmediğinden dolay, ana bilgisayarın ekran çözünürlüğünü ayarlamayacak. Oyun içindeyken manuel olarak ayarlamanız gerekecektir.</translation>
+        <translation>Özel çözünürlükler GeForce Experience tarafından resmî olarak desteklenmediğinden host bilgisayarınızın ekran çözünürlüğü otomatik ayarlanmaz. Oyundayken elle ayarlamanız gerekir.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="376"/>
         <source>Resolutions that are not supported by your client or host PC may cause streaming errors.</source>
-        <translation>İstemciniz veya ana bilgisayarınız tarafından desteklenmeyen çözünürlükler yayın hatalarına neden olabilir.</translation>
+        <translation>İstemciniz veya host bilgisayarınız tarafından desteklenmeyen çözünürlükler yayın hatalarına neden olabilir.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="382"/>
@@ -804,7 +804,7 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="680"/>
         <source>Lower the bitrate on slower connections. Raise the bitrate to increase image quality.</source>
-        <translation>Daha yavaş olan bağlantılarda bit hızını düşürün. Görüntü kalitesini artırmak için bit hızını yükseltin.</translation>
+        <translation>Yavaş bağlantılarda bit hızını düşürün. Görüntü kalitesini artırmak için bit hızını yükseltin.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="702"/>
@@ -814,7 +814,7 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="732"/>
         <source>Display mode</source>
-        <translation>Görüntüleme modu</translation>
+        <translation>Ekran modu</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="743"/>
@@ -825,7 +825,7 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="812"/>
         <source>Fullscreen generally provides the best performance, but borderless windowed may work better with features like macOS Spaces, Alt+Tab, screenshot tools, on-screen overlays, etc.</source>
-        <translation>Tam ekran genellikle en iyi performansı sağlar, ancak kenarlıksız pencere modu macOS Space, Alt+Tab, ekran görüntüsü araçları, ekran üstü kaplamalar gibi özelliklerle daha iyi çalışabilir.</translation>
+        <translation>Tam ekran genellikle en iyi performansı sağlar, ancak kenarlıksız pencere; macOS Spaces, Alt+Tab, ekran görüntüsü araçları, ekran üstü katmanlar gibi özelliklerle daha iyi çalışabilir.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="748"/>
@@ -840,7 +840,7 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="183"/>
         <source>Native (Excluding Notch)</source>
-        <translation>Yerli (Çentik Hariç)</translation>
+        <translation>Yerel (Çentik Hariç)</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="718"/>
@@ -866,17 +866,17 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="829"/>
         <source>Disabling V-Sync allows sub-frame rendering latency, but it can display visible tearing</source>
-        <translation>V-sync&apos;in devre dışı bırakılması alt kareden az oluşturma gecikmesine izin verir, ancak görünür yırtılma gösterebilir</translation>
+        <translation>V-Sync&apos;i kapatmak kare altı görüntü oluşturma gecikmesine izin verir, ancak görünür yırtılmaya yol açabilir</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="836"/>
         <source>Frame pacing</source>
-        <translation>Kare aralığı</translation>
+        <translation>Kare hızı dengeleme</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="846"/>
         <source>Frame pacing reduces micro-stutter by delaying frames that come in too early</source>
-        <translation>Kare aralığı, çok erken gelen kareleri geciktirerek mikro takılmaları azaltır</translation>
+        <translation>Kare hızı dengeleme, çok erken gelen kareleri geciktirerek mikro takılmaları azaltır</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="856"/>
@@ -891,32 +891,32 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="895"/>
         <source>5.1 surround sound</source>
-        <translation>5.1 surround ses</translation>
+        <translation>5.1 çevresel ses</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="899"/>
         <source>7.1 surround sound</source>
-        <translation>7.1 surround ses</translation>
+        <translation>7.1 çevresel ses</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="913"/>
         <source>Mute host PC speakers while streaming</source>
-        <translation>Yayın sırasında ana bilgisayar hoparlörlerinin sesini kapatın</translation>
+        <translation>Yayın sırasında host bilgisayar hoparlörlerinin sesini kapat</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="923"/>
         <source>You must restart any game currently in progress for this setting to take effect</source>
-        <translation>Bu ayarın etkili olması için devam etmekte olan herhangi bir oyunu yeniden başlatmanız gerekir</translation>
+        <translation>Bu ayarın etkili olması için devam eden oyunu yeniden başlatmanız gerekir</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="929"/>
         <source>Mute audio stream when NyxPlay is not the active window</source>
-        <translation>NyxPlay etkin pencere olmadığında ses akışını kapat</translation>
+        <translation>NyxPlay etkin pencere olmadığında yayın sesini kapat</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="940"/>
         <source>Mutes NyxPlay&apos;s audio when you Alt+Tab out of the stream or click on a different window.</source>
-        <translation>Yayından Alt+Tab ile çıktığınızda veya farklı bir pencereye tıkladığınızda NyxPlay&apos;ın sesini kapatır.</translation>
+        <translation>Yayından Alt+Tab ile çıktığınızda veya başka bir pencereye tıkladığınızda NyxPlay sesini kapatır.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="989"/>
@@ -936,17 +936,17 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1160"/>
         <source>You must restart NyxPlay for this change to take effect</source>
-        <translation>Bu değişikliğin etkili olması için NyxPlay&apos;ı yeniden başlatmanız gerekir</translation>
+        <translation>Bu değişikliğin geçerli olması için NyxPlay&apos;i yeniden başlatmanız gerekir</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1177"/>
         <source>GUI display mode</source>
-        <translation>GUI görüntüleme modu</translation>
+        <translation>Arayüz ekran modu</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1214"/>
         <source>Maximized</source>
-        <translation>Maksimize Edilmiş</translation>
+        <translation>Büyütülmüş</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1242"/>
@@ -961,12 +961,12 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1319"/>
         <source>This enables seamless mouse control without capturing the client&apos;s mouse cursor. It is ideal for remote desktop usage but will not work in most games.</source>
-        <translation>İstemcinin fare imlecini yakalamadan sorunsuz fare kontrolü sağlar. Uzak masaüstü kullanımı için idealdir ancak çoğu oyunlarda çalışmayacaktır.</translation>
+        <translation>İstemcinin fare imlecini yakalamadan kesintisiz fare denetimi sağlar. Uzak masaüstü kullanımı için idealdir ancak çoğu oyunda çalışmaz.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1321"/>
         <source>NOTE: Due to a bug in GeForce Experience, this option may not work properly if your host PC has multiple monitors.</source>
-        <translation>NOT: GeForce Experience&apos;daki bir hata nedeniyle, ana bilgisayarınızda birden fazla monitör varsa bu seçenek düzgün çalışmayabilir.</translation>
+        <translation>NOT: GeForce Experience&apos;taki bir hata nedeniyle, host bilgisayarınızda birden fazla monitör varsa bu seçenek düzgün çalışmayabilir.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1621"/>
@@ -976,12 +976,12 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1636"/>
         <source>Enable HDR</source>
-        <translation>HDR&apos;yi Etkinleştir</translation>
+        <translation>HDR&apos;yi etkinleştir</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1651"/>
         <source>The stream will be HDR-capable, but some games may require an HDR monitor on your host PC to enable HDR mode.</source>
-        <translation>Yayın HDR özellikli olacaktır, ancak bazı oyunlar HDR modunu etkinleştirmek için ana bilgisayarınızda bir HDR monitör gerektirebilir.</translation>
+        <translation>Yayın HDR destekli olacaktır; ancak bazı oyunlar HDR modunu etkinleştirmek için host bilgisayarınızda HDR destekli bir monitör gerektirebilir.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1653"/>
@@ -991,7 +991,7 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1659"/>
         <source>Enable YUV 4:4:4</source>
-        <translation>YUV 4:4:4&apos;ü Etkinleştir</translation>
+        <translation>YUV 4:4:4&apos;ü etkinleştir</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1740"/>
@@ -1001,12 +1001,12 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1750"/>
         <source>Display real-time stream performance information while streaming.</source>
-        <translation>Yayın sırasında gerçek zamanlı yayın performansı bilgilerini görüntüleyin.</translation>
+        <translation>Yayın sırasında gerçek zamanlı performans bilgilerini gösterir.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1751"/>
         <source>You can toggle it at any time while streaming using Ctrl+Alt+Shift+S or Select+L1+R1+X.</source>
-        <translation>Yayın sırasında Ctrl+Alt+Shift+S veya Select+L1+R1+X tuşlarını kullanarak istediğiniz zaman geçiş yapabilirsiniz.</translation>
+        <translation>Yayın sırasında Ctrl+Alt+Shift+S veya Select+L1+R1+X ile istediğiniz zaman açıp kapatabilirsiniz.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1752"/>
@@ -1016,12 +1016,12 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1340"/>
         <source>NOTE: Certain keyboard shortcuts like Ctrl+Alt+Del on Windows cannot be intercepted by any application, including NyxPlay.</source>
-        <translation>NOT: Windows&apos;ta Ctrl+Alt+Del gibi belirli klavye kısayolları NyxPlay dahil hiçbir uygulama tarafından engellenemez.</translation>
+        <translation>NOT: Windows&apos;ta Ctrl+Alt+Del gibi bazı klavye kısayolları NyxPlay dahil hiçbir uygulama tarafından yakalanamaz.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1403"/>
         <source>Use touchscreen as a virtual trackpad</source>
-        <translation>Dokunmatik ekranı sanal trackpad olarak kullan</translation>
+        <translation>Dokunmatik ekranı sanal dokunmatik yüzey olarak kullan</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1420"/>
@@ -1031,57 +1031,57 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1432"/>
         <source>Reverse mouse scrolling direction</source>
-        <translation>Fare kaydırma yönünü tersine çevir</translation>
+        <translation>Fare kaydırma yönünü ters çevir</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1446"/>
         <source>Gamepad Settings</source>
-        <translation>Oyun Kolu Ayarları</translation>
+        <translation>Oyun Kumandası Ayarları</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1456"/>
         <source>Swap A/B and X/Y gamepad buttons</source>
-        <translation>A/B ve X/Y gamepad düğmelerini değiştir</translation>
+        <translation>A/B ve X/Y düğmelerini değiştir</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1466"/>
         <source>This switches gamepads into a Nintendo-style button layout</source>
-        <translation>Oyun kumandalarını Nintendo tarzı bir düğme düzenine dönüştürür</translation>
+        <translation>Oyun kumandalarını Nintendo tarzı bir düğme düzenine geçirir</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1472"/>
         <source>Force gamepad #1 always connected</source>
-        <translation>1 numaralı oyun kumandasını her zaman bağlı kalmaya zorla</translation>
+        <translation>1 numaralı oyun kumandasını her zaman bağlı tut</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1482"/>
         <source>Forces a single gamepad to always stay connected to the host, even if no gamepads are actually connected to this PC.</source>
-        <translation>Bilgisayara hiçbir gamepad bağlı olmasa bile tek bir gamepad&apos;in her zaman ana bilgisayara bağlı kalmasını zorlar.</translation>
+        <translation>Bu bilgisayara hiç oyun kumandası bağlı olmasa bile host bilgisayarda tek bir oyun kumandasının her zaman bağlı kalmasını sağlar.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1320"/>
         <source>You can toggle this while streaming using Ctrl+Alt+Shift+M.</source>
-        <translation>Yayın sırasında Ctrl+Alt+Shift+M tuşlarını kullanarak bunu aç/kapa yapabilirsiniz.</translation>
+        <translation>Bunu yayın sırasında Ctrl+Alt+Shift+M ile açıp kapatabilirsiniz.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1490"/>
         <source>Enable mouse control with gamepads by holding the &apos;Start&apos; button</source>
-        <translation>&apos;Start&apos; düğmesini basılı tutarak gamepad&apos;lerle fare kontrolünü etkinleştir</translation>
+        <translation>&apos;Start&apos; düğmesini basılı tutarak oyun kumandalarıyla fare denetimini etkinleştir</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1501"/>
         <source>Process gamepad input when NyxPlay is in the background</source>
-        <translation>NyxPlay arka plandayken gamepad verilerini işle</translation>
+        <translation>NyxPlay arka plandayken oyun kumandası girişini işle</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1512"/>
         <source>Allows NyxPlay to capture gamepad inputs even if it&apos;s not the current window in focus</source>
-        <translation>NyxPlay&apos;ın odaklanılan mevcut pencere olmasa bile gamepad verilerinin yakalamasını sağlar</translation>
+        <translation>NyxPlay&apos;in, odaktaki pencere olmasa bile oyun kumandası girişlerini yakalamasını sağlar</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="949"/>
         <source>Host Settings</source>
-        <translation>Ana Bilgisayar Ayarları</translation>
+        <translation>Host Ayarları</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1521"/>
@@ -1091,7 +1091,7 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="866"/>
         <source>Audio configuration</source>
-        <translation>Ses konfigürasyonu</translation>
+        <translation>Ses yapılandırması</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1231"/>
@@ -1106,17 +1106,17 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1264"/>
         <source>Updates your Discord status to display the name of the game you&apos;re streaming.</source>
-        <translation>Discord durumunuzu yayınladığınız oyunun adını gösterecek şekilde günceller.</translation>
+        <translation>Discord durumunuzu, yayınladığınız oyunun adını gösterecek şekilde günceller.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1483"/>
         <source>Only enable this option when streaming a game that doesn&apos;t support gamepads being connected after startup.</source>
-        <translation>Bu seçeneği yalnızca oyun kumandalarının başlangıçtan sonra bağlanmasını desteklemeyen bir oyunu yayınlarken etkinleştirin.</translation>
+        <translation>Bu seçeneği yalnızca, başlangıçtan sonra oyun kumandası bağlanmasını desteklemeyen bir oyunu yayınlarken etkinleştirin.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1309"/>
         <source>Optimize mouse for remote desktop instead of games</source>
-        <translation>Fareyi oyunlar yerine uzak masaüstü için optimize edin</translation>
+        <translation>Fareyi oyunlar yerine uzak masaüstü için optimize et</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="512"/>
@@ -1149,17 +1149,17 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1270"/>
         <source>Keep the display awake while streaming</source>
-        <translation>Yayın sırasında ekranı uyanık tut</translation>
+        <translation>Yayın sırasında ekranı açık tut</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1280"/>
         <source>Prevents the screensaver from starting or the display from going to sleep while streaming.</source>
-        <translation>Yayın sırasında ekran koruyucunun başlamasını veya ekranın uyku moduna geçmesini önler.</translation>
+        <translation>Yayın sırasında ekran koruyucunun başlamasını veya ekranın uyku moduna geçmesini engeller.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1331"/>
         <source>Capture system keyboard shortcuts</source>
-        <translation>Sistemin klavye kısayollarını yakala</translation>
+        <translation>Sistem klavye kısayollarını yakala</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1339"/>
@@ -1179,22 +1179,27 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1413"/>
         <source>When checked, the touchscreen acts like a trackpad. When unchecked, the touchscreen will directly control the mouse pointer.</source>
-        <translation>İşaretlendiğinde, dokunmatik ekran bir trackpad gibi davranır. İşaretlenmediğinde, dokunmatik ekran doğrudan fare işaretçisini kontrol eder.</translation>
+        <translation>İşaretlendiğinde dokunmatik ekran bir dokunmatik yüzey gibi davranır. İşaret kaldırıldığında doğrudan fare işaretçisini denetler.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="959"/>
         <source>Optimize game settings for streaming</source>
-        <translation>Oyun ayarlarını yayın için optimize edin</translation>
+        <translation>Oyun ayarlarını yayın için optimize et</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="970"/>
         <source>Quit app on host PC after ending stream</source>
-        <translation>Yayını sonlandırdıktan sonra ana bilgisayarda uygulamadan çık</translation>
+        <translation>Yayın bittikten sonra host bilgisayardaki uygulamadan çık</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="980"/>
         <source>This will close the app or game you are streaming when you end your stream. You will lose any unsaved progress!</source>
-        <translation>Yayınınızı sonlandırdığınızda yayın yaptığınız uygulamayı veya oyunu kapatacaktır. Kaydedilmemiş tüm ilerlemeleri kaybedeceksiniz!</translation>
+        <translation>Yayını sonlandırdığınızda yayınladığınız uygulama veya oyun kapatılır. Kaydedilmemiş tüm ilerlemeyi kaybedersiniz!</translation>
+    </message>
+    <message>
+        <location filename="../gui/SettingsView.qml" line="1662"/>
+        <source>Renderer</source>
+        <translation>Görüntü oluşturucu</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1531"/>
@@ -1220,7 +1225,7 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1579"/>
         <source>Video codec</source>
-        <translation>Video codec bileşeni</translation>
+        <translation>Video kodeği</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1613"/>
@@ -1235,32 +1240,32 @@
     <message>
         <location filename="../gui/SettingsView.qml" line="1681"/>
         <source>Good for streaming desktop and text-heavy games, but not recommended for fast-paced games.</source>
-        <translation>Masaüstü ve metin ağırlıklı oyunların akışı için iyi, ancak hızlı tempolu oyunlar için önerilmez.</translation>
+        <translation>Masaüstü ve metin ağırlıklı oyunları yayınlamak için iyi, ancak hızlı tempolu oyunlar için önerilmez.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1683"/>
         <source>YUV 4:4:4 is not supported on this PC.</source>
-        <translation>YUV 4:4:4 bu bilgisayarda desteklenmemektedir.</translation>
+        <translation>YUV 4:4:4 bu bilgisayarda desteklenmiyor.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1689"/>
         <source>Unlock bitrate limit (Experimental)</source>
-        <translation>Bit hızı sınırının kilidini aç (Deneysel)</translation>
+        <translation>Bit hızı sınırını kaldır (Deneysel)</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1702"/>
         <source>This unlocks extremely high video bitrates for use with NyxPlay Host. It should only be used when streaming over an Ethernet LAN connection.</source>
-        <translation>Bu, NyxPlay Host ile kullanım için son derece yüksek video bit hızlarının kilidini açar. Yalnızca Ethernet LAN bağlantısı üzerinden akış yaparken kullanılmalıdır.</translation>
+        <translation>NyxPlay Host ile kullanım için son derece yüksek video bit hızlarının kilidini açar. Yalnızca Ethernet LAN bağlantısı üzerinden yayın yaparken kullanılmalıdır.</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1708"/>
         <source>Automatically find PCs on the local network (Recommended)</source>
-        <translation>Yerel ağdaki bilgisayarları otomatik olarak bul (Önerilen)</translation>
+        <translation>Yerel ağdaki bilgisayarları otomatik bul (Önerilen)</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1729"/>
         <source>Automatically detect blocked connections (Recommended)</source>
-        <translation>Engellenen bağlantıları otomatik olarak algıla (Önerilen)</translation>
+        <translation>Engellenen bağlantıları otomatik algıla (Önerilen)</translation>
     </message>
 </context>
 <context>
@@ -1268,7 +1273,7 @@
     <message>
         <location filename="../gui/StreamSegue.qml" line="12"/>
         <source>Resuming %1...</source>
-        <translation>%1&apos;e devam ediliyor...</translation>
+        <translation>%1 sürdürülüyor...</translation>
     </message>
     <message>
         <location filename="../gui/StreamSegue.qml" line="13"/>
@@ -1279,27 +1284,27 @@
     <message>
         <location filename="../gui/StreamSegue.qml" line="26"/>
         <source>Starting %1 failed: Error %2</source>
-        <translation>%1&apos;in başlatılması başarısız oldu: Hata %2</translation>
+        <translation>%1 başlatılamadı: Hata %2</translation>
     </message>
     <message>
         <location filename="../gui/StreamSegue.qml" line="29"/>
         <source>Check your firewall and port forwarding rules for port(s): %1</source>
-        <translation>Bağlantı noktaları için güvenlik duvarınızı ve bağlantı noktası yönlendirme kurallarınızı kontrol edin: %1</translation>
+        <translation>Şu bağlantı noktaları için güvenlik duvarı ve bağlantı noktası yönlendirme kurallarınızı kontrol edin: %1</translation>
     </message>
     <message>
         <location filename="../gui/StreamSegue.qml" line="65"/>
         <source>This PC&apos;s Internet connection is blocking NyxPlay. Streaming over the Internet may not work while connected to this network.</source>
-        <translation>Bu bilgisayarın İnternet bağlantısı NyxPlay&apos;ı engelliyor. Bu ağa bağlıyken İnternet üzerinden yayın akışı çalışmayabilir.</translation>
+        <translation>Bu bilgisayarın internet bağlantısı NyxPlay&apos;i engelliyor. Bu ağa bağlıyken internet üzerinden yayın çalışmayabilir.</translation>
     </message>
     <message>
         <location filename="../gui/StreamSegue.qml" line="168"/>
         <source>Tip:</source>
-        <translation>Tavsiye:</translation>
+        <translation>İpucu:</translation>
     </message>
     <message>
         <location filename="../gui/StreamSegue.qml" line="168"/>
         <source>Press %1 to disconnect your session</source>
-        <translation>Oturumunuzun bağlantısını kesmek için %1&apos;e basın</translation>
+        <translation>Oturum bağlantısını kesmek için %1 tuşlarına basın</translation>
     </message>
     <message>
         <location filename="../gui/StreamSegue.qml" line="169"/>
@@ -1314,7 +1319,7 @@
     <message>
         <location filename="../gui/StreamSegue.qml" line="1"/>
         <source>The host closed the connection unexpectedly. Try again; if it keeps happening, restart the host.</source>
-        <translation>Ana bilgisayar bağlantıyı beklenmedik şekilde kapattı. Yeniden deneyin; sorun sürerse ana bilgisayarı yeniden başlatın.</translation>
+        <translation>Host bilgisayar bağlantıyı beklenmedik şekilde kapattı. Yeniden deneyin; sorun sürerse host bilgisayarı yeniden başlatın.</translation>
     </message>
 </context>
 <context>
@@ -1332,7 +1337,7 @@
     <message>
         <location filename="../gui/main.qml" line="326"/>
         <source>Add PC manually</source>
-        <translation>Pc ekle</translation>
+        <translation>Bilgisayarı elle ekle</translation>
     </message>
     <message>
         <location filename="../gui/main.qml" line="366"/>
@@ -1342,22 +1347,22 @@
     <message>
         <location filename="../gui/main.qml" line="413"/>
         <source>Gamepad Mapper</source>
-        <translation>Oyun Kumandası Eşleştirici</translation>
+        <translation>Oyun Kumandası Eşleyici</translation>
     </message>
     <message>
         <location filename="../gui/main.qml" line="459"/>
         <source>Hardware acceleration doesn&apos;t work on XWayland. Continuing on XWayland may result in poor streaming performance. Try running with QT_QPA_PLATFORM=wayland or switch to X11.</source>
-        <translation>Donanım hızlandırma XWayland üzerinde çalışmıyor. XWayland&apos;da devam etmek düşük akış performansına neden olabilir. QT_QPA_PLATFORM=wayland ile çalıştırmayı deneyin veya X11&apos;e geçin.</translation>
+        <translation>Donanım hızlandırma XWayland üzerinde çalışmıyor. XWayland&apos;de devam etmek yayın performansını düşürebilir. QT_QPA_PLATFORM=wayland ile çalıştırmayı veya X11&apos;e geçmeyi deneyin.</translation>
     </message>
     <message>
         <location filename="../gui/main.qml" line="468"/>
         <source>This version of NyxPlay isn&apos;t optimized for your PC. Please download the &apos;%1&apos; version of NyxPlay for the best streaming performance.</source>
-        <translation>NyxPlay&apos;ın bu sürümü bilgisayarınız için optimize edilmemiştir. En iyi yayın performansı için lütfen NyxPlay&apos;ın &apos;%1&apos; sürümünü indirin.</translation>
+        <translation>NyxPlay&apos;in bu sürümü bilgisayarınız için optimize edilmemiş. En iyi yayın performansı için lütfen NyxPlay&apos;in &apos;%1&apos; sürümünü indirin.</translation>
     </message>
     <message>
         <location filename="../gui/main.qml" line="477"/>
         <source>NyxPlay detected gamepads without a mapping:</source>
-        <translation>NyxPlay haritalama olmayan oyun kumandalarını algıladı:</translation>
+        <translation>NyxPlay eşlemesi olmayan oyun kumandaları algıladı:</translation>
     </message>
     <message>
         <location filename="../gui/main.qml" line="390"/>
@@ -1367,12 +1372,12 @@
     <message>
         <location filename="../gui/main.qml" line="451"/>
         <source>No functioning hardware accelerated video decoder was detected by NyxPlay. Your streaming performance may be severely degraded in this configuration.</source>
-        <translation>NyxPlay tarafından çalışan bir donanım hızlandırmalı video kod çözücü algılanmadı. Bu yapılandırmada yayın performansınız ciddi şekilde düşebilir.</translation>
+        <translation>NyxPlay çalışan bir donanım hızlandırmalı video kod çözücü algılamadı. Bu yapılandırmada yayın performansınız ciddi ölçüde düşebilir.</translation>
     </message>
     <message>
         <location filename="../gui/main.qml" line="453"/>
         <source>Click the Help button for more information on solving this problem.</source>
-        <translation>Bu sorunu çözme hakkında daha fazla bilgi için Yardım düğmesine tıklayın.</translation>
+        <translation>Bu sorunu çözmeye ilişkin daha fazla bilgi için Yardım düğmesine tıklayın.</translation>
     </message>
     <message>
         <location filename="../gui/main.qml" line="461"/>
@@ -1382,17 +1387,17 @@
     <message>
         <location filename="../gui/main.qml" line="479"/>
         <source>Click the Help button for information on how to map your gamepads.</source>
-        <translation>Oyun kumandalarınızı nasıl eşleyeceğiniz hakkında bilgi için Yardım düğmesine tıklayın.</translation>
+        <translation>Oyun kumandalarınızı nasıl eşleyeceğinize ilişkin bilgi için Yardım düğmesine tıklayın.</translation>
     </message>
     <message>
         <location filename="../gui/main.qml" line="487"/>
         <source>Are you sure you want to quit?</source>
-        <translation>Çıkmak istediğine emin misin?</translation>
+        <translation>Çıkmak istediğinizden emin misiniz?</translation>
     </message>
     <message>
         <location filename="../gui/main.qml" line="517"/>
         <source>Enter the IP address of your host PC:</source>
-        <translation>Ana bilgisayarınızın IP adresini girin:</translation>
+        <translation>Host bilgisayarınızın IP adresini girin:</translation>
     </message>
 </context>
 </TS>
