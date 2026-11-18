@@ -238,6 +238,12 @@ namespace rtsp_stream {
   void terminate_sessions();
 
   /**
+   * @brief Stop the streams of an address group and discard a launch it left pending.
+   * @param group_key Key from security_log::group_key(), i.e. an IPv4 address or an IPv6 /64.
+   */
+  void stop_sessions_from_group(const std::string &group_key);
+
+  /**
    * @brief Runs the RTSP server loop.
    */
   void start();

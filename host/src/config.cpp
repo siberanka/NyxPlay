@@ -554,6 +554,16 @@ namespace config {
     {},  // external_ip
   };
 
+  security_t security {
+    true,  // security_log
+    10,  // security_log_max_mb
+    true,  // ban_enabled
+    10,  // ban_threshold
+    600,  // ban_window_seconds
+    1800,  // ban_duration_seconds
+    {},  // ban_whitelist
+  };
+
   input_t input {
     {
       {0x10, 0xA0},
@@ -1277,6 +1287,14 @@ namespace config {
     int_between_f(vars, "wan_encryption_mode", stream.wan_encryption_mode, {0, 2});
     int_between_f(vars, "rtsp_plaintext", stream.rtsp_plaintext, {0, 2});
 
+    bool_f(vars, "security_log", security.log);
+    int_between_f(vars, "security_log_max_mb", security.log_max_mb, {1, 100});
+    bool_f(vars, "ban_enabled", security.ban_enabled);
+    int_between_f(vars, "ban_threshold", security.ban_threshold, {3, 1000});
+    int_between_f(vars, "ban_window_seconds", security.ban_window_seconds, {10, 86400});
+    int_between_f(vars, "ban_duration_seconds", security.ban_duration_seconds, {0, 2592000});
+    string_f(vars, "ban_whitelist", security.ban_whitelist);
+
     path_f(vars, "file_apps", stream.file_apps);
     int_between_f(vars, "fec_percentage", stream.fec_percentage, {1, 100});
 
@@ -1446,7 +1464,8 @@ namespace config {
       "qsv_slow_hevc"sv, "rtsp_plaintext"sv, "server_cmd"sv, "stream_audio"sv, "sunshine_name"sv,
       "sw_preset"sv, "sw_tune"sv, "system_tray"sv, "touchpad_as_ds4"sv, "upnp"sv,
       "vaapi_strict_rc_buffer"sv, "virtual_display_driver"sv, "virtual_sink"sv, "vt_coder"sv,
-      "vt_realtime"sv, "vt_software"sv, "wan_encryption_mode"sv
+      "vt_realtime"sv, "vt_software"sv, "wan_encryption_mode"sv, "ban_duration_seconds"sv, "ban_enabled"sv,
+      "ban_threshold"sv, "ban_whitelist"sv, "ban_window_seconds"sv, "security_log"sv, "security_log_max_mb"sv
     };
     return known.count(name) > 0;
   }

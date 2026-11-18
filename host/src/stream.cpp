@@ -5,6 +5,7 @@
 
 // standard includes
 #include <cstring>
+#include <format>
 #include <fstream>
 #include <future>
 #include <mutex>
@@ -32,6 +33,7 @@ extern "C" {
 #include "network.h"
 #include "platform/common.h"
 #include "process.h"
+#include "security_log.h"
 #include "stream.h"
 #include "sync.h"
 #include "system_tray.h"
@@ -288,6 +290,23 @@ namespace stream {
     int bind(net::af_e address_family, std::uint16_t port) {
       _host = net::host_create(address_family, _addr, port);
 
+      if (_host) {
+        // Packets of blocked addresses are dropped before ENet sees them (no peer, no handshake)
+        _host->intercept = [](ENetHost *host, ENetEvent *) -> int {
+          if (!security_log::any_blocked()) {
+            return 0;
+          }
+          const auto address = platf::from_sockaddr((sockaddr *) &host->receivedPeerAddress.address);
+          boost::system::error_code ec;
+          const auto parsed = boost::asio::ip::make_address(address, ec);
+          if (ec || !security_log::is_blocked(parsed)) {
+            return 0;
+          }
+          security_log::note_blocked(parsed, security_log::service::control);
+          return 1;
+        };
+      }
+
       return !(bool) _host;
     }
 
@@ -447,6 +466,12 @@ namespace stream {
     safe::signal_t controlEnd;
 
     std::atomic<session::state_e> state;
+
+    // Security log: who streams from where, and for how long
+    std::string remote_address;
+    std::chrono::steady_clock::time_point started_at;
+    std::atomic_bool start_recorded {false};
+    std::atomic<const char *> end_reason {nullptr};
   };
 
   /**
@@ -626,7 +651,9 @@ namespace stream {
     if (res > 0) {
       auto session = get_session(event.peer, event.data);
       if (!session) {
-        BOOST_LOG(warning) << "Rejected connection from ["sv << platf::from_sockaddr((sockaddr *) &event.peer->address.address) << "]: it's not properly set up"sv;
+        const auto peer_address = platf::from_sockaddr((sockaddr *) &event.peer->address.address);
+        BOOST_LOG(warning) << "Rejected connection from ["sv << peer_address << "]: it's not properly set up"sv;
+        security_log::record(security_log::type::control_rejected, security_log::result::denied, peer_address, security_log::service::control, {.detail = "no matching streaming session"});
         enet_peer_disconnect_now(event.peer, 0);
 
         return;
@@ -659,6 +686,7 @@ namespace stream {
           BOOST_LOG(info) << "CLIENT DISCONNECTED"sv;
           // No more clients to send video data to ^_^
           if (session->state == session::state_e::RUNNING) {
+            session::note_end_reason(*session, "client disconnected");
             session::stop(*session);
           }
           break;
@@ -1345,6 +1373,7 @@ namespace stream {
           if (now > session->pingTimeout) {
             auto address = session->control.peer ? platf::from_sockaddr((sockaddr *) &session->control.peer->address.address) : session->control.expected_peer_address;
             BOOST_LOG(info) << address << ": Ping Timeout"sv;
+            session::note_end_reason(*session, "timeout");
             session::stop(*session);
           }
 
@@ -1480,6 +1509,12 @@ namespace stream {
         auto fg = util::fail_guard([&]() {
           sock.async_receive_from(asio::buffer(buf[buf_elem]), peer, 0, recv_func[buf_elem]);
         });
+
+        // Pings of a blocked address are ignored (cheap check, nothing is blocked in the common case)
+        if (!ec && bytes && security_log::is_blocked(peer.address())) {
+          security_log::note_blocked(peer.address(), security_log::service::control);
+          return;
+        }
 
         auto type_str = buf_elem ? "AUDIO"sv : "VIDEO"sv;
         BOOST_LOG(verbose) << "Recv: "sv << peer.address().to_string() << ':' << peer.port() << " :: " << type_str;
@@ -2231,7 +2266,17 @@ namespace stream {
       // when it removes the stopping session, and it also raises controlEnd once it no longer
       // references the session (raising it here allowed join() to free a session still in use).
       session.control.terminate_gracefully.store(true, std::memory_order_release);
+      note_end_reason(session, "stopped by the host");
       stop(session);
+    }
+
+    void note_end_reason(session_t &session, const char *reason) {
+      const char *expected = nullptr;
+      session.end_reason.compare_exchange_strong(expected, reason);
+    }
+
+    std::string remote_address(const session_t &session) {
+      return session.remote_address;
     }
 
     void join(session_t &session) {
@@ -2299,6 +2344,18 @@ namespace stream {
         platf::streaming_will_stop();
       }
 
+      if (session.start_recorded.exchange(false)) {
+        const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - session.started_at).count();
+        const char *reason = session.end_reason.load();
+        security_log::record(
+          security_log::type::stream_end,
+          security_log::result::ok,
+          session.remote_address,
+          security_log::service::control,
+          {.client_uuid = session.device_uuid, .client_name = session.device_name, .detail = std::format("duration={}s reason={}", seconds, reason ? reason : "ended")}
+        );
+      }
+
       BOOST_LOG(debug) << "Session ended"sv;
     }
 
@@ -2347,6 +2404,16 @@ namespace stream {
         }
       }
 
+      session.started_at = std::chrono::steady_clock::now();
+      session.start_recorded.store(true);
+      security_log::record(
+        security_log::type::stream_start,
+        security_log::result::ok,
+        session.remote_address,
+        security_log::service::control,
+        {.client_uuid = session.device_uuid, .client_name = session.device_name, .app_name = proc::proc.get_last_run_app_name()}
+      );
+
       if (!session.do_cmds.empty()) {
         platf::run_detached([cmd_list = session.do_cmds]{
           for (auto &cmd : cmd_list) {
@@ -2377,6 +2444,7 @@ namespace stream {
       session->device_name = launch_session.device_name;
       session->device_uuid = launch_session.unique_id;
       session->permission = launch_session.perm;
+      session->remote_address = launch_session.remote_address;
 
       session->text_input.requested = launch_session.text_input_events;
       if (session->text_input.requested) {

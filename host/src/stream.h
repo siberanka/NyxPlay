@@ -69,6 +69,10 @@ namespace stream {
     int start(session_t &session, const std::string &addr_string);
     void stop(session_t &session);
     void graceful_stop(session_t& session);
+    /// Remember why the stream ends (the first reason wins), for the security log.
+    void note_end_reason(session_t &session, const char *reason);
+    /// Normalised address of the client the stream was started for.
+    std::string remote_address(const session_t &session);
     void join(session_t &session);
     state_e state(session_t &session);
     inline bool send(session_t& session, const std::string_view &payload);

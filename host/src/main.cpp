@@ -18,6 +18,7 @@
 #include "main.h"
 #include "nvhttp.h"
 #include "process.h"
+#include "security_log.h"
 #include "system_tray.h"
 #include "upnp.h"
 #include "uuid.h"
@@ -430,6 +431,8 @@ int main(int argc, char *argv[]) {
     return lifetime::desired_exit_code;
   }
 
+  security_log::init();
+
   std::thread httpThread {nvhttp::start};
   std::thread configThread {confighttp::start};
   std::thread rtspThread {rtsp_stream::start};
@@ -464,6 +467,8 @@ int main(int argc, char *argv[]) {
   httpThread.join();
   configThread.join();
   rtspThread.join();
+
+  security_log::shutdown();
 
   task_pool.stop();
   task_pool.join();

@@ -44,6 +44,7 @@
 #include "nvhttp.h"
 #include "platform/common.h"
 #include "process.h"
+#include "security_log.h"
 #include "utility.h"
 #include "uuid.h"
 
@@ -56,7 +57,60 @@ using namespace std::literals;
 namespace confighttp {
   namespace fs = std::filesystem;
 
-  using https_server_t = SimpleWeb::Server<SimpleWeb::HTTPS>;
+  /**
+   * @brief Web UI server that turns blocked addresses away before the TLS handshake.
+   * @note The accept() member is Server<HTTPS>::accept() with the address check added.
+   */
+  class WebUiServer: public SimpleWeb::Server<SimpleWeb::HTTPS> {
+  public:
+    using SimpleWeb::Server<SimpleWeb::HTTPS>::Server;
+
+  protected:
+    void accept() override {
+      auto connection = create_connection(*io_service, context);
+
+      acceptor->async_accept(connection->socket->lowest_layer(), [this, connection](const SimpleWeb::error_code &ec) {
+        auto lock = connection->handler_runner->continue_lock();
+        if (!lock) {
+          return;
+        }
+
+        if (ec != SimpleWeb::error::operation_aborted) {
+          this->accept();
+        }
+
+        if (!ec && security_log::refuse_if_blocked(connection->socket->lowest_layer(), security_log::service::webui)) {
+          return;
+        }
+
+        auto session = std::make_shared<Session>(config.max_request_streambuf_size, connection);
+
+        if (!ec) {
+          boost::asio::ip::tcp::no_delay option(true);
+          SimpleWeb::error_code ec;
+          session->connection->socket->lowest_layer().set_option(option, ec);
+
+          session->connection->set_timeout(config.timeout_request);
+          session->connection->socket->async_handshake(boost::asio::ssl::stream_base::server, [this, session](const SimpleWeb::error_code &ec) {
+            session->connection->cancel_timeout();
+            auto lock = session->connection->handler_runner->continue_lock();
+            if (!lock) {
+              return;
+            }
+            if (!ec) {
+              this->read(session);
+            } else if (this->on_error) {
+              this->on_error(session->request, ec);
+            }
+          });
+        } else if (this->on_error) {
+          this->on_error(session->request, ec);
+        }
+      });
+    }
+  };
+
+  using https_server_t = WebUiServer;
   using args_t = SimpleWeb::CaseInsensitiveMultimap;
   using resp_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTPS>::Response>;
   using req_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTPS>::Request>;
@@ -90,6 +144,13 @@ namespace confighttp {
       BOOST_LOG(debug) << name << " -- " << val;
     }
     BOOST_LOG(debug) << " [--] "sv;
+  }
+
+  /**
+   * @brief Record an administrative action in the security log.
+   */
+  static void log_admin(const req_https_t &request, std::string_view detail) {
+    security_log::record(security_log::type::admin_action, security_log::result::ok, net::addr_to_normalized_string(request->remote_endpoint().address()), security_log::service::webui, {.client_name = "Web UI"sv, .detail = detail});
   }
 
   /**
@@ -144,6 +205,7 @@ namespace confighttp {
   void send_unauthorized(resp_https_t response, req_https_t request) {
     auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
     BOOST_LOG(info) << "Web UI: ["sv << address << "] -- not authorized"sv;
+    security_log::record(security_log::type::webui_denied, security_log::result::denied, address, security_log::service::webui, {.detail = "no valid session"sv});
     send_error(response, SimpleWeb::StatusCode::client_error_unauthorized, "Unauthorized");
   }
 
@@ -321,6 +383,7 @@ namespace confighttp {
     }
 
     auto address = net::addr_to_normalized_string(request->remote_endpoint().address());
+    security_log::record(security_log::type::webui_denied, security_log::result::denied, address, security_log::service::webui, {.detail = "cross-origin request"sv});
     BOOST_LOG(warning) << "Web UI: ["sv << address << "] -- cross-origin request rejected (origin ["sv
                        << loggable(header("origin")) << "], referer ["sv << loggable(header("referer")) << "], fetch site ["sv
                        << loggable(header("sec-fetch-site"), 32) << "])"sv;
@@ -382,6 +445,7 @@ namespace confighttp {
     auto ip_type = net::from_address(address);
     if (ip_type > http::origin_web_ui_allowed) {
       BOOST_LOG(info) << "Web UI: ["sv << address << "] -- denied"sv;
+      security_log::record(security_log::type::webui_denied, security_log::result::denied, address, security_log::service::webui, {.detail = "address class not allowed"sv});
       response->write(SimpleWeb::StatusCode::client_error_forbidden);
       return false;
     }
@@ -590,6 +654,23 @@ namespace confighttp {
       return std::nullopt;
     }
 
+    /// Allowed range of the whole number options of the security log, if `name` is one of them.
+    std::optional<std::pair<long, long>> security_int_range(std::string_view name) {
+      if (name == "security_log_max_mb") {
+        return std::pair<long, long> {1, 100};
+      }
+      if (name == "ban_threshold") {
+        return std::pair<long, long> {3, 1000};
+      }
+      if (name == "ban_window_seconds") {
+        return std::pair<long, long> {10, 86400};
+      }
+      if (name == "ban_duration_seconds") {
+        return std::pair<long, long> {0, 2592000};
+      }
+      return std::nullopt;
+    }
+
     bool is_known_option(std::string_view name) {
       static const std::set<std::string_view> known {
       "adapter_name", "address_family", "always_send_scancodes", "amd_coder", "amd_enforce_hrd",
@@ -612,7 +693,8 @@ namespace confighttp {
       "ping_timeout", "pkey", "port", "qp", "qsv_coder", "qsv_preset", "qsv_slow_hevc", "rtsp_plaintext", "server_cmd",
       "stream_audio", "sunshine_name", "sw_preset", "sw_tune", "system_tray", "touchpad_as_ds4", "upnp",
       "vaapi_strict_rc_buffer", "virtual_display_driver", "virtual_sink", "vt_coder", "vt_realtime",
-      "vt_software", "wan_encryption_mode"
+      "vt_software", "wan_encryption_mode", "ban_duration_seconds", "ban_enabled", "ban_threshold",
+      "ban_whitelist", "ban_window_seconds", "security_log", "security_log_max_mb"
       };
       return known.contains(name);
     }
@@ -757,6 +839,24 @@ namespace confighttp {
         auto [end, ec] = std::from_chars(trimmed.data(), trimmed.data() + trimmed.size(), port);
         if (ec != std::errc {} || end != trimmed.data() + trimmed.size() || port < 1024 || port > 65535 - 21) {
           result.error = "port must be a number between 1024 and 65514";
+          return result;
+        }
+      }
+
+      if (const auto range = security_int_range(key)) {
+        long number = 0;
+        const auto trimmed = boost::algorithm::trim_copy(text);
+        auto [end, ec] = std::from_chars(trimmed.data(), trimmed.data() + trimmed.size(), number);
+        if (ec != std::errc {} || end != trimmed.data() + trimmed.size() || number < range->first || number > range->second) {
+          result.error = key + " must be a number between " + std::to_string(range->first) + " and " + std::to_string(range->second);
+          return result;
+        }
+      }
+      if (key == "ban_whitelist") {
+        std::vector<security_log::cidr_t> entries;
+        std::string bad_entry;
+        if (!security_log::parse_whitelist(text, entries, bad_entry)) {
+          result.error = "ban_whitelist contains an invalid address or range: " + loggable(bad_entry, 64);
           return result;
         }
       }
@@ -1147,6 +1247,7 @@ namespace confighttp {
     }
 
     print_req(request);
+    log_admin(request, "application saved"sv);
 
     // Read the input JSON from the request body.
     nlohmann::json inputTree;
@@ -1216,6 +1317,7 @@ namespace confighttp {
 
     print_req(request);
 
+    security_log::record(security_log::type::cancel, security_log::result::ok, net::addr_to_normalized_string(request->remote_endpoint().address()), security_log::service::webui, {.client_name = "Web UI"sv, .app_name = proc::proc.get_last_run_app_name()});
     proc::proc.terminate();
     nlohmann::json output_tree;
     output_tree["status"] = true;
@@ -1235,6 +1337,7 @@ namespace confighttp {
     }
 
     print_req(request);
+    log_admin(request, "applications reordered"sv);
 
     nlohmann::json input_tree;
     if (!read_json(response, request, input_tree)) {
@@ -1355,6 +1458,7 @@ namespace confighttp {
     }
 
     print_req(request);
+    log_admin(request, "application deleted"sv);
 
     nlohmann::json input_tree;
     if (!read_json(response, request, input_tree)) {
@@ -1580,6 +1684,9 @@ namespace confighttp {
         update.allow_client_commands,
         update.always_use_virtual_display
       );
+      if (output_tree["status"].get<bool>()) {
+        security_log::record(security_log::type::client_update, security_log::result::ok, net::addr_to_normalized_string(request->remote_endpoint().address()), security_log::service::webui, {.client_uuid = update.uuid, .client_name = update.name, .detail = "client settings changed in the Web UI"sv});
+      }
       send_response(response, output_tree);
     } catch (std::exception &e) {
       BOOST_LOG(warning) << "Update Client: "sv << e.what();
@@ -1616,7 +1723,11 @@ namespace confighttp {
     try {
       nlohmann::json output_tree;
       std::string uuid = input_tree.is_object() ? input_tree.value("uuid", "") : std::string {};
+      const auto unpaired = nvhttp::get_client(uuid);
       output_tree["status"] = nvhttp::unpair_client(uuid);
+      if (unpaired && output_tree["status"].get<bool>()) {
+        security_log::record(security_log::type::unpair, security_log::result::ok, net::addr_to_normalized_string(request->remote_endpoint().address()), security_log::service::webui, {.client_uuid = unpaired->uuid, .client_name = unpaired->name, .detail = "unpaired in the Web UI"sv});
+      }
       send_response(response, output_tree);
     } catch (std::exception &e) {
       BOOST_LOG(warning) << "Unpair: "sv << e.what();
@@ -1638,6 +1749,7 @@ namespace confighttp {
 
     print_req(request);
 
+    security_log::record(security_log::type::unpair, security_log::result::ok, net::addr_to_normalized_string(request->remote_endpoint().address()), security_log::service::webui, {.client_name = "Web UI"sv, .detail = "all clients unpaired"sv});
     nvhttp::erase_all_clients();
     proc::proc.terminate();
     nlohmann::json output_tree;
@@ -1715,6 +1827,7 @@ namespace confighttp {
     }
 
     print_req(request);
+    log_admin(request, "configuration saved"sv);
 
     nlohmann::json input_tree;
     if (!read_json(response, request, input_tree)) {
@@ -1922,6 +2035,7 @@ namespace confighttp {
     if ((!config::sunshine.username.empty() && !authenticate(response, request)) || !validateContentType(response, request, "application/json"))
       return;
     print_req(request);
+    log_admin(request, "Web UI credentials changed"sv);
     std::vector<std::string> errors;
     nlohmann::json input_tree;
     if (!read_json(response, request, input_tree)) {
@@ -1992,6 +2106,7 @@ namespace confighttp {
     }
 
     print_req(request);
+    log_admin(request, "one-time PIN created"sv);
 
     nlohmann::json input_tree;
     if (!read_json(response, request, input_tree)) {
@@ -2125,6 +2240,7 @@ namespace confighttp {
     }
 
     print_req(request);
+    log_admin(request, "pairing PIN entered"sv);
 
     nlohmann::json input_tree;
     if (!read_json(response, request, input_tree)) {
@@ -2180,6 +2296,7 @@ namespace confighttp {
     }
 
     print_req(request);
+    log_admin(request, "display device persistence reset"sv);
 
     nlohmann::json output_tree;
     output_tree["status"] = display_device::reset_persistence();
@@ -2199,6 +2316,7 @@ namespace confighttp {
     }
 
     print_req(request);
+    log_admin(request, "host restart requested"sv);
 
     proc::proc.terminate();
 
@@ -2277,6 +2395,7 @@ namespace confighttp {
     }
 
     print_req(request);
+    log_admin(request, "configuration import"sv);
 
     nlohmann::json input_tree;
     if (!read_json(response, request, input_tree)) {
@@ -2355,6 +2474,7 @@ namespace confighttp {
     }
 
     print_req(request);
+    log_admin(request, "host shutdown requested"sv);
 
     BOOST_LOG(warning) << "Requested quit from config page!"sv;
 
@@ -2423,6 +2543,7 @@ namespace confighttp {
                         "Failed to start the specified application");
           } else {
             output_tree["status"] = true;
+            security_log::record(security_log::type::launch, security_log::result::ok, net::addr_to_normalized_string(request->remote_endpoint().address()), security_log::service::webui, {.client_name = "Web UI"sv, .app_id = app.uuid, .app_name = app.name});
             send_response(response, output_tree);
           }
           return;
@@ -2458,6 +2579,10 @@ namespace confighttp {
       nlohmann::json output_tree;
       std::string uuid = input_tree.is_object() ? input_tree.value("uuid", "") : std::string {};
       output_tree["status"] = nvhttp::find_and_stop_session(uuid, true);
+      if (output_tree["status"].get<bool>()) {
+        const auto stopped = nvhttp::get_client(uuid);
+        security_log::record(security_log::type::admin_action, security_log::result::ok, net::addr_to_normalized_string(request->remote_endpoint().address()), security_log::service::webui, {.client_uuid = uuid, .client_name = stopped ? std::string_view {stopped->name} : std::string_view {}, .detail = "client disconnected in the Web UI"sv});
+      }
       send_response(response, output_tree);
     } catch (std::exception &e) {
       BOOST_LOG(warning) << "Disconnect: "sv << e.what();
@@ -2498,13 +2623,16 @@ namespace confighttp {
     });
     if (auto throttle = login_throttle.find(address); throttle != login_throttle.end() && now < throttle->second.next_allowed) {
       BOOST_LOG(warning) << "Web UI: ["sv << address << "] -- login throttled"sv;
+      security_log::record(security_log::type::webui_denied, security_log::result::denied, address, security_log::service::webui, {.detail = "login throttled"sv});
       const auto wait = std::max<long long>(1, std::chrono::ceil<std::chrono::seconds>(throttle->second.next_allowed - now).count());
       send_error(response, SimpleWeb::StatusCode::client_error_too_many_requests, "Too many login attempts", {{"Retry-After", std::to_string(wait)}});
       return;
     }
 
     // Anything that does not end in a session counts as a failed attempt
+    std::string_view failure_detail = "invalid request"sv;
     auto record_failure = [&]{
+      security_log::record(security_log::type::webui_login_failure, security_log::result::fail, address, security_log::service::webui, {.detail = failure_detail});
       if (login_throttle.size() >= 1024 && !login_throttle.contains(address)) {
         // Make room for the new address by dropping the entry that is released first
         auto oldest = std::min_element(login_throttle.begin(), login_throttle.end(), [](const auto &a, const auto &b) {
@@ -2541,9 +2669,11 @@ namespace confighttp {
                                CRYPTO_memcmp(hash.data(), config::sunshine.password.data(), hash.size()) == 0;
       if (!boost::iequals(username, config::sunshine.username) || !password_ok) {
         BOOST_LOG(warning) << "Web UI: ["sv << address << "] -- login failed"sv;
+        failure_detail = "wrong user name or password"sv;
         return;
       }
       login_throttle.erase(address);
+      security_log::record(security_log::type::webui_login_success, security_log::result::ok, address, security_log::service::webui, {.client_name = config::sunshine.username});
       std::string sessionCookieRaw = crypto::rand_alphabet(64);
       sessionCookie = util::hex(crypto::hash(sessionCookieRaw + config::sunshine.salt)).to_string();
       cookie_creation_time = std::chrono::steady_clock::now();
@@ -2559,6 +2689,180 @@ namespace confighttp {
       // Wrong types in the body (a number as the user name, ...) are a failed attempt
       BOOST_LOG(warning) << "Web UI Login failed: ["sv << address << "]: "sv << e.what();
     }
+  }
+
+  /**
+   * @brief Get the security events.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * Query: `type` (comma separated), `ip`, `client`, `app`, `result`, `since`, `until` (ISO-8601), `limit` (1..1000, default 200), `offset`.
+   *
+   * @api_examples{/api/security/events?type=launch,resume&limit=50| GET| null}
+   */
+  void getSecurityEvents(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::map<std::string, std::string> query;
+    for (const auto &[name, value] : request->parse_query_string()) {
+      query.emplace(boost::algorithm::to_lower_copy(name), value);
+    }
+    std::string error;
+    auto filter = security_log::parse_filter(query, error);
+    if (!filter) {
+      bad_request(response, request, error);
+      return;
+    }
+    send_response(response, security_log::events_json(*filter));
+  }
+
+  /**
+   * @brief Get the security statistics.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * Query: `hours` (1..720, default 24).
+   *
+   * @api_examples{/api/security/stats?hours=24| GET| null}
+   */
+  void getSecurityStats(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::map<std::string, std::string> query;
+    for (const auto &[name, value] : request->parse_query_string()) {
+      query.emplace(boost::algorithm::to_lower_copy(name), value);
+    }
+    std::string error;
+    auto hours = security_log::parse_hours(query, error);
+    if (!hours) {
+      bad_request(response, request, error);
+      return;
+    }
+    send_response(response, security_log::stats_json(*hours));
+  }
+
+  /**
+   * @brief Get the blocked addresses.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/security/bans| GET| null}
+   */
+  void getSecurityBans(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    send_response(response, security_log::bans_json());
+  }
+
+  /**
+   * @brief Lift the block of an address.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/security/bans/unban| POST| {"ip":"203.0.113.9"}}
+   */
+  void unbanAddress(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json input_tree;
+    if (!read_json(response, request, input_tree)) {
+      return;
+    }
+
+    if (!input_tree.is_object() || !input_tree.contains("ip") || !input_tree["ip"].is_string() || input_tree["ip"].get_ref<const std::string &>().size() > 64) {
+      bad_request(response, request, "ip must be an IP address");
+      return;
+    }
+    const auto error = security_log::unban(input_tree["ip"].get_ref<const std::string &>(), net::addr_to_normalized_string(request->remote_endpoint().address()));
+    if (!error.empty()) {
+      bad_request(response, request, error);
+      return;
+    }
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Block an address by hand.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * `duration_seconds` is optional (default: ban_duration_seconds), 0 blocks until the block is lifted.
+   *
+   * @api_examples{/api/security/bans/add| POST| {"ip":"203.0.113.9","duration_seconds":3600,"reason":"scanner"}}
+   */
+  void banAddress(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json input_tree;
+    if (!read_json(response, request, input_tree)) {
+      return;
+    }
+
+    if (!input_tree.is_object() || !input_tree.contains("ip") || !input_tree["ip"].is_string() || input_tree["ip"].get_ref<const std::string &>().size() > 64) {
+      bad_request(response, request, "ip must be an IP address");
+      return;
+    }
+    if (auto error = check_int_field(input_tree, "duration_seconds", 0, 2592000)) {
+      bad_request(response, request, *error);
+      return;
+    }
+    if (auto error = check_text_field(input_tree, "reason", 120)) {
+      bad_request(response, request, *error);
+      return;
+    }
+    const long long duration = input_tree.contains("duration_seconds") ? input_tree["duration_seconds"].get<long long>() : -1;
+    const std::string reason = input_tree.contains("reason") ? input_tree["reason"].get<std::string>() : std::string {};
+
+    const auto error = security_log::ban(input_tree["ip"].get_ref<const std::string &>(), duration, reason.empty() ? "blocked by an administrator"sv : std::string_view {reason}, net::addr_to_normalized_string(request->remote_endpoint().address()));
+    if (!error.empty()) {
+      bad_request(response, request, error);
+      return;
+    }
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Delete the recorded security events (memory and files).
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/security/events/clear| POST| null}
+   */
+  void clearSecurityEvents(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    security_log::clear_events(net::addr_to_normalized_string(request->remote_endpoint().address()));
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    send_response(response, output_tree);
   }
 
   /**
@@ -2617,6 +2921,12 @@ namespace confighttp {
     server.resource["^/api/clients/unpair$"]["POST"] = unpair;
     server.resource["^/api/clients/disconnect$"]["POST"] = disconnect;
     server.resource["^/api/covers/upload$"]["POST"] = uploadCover;
+    server.resource["^/api/security/events$"]["GET"] = getSecurityEvents;
+    server.resource["^/api/security/events/clear$"]["POST"] = clearSecurityEvents;
+    server.resource["^/api/security/stats$"]["GET"] = getSecurityStats;
+    server.resource["^/api/security/bans$"]["GET"] = getSecurityBans;
+    server.resource["^/api/security/bans/unban$"]["POST"] = unbanAddress;
+    server.resource["^/api/security/bans/add$"]["POST"] = banAddress;
     server.resource["^/images/nyxplay-host.ico$"]["GET"] = getFaviconImage;
     server.resource["^/images/logo-nyxplay-host-45.png$"]["GET"] = getNyxPlayLogoImage;
     server.resource["^/assets\\/.+$"]["GET"] = getNodeModules;

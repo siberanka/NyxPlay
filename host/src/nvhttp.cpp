@@ -41,6 +41,7 @@
 #include "platform/common.h"
 #include "process.h"
 #include "rtsp.h"
+#include "security_log.h"
 #include "stream.h"
 #include "system_tray.h"
 #include "utility.h"
@@ -121,6 +122,11 @@ namespace nvhttp {
           this->accept();
         }
 
+        // A blocked address is turned away before the TLS handshake
+        if (!ec && security_log::refuse_if_blocked(connection->socket->lowest_layer(), security_log::service::https)) {
+          return;
+        }
+
         auto session = std::make_shared<Session>(config.max_request_streambuf_size, connection);
 
         if (!ec) {
@@ -152,8 +158,46 @@ namespace nvhttp {
     }
   };
 
+  /**
+   * @brief Plain HTTP server that turns blocked addresses away as soon as they connect.
+   * @note This is Server<HTTP>::accept() with the address check added.
+   */
+  class SunshineHTTPServer: public SimpleWeb::Server<SimpleWeb::HTTP> {
+  protected:
+    void accept() override {
+      auto connection = create_connection(*io_service);
+
+      acceptor->async_accept(*connection->socket, [this, connection](const SimpleWeb::error_code &ec) {
+        auto lock = connection->handler_runner->continue_lock();
+        if (!lock) {
+          return;
+        }
+
+        if (ec != SimpleWeb::error::operation_aborted) {
+          this->accept();
+        }
+
+        if (!ec && security_log::refuse_if_blocked(*connection->socket, security_log::service::http)) {
+          return;
+        }
+
+        auto session = std::make_shared<Session>(config.max_request_streambuf_size, connection);
+
+        if (!ec) {
+          boost::asio::ip::tcp::no_delay option(true);
+          SimpleWeb::error_code ec;
+          session->connection->socket->set_option(option, ec);
+
+          this->read(session);
+        } else if (this->on_error) {
+          this->on_error(session->request, ec);
+        }
+      });
+    }
+  };
+
   using https_server_t = SunshineHTTPSServer;
-  using http_server_t = SimpleWeb::Server<SimpleWeb::HTTP>;
+  using http_server_t = SunshineHTTPServer;
 
   struct conf_intern_t {
     std::string servercert;
@@ -770,6 +814,7 @@ namespace nvhttp {
       }
 
       BOOST_LOG(info) << "Pairing request from ["sv << it->second.async_insert_pin.address << "] expired"sv;
+      security_log::record(security_log::type::pair_cancelled, security_log::result::fail, it->second.async_insert_pin.address, it->second.service, {.client_name = it->second.client.name, .detail = "timed out waiting for the PIN"});
       it = drop_pair_session_unlocked(it, 408, "Pairing session expired");
     }
   }
@@ -894,6 +939,7 @@ namespace nvhttp {
     }
 
     BOOST_LOG(info) << "Pairing request from ["sv << sess_it->second.async_insert_pin.address << "] cancelled in the Web UI"sv;
+    security_log::record(security_log::type::pair_cancelled, security_log::result::denied, sess_it->second.async_insert_pin.address, sess_it->second.service, {.client_name = sess_it->second.client.name, .detail = "cancelled in the Web UI"});
     drop_pair_session_unlocked(sess_it, 400, "Pairing request cancelled by operator");
     return true;
   }
@@ -901,6 +947,17 @@ namespace nvhttp {
   void remove_session(const pair_session_t &sess) {
     std::lock_guard lock(map_id_sess_mutex);
     map_id_sess.erase(pair_session_key(sess.async_insert_pin.address, sess.client.uniqueID));
+  }
+
+  /**
+   * @brief Put a failed pairing attempt into the security log (once per session).
+   */
+  void record_pair_failure(pair_session_t &sess, std::string_view detail) {
+    if (sess.failure_recorded) {
+      return;
+    }
+    sess.failure_recorded = true;
+    security_log::record(security_log::type::pair_failure, security_log::result::fail, sess.async_insert_pin.address, sess.service, {.client_name = sess.client.name, .detail = detail});
   }
 
   void fail_pair(pair_session_t &sess, pt::ptree &tree, const std::string status_msg) {
@@ -911,6 +968,7 @@ namespace nvhttp {
     // (Erasing it here freed the session while the caller still used it.)
     sess.failed = true;
     BOOST_LOG(warning) << "Pair attempt failed due to " << status_msg;
+    record_pair_failure(sess, status_msg);
   }
 
   void getservercert(pair_session_t &sess, pt::ptree &tree, const std::string &pin) {
@@ -1077,6 +1135,7 @@ namespace nvhttp {
 
       if (add_authorized_client(named_cert_p)) {
         tree.put("root.paired", 1);
+        security_log::record(security_log::type::pair_success, security_log::result::ok, sess.async_insert_pin.address, sess.service, {.client_uuid = named_cert_p->uuid, .client_name = named_cert_p->name});
       } else {
         tree.put("root.paired", 0);
         BOOST_LOG(error) << "Pair attempt failed: the client list could not be saved"sv;
@@ -1084,6 +1143,7 @@ namespace nvhttp {
     } else {
       tree.put("root.paired", 0);
       BOOST_LOG(warning) << "Pair attempt failed due to same_hash: " << same_hash << ", verify: " << verify;
+      record_pair_failure(sess, same_hash ? "client signature mismatch"sv : "wrong PIN"sv);
     }
 
     // The pairing is finished either way: the caller removes the session
@@ -1136,6 +1196,60 @@ namespace nvhttp {
 
   inline crypto::named_cert_t* get_verified_cert(req_https_t request) {
     return resolve_verified_cert(request->userp);
+  }
+
+  /**
+   * @brief Writes the security event of a launch, resume or cancel request when the request ends.
+   * @details The outcome is read from the response that was built, so every return path is covered.
+   */
+  class client_request_event_t {
+  public:
+    client_request_event_t(const req_https_t &request, const pt::ptree &tree, const crypto::named_cert_t *cert, std::string_view type):
+        type(type),
+        request(request),
+        tree(tree),
+        cert(cert) {
+    }
+
+    client_request_event_t(const client_request_event_t &) = delete;
+    client_request_event_t &operator=(const client_request_event_t &) = delete;
+
+    ~client_request_event_t() {
+      try {
+        const auto status = tree.get("root.<xmlattr>.status_code", 0);
+        const auto message = tree.get("root.<xmlattr>.status_message", std::string {});
+        const auto ip = net::addr_to_normalized_string(request->remote_endpoint().address());
+        const auto name = app_name.empty() ? proc::proc.get_last_run_app_name() : app_name;
+        security_log::extra_t extra {.client_uuid = cert->uuid, .client_name = cert->name, .app_id = app_id, .app_name = name, .detail = message};
+
+        if (status == 200) {
+          extra.detail = {};
+          security_log::record(type, security_log::result::ok, ip, security_log::service::https, extra);
+        } else if (status == 403 && message == "Permission denied"sv) {
+          extra.detail = type;
+          security_log::record(security_log::type::permission_denied, security_log::result::denied, ip, security_log::service::https, extra);
+        } else {
+          security_log::record(type, security_log::result::fail, ip, security_log::service::https, extra);
+        }
+      } catch (...) {
+      }
+    }
+
+    std::string_view type;
+    std::string app_id;
+    std::string app_name;  ///< Set when the app is gone by the time the request ends (cancel).
+
+  private:
+    const req_https_t &request;
+    const pt::ptree &tree;
+    const crypto::named_cert_t *cert;
+  };
+
+  /**
+   * @brief Record that a paired client used a route it has no permission for.
+   */
+  void record_permission_denied(const req_https_t &request, const crypto::named_cert_t *cert, std::string_view what) {
+    security_log::record(security_log::type::permission_denied, security_log::result::denied, net::addr_to_normalized_string(request->remote_endpoint().address()), security_log::service::https, {.client_uuid = cert->uuid, .client_name = cert->name, .detail = what});
   }
 
   template <class T>
@@ -1224,6 +1338,7 @@ namespace nvhttp {
         }
 
         sess.client.uniqueID = uniqID;
+        sess.service = std::is_same_v<T, SunshineHTTPS> ? "https" : "http";
         sess.client.name = std::move(deviceName);
         sess.client.cert = util::from_hex_vec(get_arg(args, "clientcert"), true);
         sess.async_insert_pin.salt = get_arg(args, "salt");
@@ -1237,19 +1352,25 @@ namespace nvhttp {
           sess.async_insert_pin.response = response;
         }
 
+        const std::string request_address = sess.async_insert_pin.address;
+        const std::string request_name = sess.client.name;
+        const std::string request_service = sess.service;
         std::string pairing_id;
         switch (insert_pair_session(std::move(sess), pairing_id)) {
           case pair_session_insert_e::ALREADY_EXISTS:
+            security_log::record(security_log::type::pair_request, security_log::result::denied, request_address, request_service, {.client_name = request_name, .detail = "a pairing session with this uniqueid already exists"});
             tree.put("root.paired", 0);
             tree.put("root.<xmlattr>.status_code", 409);
             tree.put("root.<xmlattr>.status_message", "A pairing session with this uniqueid already exists");
             return;
           case pair_session_insert_e::FULL:
+            security_log::record(security_log::type::pair_request, security_log::result::denied, request_address, request_service, {.client_name = request_name, .detail = "too many pending pairing sessions"});
             tree.put("root.paired", 0);
             tree.put("root.<xmlattr>.status_code", 503);
             tree.put("root.<xmlattr>.status_message", "Too many pending pairing sessions");
             return;
           case pair_session_insert_e::ADDED:
+            security_log::record(security_log::type::pair_request, security_log::result::ok, request_address, request_service, {.client_name = request_name, .detail = use_otp ? "one-time PIN"sv : "PIN"sv});
             break;
         }
 
@@ -1307,6 +1428,7 @@ namespace nvhttp {
           }
 
           if (!otp_ok) {
+            record_pair_failure(new_sess, "one-time PIN rejected or expired"sv);
             // Always return positive, attackers will fail in the next steps.
             getservercert(new_sess, tree, crypto::rand(16));
           }
@@ -1704,6 +1826,8 @@ namespace nvhttp {
     bool is_input_only = config::input.enable_input_only_mode && (appid == proc::input_only_app_id || (appuuid_str == REMOTE_INPUT_UUID));
 
     auto named_cert_p = get_verified_cert(request);
+    client_request_event_t request_event {request, tree, named_cert_p, security_log::type::launch};
+    request_event.app_id = !appuuid_str.empty() ? appuuid_str : appid_str;
     auto perm = PERM::launch;
 
     BOOST_LOG(verbose) << "Launching app [" << appid_str << "] with UUID [" << appuuid_str << "]";
@@ -1835,6 +1959,7 @@ namespace nvhttp {
         // We're basically resuming the same app
 
         BOOST_LOG(debug) << "Resuming app [" << proc::proc.get_last_run_app_name() << "] from launch app path...";
+        request_event.type = security_log::type::resume;
 
         if (!proc::proc.allow_client_commands || !named_cert_p->allow_client_commands) {
           launch_session->client_do_cmds.clear();
@@ -1927,6 +2052,7 @@ namespace nvhttp {
     });
 
     auto named_cert_p = get_verified_cert(request);
+    client_request_event_t request_event {request, tree, named_cert_p, security_log::type::resume};
     if (!(named_cert_p->perm & PERM::_allow_view)) {
       BOOST_LOG(debug) << "Permission ViewApp denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
 
@@ -2069,6 +2195,8 @@ namespace nvhttp {
     });
 
     auto named_cert_p = get_verified_cert(request);
+    client_request_event_t request_event {request, tree, named_cert_p, security_log::type::cancel};
+    request_event.app_name = proc::proc.get_last_run_app_name();
     if (!(named_cert_p->perm & PERM::launch)) {
       BOOST_LOG(debug) << "Permission CancelApp denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
 
@@ -2104,6 +2232,7 @@ namespace nvhttp {
 
     if (!(named_cert_p->perm & PERM::_all_actions)) {
       BOOST_LOG(debug) << "Permission Get AppAsset denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
+      record_permission_denied(request, named_cert_p, "app asset"sv);
 
       fg.disable();
       response->write(SimpleWeb::StatusCode::client_error_unauthorized);
@@ -2133,6 +2262,7 @@ namespace nvhttp {
       || !(named_cert_p->perm & PERM::clipboard_read)
     ) {
       BOOST_LOG(debug) << "Permission Read Clipboard denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
+      record_permission_denied(request, named_cert_p, "clipboard read"sv);
 
       response->write(SimpleWeb::StatusCode::client_error_unauthorized);
       response->close_connection_after_response = true;
@@ -2193,6 +2323,7 @@ namespace nvhttp {
       || !(named_cert_p->perm & PERM::clipboard_set)
     ) {
       BOOST_LOG(debug) << "Permission Write Clipboard denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
+      record_permission_denied(request, named_cert_p, "clipboard write"sv);
 
       response->write(SimpleWeb::StatusCode::client_error_unauthorized);
       response->close_connection_after_response = true;
@@ -2271,6 +2402,11 @@ namespace nvhttp {
     https_server_t https_server {config::nvhttp.cert, config::nvhttp.pkey};
     http_server_t http_server;
 
+    // A blocked address loses its running streams as well
+    security_log::set_ban_handler([](const security_log::ban_t &ban) {
+      rtsp_stream::stop_sessions_from_group(ban.key);
+    });
+
     // Verify certificates after establishing connection
     https_server.verify = [](req_https_t req, SSL *ssl) {
       crypto::x509_t x509 {
@@ -2282,6 +2418,7 @@ namespace nvhttp {
       };
       if (!x509) {
         BOOST_LOG(info) << "unknown -- denied"sv;
+        security_log::record(security_log::type::cert_rejected, security_log::result::fail, net::addr_to_normalized_string(req->remote_endpoint().address()), security_log::service::https, {.detail = "no client certificate"});
         return false;
       }
 
@@ -2301,15 +2438,20 @@ namespace nvhttp {
 
       });
 
-      std::lock_guard client_lock(client_auth_mutex);
-      auto err_str = cert_chain.verify(x509.get(), named_cert_p);
+      const char *err_str;
+      {
+        std::lock_guard client_lock(client_auth_mutex);
+        err_str = cert_chain.verify(x509.get(), named_cert_p);
+        if (!err_str) {
+          verified = true;
+          req->userp = named_cert_p;
+        }
+      }
       if (err_str) {
         BOOST_LOG(warning) << "SSL Verification error :: "sv << err_str;
-        return verified;
+        security_log::record(security_log::type::cert_rejected, security_log::result::fail, net::addr_to_normalized_string(req->remote_endpoint().address()), security_log::service::https, {.detail = err_str});
+        return false;
       }
-
-      verified = true;
-      req->userp = named_cert_p;
 
       return true;
     };

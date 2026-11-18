@@ -169,6 +169,8 @@ namespace nvhttp {
      */
     PAIR_PHASE last_phase = PAIR_PHASE::NONE;
     bool failed = false;  ///< Protocol validation failed: the caller removes the session.
+    const char *service = "http";  ///< Server the request arrived on ("http" or "https"), for the security log.
+    bool failure_recorded = false;  ///< The security log already holds the failure of this session.
   };
 
   /**

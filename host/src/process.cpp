@@ -32,6 +32,7 @@
 #include "platform/common.h"
 #include "process.h"
 #include "httpcommon.h"
+#include "security_log.h"
 #include "system_tray.h"
 #include "utility.h"
 #include "video.h"
@@ -812,6 +813,10 @@ namespace proc {
     _pipe.reset();
 
     bool has_run = _app_id > 0;
+
+    if (has_run && !_app_name.empty()) {
+      security_log::record(security_log::type::app_exit, security_log::result::ok, {}, security_log::service::host, {.app_id = _app.uuid, .app_name = _app_name});
+    }
 
 #ifdef _WIN32
     // Revert HDR state, a reset that is still running is cancelled first

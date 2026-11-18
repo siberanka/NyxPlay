@@ -31,6 +31,7 @@ extern "C" {
 #include "network.h"
 #include "rtsp.h"
 #include "rtsp_validation.h"
+#include "security_log.h"
 #include "stream.h"
 #include "sync.h"
 #include "video.h"
@@ -84,6 +85,19 @@ namespace rtsp_stream {
 
   using msg_t = util::safe_ptr<RTSP_MESSAGE, free_msg>;
   using cmd_func_t = std::function<void(rtsp_server_t *server, tcp::socket &, launch_session_t &, msg_t &&)>;
+
+  /// Put a rejected RTSP request into the security log (counts toward blocking the peer).
+  void record_rtsp_rejected(const boost::asio::ip::address &peer, std::string_view detail) {
+    security_log::record(security_log::type::rtsp_rejected, security_log::result::fail, peer_address_key(peer), security_log::service::rtsp, {.detail = detail});
+  }
+
+  void record_rtsp_rejected(tcp::socket &sock, std::string_view detail) {
+    boost::system::error_code ec;
+    const auto peer = sock.remote_endpoint(ec);
+    if (!ec) {
+      record_rtsp_rejected(peer.address(), detail);
+    }
+  }
 
   void print_msg(PRTSP_MESSAGE msg);
   void cmd_not_found(tcp::socket &sock, launch_session_t &, msg_t &&req);
@@ -270,6 +284,7 @@ namespace rtsp_stream {
       auto header = (encrypted_rtsp_header_t *) socket->begin;
       if (!header->is_encrypted()) {
         BOOST_LOG(error) << "RTSP: handle_read_encrypted_header(): Rejecting unencrypted RTSP message"sv;
+        record_rtsp_rejected(socket->sock, "unencrypted message on an encrypted launch"sv);
 
         respond(socket->sock, *socket->session, nullptr, 400, "BAD REQUEST", 0, {});
         return;
@@ -331,6 +346,7 @@ namespace rtsp_stream {
       std::vector<uint8_t> plaintext;
       if (socket->session->rtsp_cipher->decrypt(std::string_view {(const char *) header->tag, sizeof(header->tag) + bytes}, plaintext, &iv)) {
         BOOST_LOG(error) << "Failed to verify RTSP message tag"sv;
+        record_rtsp_rejected(socket->sock, "message authentication failed"sv);
 
         respond(socket->sock, *socket->session, nullptr, 400, "BAD REQUEST", 0, {});
         return;
@@ -340,6 +356,7 @@ namespace rtsp_stream {
       // as well, so every launch accepts each sequence number once and in increasing order.
       if (!rtsp_accept_sequence(*socket->session, seq)) {
         BOOST_LOG(warning) << "RTSP: rejecting encrypted message with sequence number "sv << seq << " that is not newer than the last one of launch session "sv << socket->session->id;
+        record_rtsp_rejected(socket->sock, "replayed or out of order message"sv);
 
         respond(socket->sock, *socket->session, nullptr, 400, "BAD REQUEST", 0, {});
         return;
@@ -590,12 +607,17 @@ namespace rtsp_stream {
         if (peer_ec) {
           BOOST_LOG(debug) << "RTSP peer is gone: "sv << peer_ec.message();
           socket->close_now();
+        } else if (security_log::is_blocked(peer.address())) {
+          security_log::note_blocked(peer.address(), security_log::service::rtsp);
+          socket->close_now();
         } else if (!rtsp_peer_allowed(*launch_session, peer.address())) {
           // Unencrypted RTSP of a launch belongs to the client that started it
+          record_rtsp_rejected(peer.address(), "address does not match the unencrypted launch"sv);
           BOOST_LOG(warning) << "Refusing RTSP connection from ["sv << peer_address_key(peer.address()) << "], the unencrypted launch session "sv << launch_session->id << " belongs to another address"sv;
           socket->close_now();
         } else if (!socket->count_connection(peer_group_key(peer.address()), launch_session->remote_address == peer_address_key(peer.address()))) {
           BOOST_LOG(warning) << "Refusing RTSP connection from ["sv << peer_address_key(peer.address()) << "], too many open connections"sv;
+          record_rtsp_rejected(peer.address(), "too many open connections"sv);
           socket->close_now();
         } else {
           boost::system::error_code opt_ec;
@@ -759,6 +781,29 @@ namespace rtsp_stream {
         } else {
           i++;
         }
+      }
+    }
+
+    /**
+     * @brief Stop the streams of an address group and discard a launch it left pending.
+     */
+    void stop_from_group(const std::string &group_key) {
+      if (auto pending = launch_slot.pending(); pending && security_log::group_key(pending->remote_address) == group_key) {
+        session_drop(&pending->unique_id);
+      }
+
+      std::vector<std::shared_ptr<stream::session_t>> doomed;
+      {
+        auto lg = _session_slots.lock();
+        for (auto &slot : *_session_slots) {
+          if (slot && security_log::group_key(stream::session::remote_address(*slot)) == group_key) {
+            doomed.push_back(slot);
+          }
+        }
+      }
+      for (auto &slot : doomed) {
+        stream::session::note_end_reason(*slot, "address blocked");
+        stream::session::graceful_stop(*slot);
       }
     }
 
@@ -1065,6 +1110,10 @@ namespace rtsp_stream {
     // A launch that is waiting for its handshake must not start a stream afterwards
     server.session_drop(nullptr);
     server.clear(true);
+  }
+
+  void stop_sessions_from_group(const std::string &group_key) {
+    server.stop_from_group(group_key);
   }
 
   int send(tcp::socket &sock, const std::string_view &sv) {
@@ -1645,6 +1694,7 @@ namespace rtsp_stream {
     // Neither the first nor a repeated ANNOUNCE of an unencrypted launch may come from another address
     if (!rtsp_peer_allowed(session, remote_endpoint.address())) {
       BOOST_LOG(warning) << "Rejecting ANNOUNCE from ["sv << remote_address << "], the unencrypted launch session "sv << session.id << " belongs to another address"sv;
+      record_rtsp_rejected(remote_endpoint.address(), "ANNOUNCE from an address that does not match the launch"sv);
       respond(sock, session, &option, 403, "Forbidden", req->sequenceNumber, {});
       return;
     }

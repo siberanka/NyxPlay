@@ -2031,6 +2031,180 @@ editing the `conf` file in a text editor. Use the examples as reference.
     </tr>
 </table>
 
+### security_log
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Record security events (pairing requests and results, Web UI logins, app launches, resumes and
+            cancels, stream start and end, rejected connections, blocks) in memory and in the file
+            `security_events.log` next to the state file. The Web UI shows them on the Security page.
+            Every event is also written to the normal log. PINs, passwords, keys and cookies are never recorded.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            security_log = enabled
+            @endcode</td>
+    </tr>
+</table>
+
+### security_log_max_mb
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Size cap of `security_events.log` in megabytes (1 to 100). When the cap is reached the file is
+            rotated to `security_events.log.1`, one previous file is kept.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            10
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            security_log_max_mb = 10
+            @endcode</td>
+    </tr>
+</table>
+
+### ban_enabled
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Block an address automatically when it keeps failing: wrong pairing PINs or one-time PINs,
+            unknown client certificates, wrong Web UI logins, requests without permission and rejected RTSP
+            connections. A blocked address is refused as soon as it connects on every NyxPlay Host port and its
+            running streams are stopped. Failed logins and pairings count double.
+            The host PC itself (loopback) and the addresses of @ref ban_whitelist are never blocked.
+            Blocks are kept in `security_bans.json` and survive restarts; administrators can review and lift them in
+            the Web UI.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            ban_enabled = enabled
+            @endcode</td>
+    </tr>
+</table>
+
+### ban_threshold
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Number of weighted failures (3 to 1000) within @ref ban_window_seconds after which an address is
+            blocked. IPv4 addresses are counted one by one, IPv6 addresses per /64 network.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            10
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            ban_threshold = 10
+            @endcode</td>
+    </tr>
+</table>
+
+### ban_window_seconds
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            The period in seconds (10 to 86400) in which the failures of an address are added up.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            600
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            ban_window_seconds = 600
+            @endcode</td>
+    </tr>
+</table>
+
+### ban_duration_seconds
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            How long in seconds (0 to 2592000) an address stays blocked. 0 keeps it blocked until an
+            administrator lifts the block.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            1800
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            ban_duration_seconds = 1800
+            @endcode</td>
+    </tr>
+</table>
+
+### ban_whitelist
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            IP addresses or CIDR ranges that are never blocked, separated by commas.
+            @note{Addresses of your own devices can be listed here so a typing mistake never locks them out.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            ban_whitelist = 192.168.1.20, 10.0.0.0/24
+            @endcode</td>
+    </tr>
+</table>
+
 ## Config Files
 
 ### file_apps

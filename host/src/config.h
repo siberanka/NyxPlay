@@ -199,6 +199,17 @@ namespace config {
     std::string external_ip;
   };
 
+  /// Security event log and automatic blocking of abusive addresses (see security_log.h).
+  struct security_t {
+    bool log;  ///< Record security events.
+    int log_max_mb;  ///< Size cap of the event file, one rotated copy is kept besides it.
+    bool ban_enabled;  ///< Block addresses that keep failing.
+    int ban_threshold;  ///< Weighted failures within the window that cause a block.
+    int ban_window_seconds;
+    int ban_duration_seconds;  ///< 0 blocks until an admin lifts it.
+    std::string ban_whitelist;  ///< Addresses or CIDR ranges that are never blocked.
+  };
+
   struct input_t {
     std::unordered_map<int, int> keybindings;
 
@@ -302,6 +313,7 @@ namespace config {
   extern audio_t audio;
   extern stream_t stream;
   extern nvhttp_t nvhttp;
+  extern security_t security;
   extern input_t input;
   extern sunshine_t sunshine;
 
