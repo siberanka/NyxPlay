@@ -1064,6 +1064,25 @@ namespace confighttp {
   }
 
   /**
+   * @brief Get the security page (event log and blocked addresses).
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   */
+  void getSecurityPage(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request, true)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::string content = file_handler::read_file(WEB_DIR "security.html");
+    SimpleWeb::CaseInsensitiveMultimap headers;
+    headers.emplace("Content-Type", "text/html; charset=utf-8");
+    add_security_headers(headers);
+    response->write(content, headers);
+  }
+
+  /**
    * @brief Get the troubleshooting page.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2893,6 +2912,7 @@ namespace confighttp {
     server.resource["^/password/?$"]["GET"] = getPasswordPage;
     server.resource["^/welcome/?$"]["GET"] = getWelcomePage;
     server.resource["^/login/?$"]["GET"] = getLoginPage;
+    server.resource["^/security/?$"]["GET"] = getSecurityPage;
     server.resource["^/troubleshooting/?$"]["GET"] = getTroubleshootingPage;
     server.resource["^/api/login"]["POST"] = login;
     server.resource["^/api/pin$"]["GET"] = getPendingPairings;

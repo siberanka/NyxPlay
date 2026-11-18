@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="auto">
+
+<head>
+      <%- header %>
+      <style>
+        .sec-card .stat-value {
+          font-size: 1.75rem;
+          font-weight: 600;
+          line-height: 1.1;
+        }
+
+        .sec-addr {
+          font-family: var(--bs-font-monospace);
+          font-size: .875em;
+        }
+
+        .sec-link {
+          padding: 0;
+          border: 0;
+          background: none;
+          color: var(--bs-link-color);
+          text-align: left;
+          text-decoration: underline;
+          text-decoration-style: dotted;
+          cursor: pointer;
+          word-break: break-all;
+        }
+
+        .sec-link:hover {
+          color: var(--bs-link-hover-color);
+        }
+
+        .sec-detail {
+          min-width: 12rem;
+          word-break: break-word;
+        }
+
+        dialog.sec-dialog {
+          max-width: min(32rem, calc(100vw - 2rem));
+          padding: 0;
+          border: var(--bs-border-width) solid var(--bs-border-color);
+          border-radius: var(--bs-border-radius-lg);
+          background: var(--bs-body-bg);
+          color: var(--bs-body-color);
+        }
+
+        dialog.sec-dialog::backdrop {
+          background: rgba(11, 12, 33, .6);
+        }
+      </style>
+</head>
+
+<body id="app" v-cloak>
+  <Navbar></Navbar>
+  <div class="container">
+    <h1 class="my-4">{{ $t('security.title') }}</h1>
+    <p class="text-body-secondary">{{ $t('security.intro') }}</p>
+
+    <div class="visually-hidden" role="status" aria-live="polite">{{ notice ? notice.text : '' }}</div>
+    <div class="alert alert-dismissible" :class="notice.type === 'success' ? 'alert-success' : 'alert-danger'"
+         role="alert" v-if="notice">
+      {{ notice.text }}
+      <button type="button" class="btn-close" :aria-label="$t('_common.dismiss')" @click="notice = null"></button>
+    </div>
+
+    <!-- Settings hint -->
+    <div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <span><i class="fa-solid fa-circle-info"></i> {{ $t('security.info') }}</span>
+      <a class="btn btn-sm btn-outline-primary" href="./config#ban_enabled">{{ $t('security.info_link') }}</a>
+    </div>
+
+    <!-- Overview -->
+    <div class="card p-2 my-4">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <h2 id="overview" class="mb-0">{{ $t('security.overview') }}</h2>
+          <div class="d-flex align-items-center gap-2">
+            <label for="stats_period" class="form-label mb-0">{{ $t('security.period') }}</label>
+            <select id="stats_period" class="form-select w-auto" v-model.number="statsHours" @change="loadStats">
+              <option :value="1">{{ $t('security.period_1h') }}</option>
+              <option :value="24">{{ $t('security.period_24h') }}</option>
+              <option :value="168">{{ $t('security.period_7d') }}</option>
+              <option :value="720">{{ $t('security.period_30d') }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="alert alert-danger" v-if="statsError">{{ $t('security.load_error') }} {{ statsError }}</div>
+
+        <div class="row g-3 mb-4">
+          <div class="col-6 col-md-4 col-xl-2" v-for="card in statCards" :key="card.key">
+            <div class="card sec-card h-100">
+              <div class="card-body">
+                <div class="stat-value" :class="card.count > 0 ? card.tone : ''">{{ card.count }}</div>
+                <div class="small text-body-secondary">{{ $t('security.' + card.key) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-4">
+          <div class="col-12 col-xl-6">
+            <h3 class="h5" id="top_addresses">{{ $t('security.top_addresses') }}</h3>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <caption class="visually-hidden">{{ $t('security.top_addresses') }}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{{ $t('security.col_address') }}</th>
+                    <th scope="col" class="text-end">{{ $t('security.col_events') }}</th>
+                    <th scope="col" class="text-end">{{ $t('security.col_failures') }}</th>
+                    <th scope="col">{{ $t('security.col_last_seen') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in topIps" :key="row.ip">
+                    <td>
+                      <button type="button" class="sec-link sec-addr" :title="$t('security.filter_by_address', { address: row.ip })"
+                              @click="filterByAddress(row.ip)">{{ row.ip }}</button>
+                    </td>
+                    <td class="text-end">{{ row.events }}</td>
+                    <td class="text-end" :class="row.failures > 0 ? 'text-danger' : ''">{{ row.failures }}</td>
+                    <td class="text-nowrap"><time :datetime="row.last_seen" :title="$t('security.utc', { time: row.last_seen })">{{ formatTime(row.last_seen) }}</time></td>
+                  </tr>
+                  <tr v-if="!topIps.length">
+                    <td colspan="4" class="text-body-secondary">{{ $t('security.no_data') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="col-12 col-xl-6">
+            <h3 class="h5" id="top_clients">{{ $t('security.top_clients') }}</h3>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <caption class="visually-hidden">{{ $t('security.top_clients') }}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{{ $t('security.col_client') }}</th>
+                    <th scope="col" class="text-end">{{ $t('security.col_launches') }}</th>
+                    <th scope="col">{{ $t('security.col_last_seen') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in topClients" :key="row.client_uuid || row.client_name">
+                    <td>
+                      <button type="button" class="sec-link" :title="$t('security.filter_by_client', { client: row.client_name })"
+                              @click="filterByClient(row)">{{ row.client_name }}</button>
+                    </td>
+                    <td class="text-end">{{ row.launches }}</td>
+                    <td class="text-nowrap"><time :datetime="row.last_seen" :title="$t('security.utc', { time: row.last_seen })">{{ formatTime(row.last_seen) }}</time></td>
+                  </tr>
+                  <tr v-if="!topClients.length">
+                    <td colspan="3" class="text-body-secondary">{{ $t('security.no_data') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Activity log -->
+    <div class="card p-2 my-4">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <h2 id="activity" class="mb-0">{{ $t('security.activity') }}</h2>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" role="switch" id="auto_refresh" v-model="autoRefresh" @change="saveAutoRefresh">
+              <label class="form-check-label" for="auto_refresh">{{ $t('security.auto_refresh') }}</label>
+            </div>
+            <button type="button" class="btn btn-outline-secondary" :disabled="loading" @click="refreshAll">
+              <i class="fa-solid fa-rotate"></i> {{ $t('security.refresh') }}
+            </button>
+            <button type="button" class="btn btn-outline-secondary" :disabled="exporting || !total" @click="exportCsv">
+              <i class="fa-solid fa-file-csv"></i> {{ $t('security.export_csv') }}
+            </button>
+            <button type="button" class="btn btn-outline-danger" @click="askClear">
+              <i class="fa-solid fa-trash"></i> {{ $t('security.clear_log') }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <form class="row g-3 mb-3" role="search" :aria-label="$t('security.filters')" @submit.prevent="applyFilters">
+          <div class="col-12 col-md-6 col-xl-3">
+            <label for="f_types" class="form-label">{{ $t('security.filter_types') }}</label>
+            <select id="f_types" class="form-select" multiple size="6" v-model="filters.types" aria-describedby="f_types_hint">
+              <option v-for="type in eventTypes" :key="type" :value="type">{{ typeLabel(type) }}</option>
+            </select>
+            <div id="f_types_hint" class="form-text">{{ $t('security.filter_types_hint') }}</div>
+          </div>
+          <div class="col-12 col-md-6 col-xl-9">
+            <div class="row g-3">
+              <div class="col-12 col-sm-6 col-xl-3">
+                <label for="f_result" class="form-label">{{ $t('security.filter_result') }}</label>
+                <select id="f_result" class="form-select" v-model="filters.result">
+                  <option value="">{{ $t('security.filter_any') }}</option>
+                  <option v-for="result in resultValues" :key="result" :value="result">{{ resultLabel(result) }}</option>
+                </select>
+              </div>
+              <div class="col-12 col-sm-6 col-xl-3">
+                <label for="f_ip" class="form-label">{{ $t('security.filter_ip') }}</label>
+                <input id="f_ip" type="text" class="form-control sec-addr" maxlength="64" autocomplete="off" v-model="filters.ip">
+              </div>
+              <div class="col-12 col-sm-6 col-xl-3">
+                <label for="f_client" class="form-label">{{ $t('security.filter_client') }}</label>
+                <input id="f_client" type="text" class="form-control" maxlength="64" autocomplete="off" v-model="filters.client">
+              </div>
+              <div class="col-12 col-sm-6 col-xl-3">
+                <label for="f_app" class="form-label">{{ $t('security.filter_app') }}</label>
+                <input id="f_app" type="text" class="form-control" maxlength="64" autocomplete="off" v-model="filters.app">
+              </div>
+              <div class="col-12 col-sm-6 col-xl-3">
+                <label for="f_range" class="form-label">{{ $t('security.filter_range') }}</label>
+                <select id="f_range" class="form-select" v-model="filters.range">
+                  <option value="">{{ $t('security.range_any') }}</option>
+                  <option value="1">{{ $t('security.period_1h') }}</option>
+                  <option value="24">{{ $t('security.period_24h') }}</option>
+                  <option value="168">{{ $t('security.period_7d') }}</option>
+                  <option value="720">{{ $t('security.period_30d') }}</option>
+                  <option value="custom">{{ $t('security.range_custom') }}</option>
+                </select>
+              </div>
+              <template v-if="filters.range === 'custom'">
+                <div class="col-12 col-sm-6 col-xl-3">
+                  <label for="f_from" class="form-label">{{ $t('security.filter_from') }}</label>
+                  <input id="f_from" type="datetime-local" class="form-control" v-model="filters.from">
+                </div>
+                <div class="col-12 col-sm-6 col-xl-3">
+                  <label for="f_to" class="form-label">{{ $t('security.filter_to') }}</label>
+                  <input id="f_to" type="datetime-local" class="form-control" v-model="filters.to">
+                </div>
+              </template>
+              <div class="col-12 d-flex align-items-end">
+                <button type="button" class="btn btn-outline-secondary" @click="resetFilters">
+                  <i class="fa-solid fa-filter-circle-xmark"></i> {{ $t('security.filter_reset') }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div class="alert alert-danger" v-if="eventsError">{{ $t('security.load_error') }} {{ eventsError }}</div>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle">
+            <caption class="visually-hidden">{{ $t('security.activity') }}</caption>
+            <thead>
+              <tr>
+                <th scope="col">{{ $t('security.col_time') }}</th>
+                <th scope="col">{{ $t('security.col_type') }}</th>
+                <th scope="col">{{ $t('security.col_address') }}</th>
+                <th scope="col">{{ $t('security.col_client') }}</th>
+                <th scope="col">{{ $t('security.col_app') }}</th>
+                <th scope="col">{{ $t('security.col_result') }}</th>
+                <th scope="col">{{ $t('security.col_detail') }}</th>
+                <th scope="col"><span class="visually-hidden">{{ $t('security.col_actions') }}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(event, index) in events" :key="event.ts + '|' + index">
+                <td class="text-nowrap"><time :datetime="event.ts" :title="$t('security.utc', { time: event.ts })">{{ formatTime(event.ts) }}</time></td>
+                <td><span class="badge" :class="'text-bg-' + severity(event)">{{ typeLabel(event.type) }}</span></td>
+                <td>
+                  <button type="button" class="sec-link sec-addr" v-if="event.ip"
+                          :title="$t('security.filter_by_address', { address: event.ip })"
+                          @click="filterByAddress(event.ip)">{{ event.ip }}</button>
+                </td>
+                <td :title="event.client_uuid">{{ event.client_name }}</td>
+                <td>{{ event.app_name }}</td>
+                <td>{{ resultLabel(event.result) }}</td>
+                <td class="sec-detail small">{{ event.detail }}</td>
+                <td class="text-end">
+                  <button type="button" class="btn btn-sm btn-outline-danger" v-if="canBlock(event.ip)"
+                          :aria-label="$t('security.block') + ' ' + event.ip" @click="prepareBlock(event.ip)">
+                    {{ $t('security.block') }}
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="!events.length">
+                <td colspan="8" class="text-body-secondary">{{ loading ? $t('security.loading') : $t('security.no_events') }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div class="small text-body-secondary" aria-live="polite">
+            {{ total ? $t('security.showing', { from: offset + 1, to: offset + events.length, total: total }) : '' }}
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <label for="page_size" class="form-label mb-0">{{ $t('security.page_size') }}</label>
+            <select id="page_size" class="form-select w-auto" v-model.number="limit" @change="changePageSize">
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+              <option :value="200">200</option>
+              <option :value="500">500</option>
+            </select>
+            <button type="button" class="btn btn-outline-secondary" :disabled="offset === 0" @click="goPage(-1)">
+              <i class="fa-solid fa-chevron-left"></i> {{ $t('security.prev') }}
+            </button>
+            <button type="button" class="btn btn-outline-secondary" :disabled="offset + limit >= total" @click="goPage(1)">
+              {{ $t('security.next') }} <i class="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Blocked addresses -->
+    <div class="card p-2 my-4">
+      <div class="card-body">
+        <h2 id="blocked">{{ $t('security.blocked_title') }}</h2>
+        <p class="text-body-secondary">{{ $t('security.blocked_desc') }}</p>
+
+        <div class="alert alert-danger" v-if="bansError">{{ $t('security.load_error') }} {{ bansError }}</div>
+
+        <div class="table-responsive mb-4">
+          <table class="table table-sm table-hover align-middle">
+            <caption class="visually-hidden">{{ $t('security.blocked_title') }}</caption>
+            <thead>
+              <tr>
+                <th scope="col">{{ $t('security.col_address') }}</th>
+                <th scope="col">{{ $t('security.col_reason') }}</th>
+                <th scope="col">{{ $t('security.col_since') }}</th>
+                <th scope="col">{{ $t('security.col_until') }}</th>
+                <th scope="col" class="text-end">{{ $t('security.col_failures') }}</th>
+                <th scope="col">{{ $t('security.col_manual') }}</th>
+                <th scope="col"><span class="visually-hidden">{{ $t('security.col_actions') }}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="ban in bans" :key="ban.ip">
+                <td>
+                  <button type="button" class="sec-link sec-addr" :title="$t('security.filter_by_address', { address: ban.ip })"
+                          @click="filterByAddress(ban.ip)">{{ ban.ip }}</button>
+                </td>
+                <td class="sec-detail">{{ banReason(ban) }}</td>
+                <td class="text-nowrap"><time :datetime="ban.since" :title="$t('security.utc', { time: ban.since })">{{ formatTime(ban.since) }}</time></td>
+                <td class="text-nowrap">
+                  <time v-if="ban.until" :datetime="ban.until" :title="$t('security.utc', { time: ban.until })">{{ formatTime(ban.until) }}</time>
+                  <span v-else>{{ $t('security.until_removed') }}</span>
+                </td>
+                <td class="text-end">{{ ban.failures }}</td>
+                <td>
+                  <span class="badge" :class="ban.manual ? 'text-bg-secondary' : 'text-bg-warning'">
+                    {{ ban.manual ? $t('security.by_manual') : $t('security.by_automatic') }}
+                  </span>
+                </td>
+                <td class="text-end">
+                  <button type="button" class="btn btn-sm btn-outline-primary" :disabled="busy"
+                          :aria-label="$t('security.unblock') + ' ' + ban.ip" @click="askUnblock(ban)">
+                    {{ $t('security.unblock') }}
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="!bans.length">
+                <td colspan="7" class="text-body-secondary">{{ $t('security.no_bans') }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Block an address -->
+        <form id="block_form" class="row g-3 align-items-end" @submit.prevent="submitBlock">
+          <h3 class="h5 mb-0 col-12">{{ $t('security.block_address') }}</h3>
+          <div class="col-12 col-md-6 col-xl-3">
+            <label for="block_ip" class="form-label">{{ $t('security.block_ip') }}</label>
+            <input id="block_ip" type="text" class="form-control sec-addr" maxlength="64" required autocomplete="off"
+                   spellcheck="false" :placeholder="$t('security.block_ip_placeholder')" v-model="blockForm.ip">
+          </div>
+          <div class="col-12 col-md-6 col-xl-3">
+            <label for="block_duration" class="form-label">{{ $t('security.block_duration') }}</label>
+            <select id="block_duration" class="form-select" v-model.number="blockForm.duration">
+              <option :value="3600">{{ $t('security.duration_1h') }}</option>
+              <option :value="86400">{{ $t('security.duration_24h') }}</option>
+              <option :value="604800">{{ $t('security.duration_7d') }}</option>
+              <option :value="0">{{ $t('security.duration_permanent') }}</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-8 col-xl-4">
+            <label for="block_reason" class="form-label">{{ $t('security.block_reason') }}</label>
+            <input id="block_reason" type="text" class="form-control" maxlength="120" autocomplete="off" v-model="blockForm.reason">
+          </div>
+          <div class="col-12 col-md-4 col-xl-2">
+            <button type="submit" class="btn btn-danger w-100" :disabled="busy || !blockForm.ip.trim()">{{ $t('security.block_submit') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation dialog -->
+  <dialog ref="dlg" class="sec-dialog" aria-labelledby="dlg_title" aria-describedby="dlg_text" @close="dlg = null">
+    <div class="p-4" v-if="dlg">
+      <h2 id="dlg_title" class="h5">{{ dlg.title }}</h2>
+      <p id="dlg_text" class="mb-4">{{ dlg.text }}</p>
+      <div class="d-flex justify-content-end gap-2">
+        <button type="button" class="btn btn-secondary" autofocus @click="closeDialog">{{ $t('_common.cancel') }}</button>
+        <button type="button" class="btn" :class="dlg.danger ? 'btn-danger' : 'btn-primary'" @click="runDialog">{{ dlg.confirm }}</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module">
+    import { createApp } from 'vue'
+    import { initApp } from './init'
+    import Navbar from './Navbar.vue'
+
+    const EVENT_TYPES = [
+      'pair_request', 'pair_success', 'pair_failure', 'pair_cancelled', 'cert_rejected',
+      'webui_login_success', 'webui_login_failure', 'webui_denied', 'permission_denied',
+      'launch', 'resume', 'cancel', 'app_exit', 'stream_start', 'stream_end',
+      'rtsp_rejected', 'control_rejected', 'unpair', 'client_update', 'admin_action',
+      'ban_added', 'ban_removed', 'connection_blocked', 'events_cleared'
+    ];
+    const RESULTS = ['ok', 'fail', 'denied', 'blocked'];
+    // Badge colour per event type; the result can raise it (fail/blocked: danger, denied: warning)
+    const SUCCESS_TYPES = ['pair_success', 'webui_login_success', 'launch', 'resume', 'stream_start'];
+    const WARNING_TYPES = ['pair_cancelled', 'cert_rejected', 'webui_denied', 'permission_denied', 'control_rejected', 'ban_removed'];
+    const DANGER_TYPES = ['pair_failure', 'webui_login_failure', 'rtsp_rejected', 'ban_added', 'connection_blocked'];
+    const REFRESH_MS = 10000;
+    const CSV_PAGE = 1000;
+    const CSV_MAX_ROWS = 20000;
+
+    const emptyFilters = () => ({ types: [], result: '', ip: '', client: '', app: '', range: '', from: '', to: '' });
+
+    const isLoopback = (ip) => {
+      const v = String(ip || '').trim().toLowerCase();
+      return v === '::1' || v.startsWith('127.') || v.startsWith('::ffff:127.');
+    };
+
+    const app = createApp({
+      components: {
+        Navbar
+      },
+      inject: ['i18n'],
+      data() {
+        return {
+          statsHours: 24,
+          stats: null,
+          statsError: '',
+          events: [],
+          total: 0,
+          offset: 0,
+          limit: 100,
+          eventsError: '',
+          loading: false,
+          filters: emptyFilters(),
+          autoRefresh: true,
+          bans: [],
+          bansError: '',
+          blockForm: { ip: '', duration: 86400, reason: '' },
+          busy: false,
+          exporting: false,
+          notice: null,
+          dlg: null,
+          eventTypes: EVENT_TYPES,
+          resultValues: RESULTS,
+          timers: { refresh: null, filter: null, notice: null },
+          requestSeq: 0,
+        };
+      },
+      computed: {
+        byType() {
+          return (this.stats && this.stats.by_type) || {};
+        },
+        topIps() {
+          return (this.stats && Array.isArray(this.stats.top_ips)) ? this.stats.top_ips : [];
+        },
+        topClients() {
+          return (this.stats && Array.isArray(this.stats.top_clients)) ? this.stats.top_clients : [];
+        },
+        statCards() {
+          const t = this.byType;
+          const n = (k) => Number(t[k]) || 0;
+          return [
+            { key: 'stat_launches', count: n('launch') + n('resume'), tone: '' },
+            { key: 'stat_streams', count: n('stream_start'), tone: '' },
+            { key: 'stat_login_failures', count: n('webui_login_failure'), tone: 'text-danger' },
+            { key: 'stat_pair_failures', count: n('pair_failure'), tone: 'text-danger' },
+            { key: 'stat_cert_rejected', count: n('cert_rejected'), tone: 'text-warning' },
+            { key: 'stat_blocks', count: this.stats ? (Number(this.stats.active_bans) || 0) : this.bans.length, tone: 'text-danger' },
+          ];
+        },
+      },
+      watch: {
+        filters: {
+          deep: true,
+          handler() {
+            // Wait for the user to stop typing before querying
+            clearTimeout(this.timers.filter);
+            this.timers.filter = setTimeout(() => this.applyFilters(), 400);
+          }
+        }
+      },
+      created() {
+        try {
+          if (window.localStorage.getItem('security_auto_refresh') === '0') this.autoRefresh = false;
+          const size = Number(window.localStorage.getItem('security_page_size'));
+          if ([50, 100, 200, 500].includes(size)) this.limit = size;
+        } catch (e) { /* storage may be unavailable */ }
+        this.refreshAll();
+        this.timers.refresh = setInterval(() => {
+          if (this.autoRefresh && !document.hidden && !this.dlg && !this.loading) {
+            this.refreshAll();
+          }
+        }, REFRESH_MS);
+      },
+      beforeUnmount() {
+        clearInterval(this.timers.refresh);
+        clearTimeout(this.timers.filter);
+        clearTimeout(this.timers.notice);
+      },
+      methods: {
+        async api(path, options) {
+          const response = await fetch(path, Object.assign({ credentials: 'include' }, options));
+          if (response.status === 401) {
+            // The session ended; the page request redirects to the login
+            location.reload();
+            throw new Error('Unauthorized');
+          }
+          let body = null;
+          try {
+            body = await response.json();
+          } catch (e) { /* not JSON */ }
+          if (!response.ok || !body || body.status === false) {
+            throw new Error(body && body.error ? body.error : 'HTTP ' + response.status);
+          }
+          return body;
+        },
+        post(path, payload) {
+          return this.api(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        },
+        showNotice(type, text) {
+          this.notice = { type, text };
+          clearTimeout(this.timers.notice);
+          this.timers.notice = setTimeout(() => { this.notice = null; }, 8000);
+        },
+        // ---- formatting ----
+        formatTime(ts) {
+          const d = new Date(ts);
+          return isNaN(d.getTime()) ? String(ts || '') : d.toLocaleString();
+        },
+        typeLabel(type) {
+          const key = 'security.type.' + type;
+          return this.i18n.te(key) ? this.i18n.t(key) : String(type || '');
+        },
+        resultLabel(result) {
+          const key = 'security.result.' + result;
+          return this.i18n.te(key) ? this.i18n.t(key) : String(result || '');
+        },
+        severity(event) {
+          if (event.result === 'fail' || event.result === 'blocked' || DANGER_TYPES.includes(event.type)) return 'danger';
+          if (event.result === 'denied' || WARNING_TYPES.includes(event.type)) return 'warning';
+          if (SUCCESS_TYPES.includes(event.type)) return 'success';
+          return 'secondary';
+        },
+        banReason(ban) {
+          if (!ban.manual && ban.reason) return this.typeLabel(ban.reason);
+          return ban.reason || '';
+        },
+        canBlock(ip) {
+          // Only single addresses can be blocked from here; a /64 group entry is already a block
+          return !!ip && !String(ip).includes('/') && !isLoopback(ip) && !this.bans.some((b) => b.ip === ip);
+        },
+        // ---- data ----
+        refreshAll() {
+          this.loadStats();
+          this.loadBans();
+          return this.loadEvents();
+        },
+        async loadStats() {
+          try {
+            this.stats = await this.api('./api/security/stats?hours=' + encodeURIComponent(this.statsHours));
+            this.statsError = '';
+          } catch (e) {
+            this.statsError = String(e.message || e);
+          }
+        },
+        async loadBans() {
+          try {
+            const r = await this.api('./api/security/bans');
+            this.bans = Array.isArray(r.bans) ? r.bans : [];
+            this.bansError = '';
+          } catch (e) {
+            this.bansError = String(e.message || e);
+          }
+        },
+        filterParams() {
+          const f = this.filters;
+          const q = new URLSearchParams();
+          if (f.types.length) q.set('type', f.types.join(','));
+          if (f.result) q.set('result', f.result);
+          if (f.ip.trim()) q.set('ip', f.ip.trim());
+          if (f.client.trim()) q.set('client', f.client.trim());
+          if (f.app.trim()) q.set('app', f.app.trim());
+          if (f.range === 'custom') {
+            const from = f.from ? new Date(f.from) : null;
+            const to = f.to ? new Date(f.to) : null;
+            if (from && !isNaN(from.getTime())) q.set('since', from.toISOString());
+            if (to && !isNaN(to.getTime())) q.set('until', to.toISOString());
+          } else if (f.range) {
+            q.set('since', new Date(Date.now() - Number(f.range) * 3600 * 1000).toISOString());
+          }
+          return q;
+        },
+        async loadEvents() {
+          const seq = ++this.requestSeq;
+          this.loading = true;
+          try {
+            const q = this.filterParams();
+            q.set('limit', String(this.limit));
+            q.set('offset', String(this.offset));
+            const r = await this.api('./api/security/events?' + q.toString());
+            if (seq !== this.requestSeq) return;
+            this.total = Number(r.total) || 0;
+            if (this.offset > 0 && this.offset >= this.total) {
+              // Entries expired or were cleared; return to the first page
+              this.offset = 0;
+              this.loading = false;
+              return this.loadEvents();
+            }
+            this.events = Array.isArray(r.events) ? r.events : [];
+            this.eventsError = '';
+          } catch (e) {
+            if (seq === this.requestSeq) this.eventsError = String(e.message || e);
+          } finally {
+            if (seq === this.requestSeq) this.loading = false;
+          }
+        },
+        applyFilters() {
+          clearTimeout(this.timers.filter);
+          this.offset = 0;
+          return this.loadEvents();
+        },
+        resetFilters() {
+          this.filters = emptyFilters();
+        },
+        goPage(direction) {
+          this.offset = Math.max(0, this.offset + direction * this.limit);
+          this.loadEvents();
+        },
+        changePageSize() {
+          try { window.localStorage.setItem('security_page_size', String(this.limit)); } catch (e) { /* ignore */ }
+          this.offset = 0;
+          this.loadEvents();
+        },
+        saveAutoRefresh() {
+          try { window.localStorage.setItem('security_auto_refresh', this.autoRefresh ? '1' : '0'); } catch (e) { /* ignore */ }
+        },
+        filterByAddress(ip) {
+          // A blocked IPv6 group is listed as "<prefix>::/64"; events carry single addresses
+          this.filters.ip = String(ip).replace(/::\/64$/, '');
+          this.$nextTick(() => {
+            const el = document.getElementById('activity');
+            if (el) el.scrollIntoView({ block: 'start' });
+          });
+        },
+        filterByClient(row) {
+          this.filters.client = row.client_uuid || row.client_name;
+          this.$nextTick(() => {
+            const el = document.getElementById('activity');
+            if (el) el.scrollIntoView({ block: 'start' });
+          });
+        },
+        // ---- dialogs ----
+        openDialog(options) {
+          this.dlg = options;
+          this.$nextTick(() => {
+            const el = this.$refs.dlg;
+            if (el && !el.open) el.showModal();
+          });
+        },
+        closeDialog() {
+          const el = this.$refs.dlg;
+          if (el && el.open) el.close();
+          this.dlg = null;
+        },
+        runDialog() {
+          const action = this.dlg && this.dlg.action;
+          this.closeDialog();
+          if (action) action();
+        },
+        // ---- actions ----
+        askClear() {
+          this.openDialog({
+            title: this.i18n.t('security.clear_title'),
+            text: this.i18n.t('security.clear_confirm'),
+            confirm: this.i18n.t('security.clear_log'),
+            danger: true,
+            action: () => this.clearLog()
+          });
+        },
+        async clearLog() {
+          this.busy = true;
+          try {
+            await this.post('./api/security/events/clear', {});
+            this.showNotice('success', this.i18n.t('security.clear_done'));
+            this.offset = 0;
+            await this.refreshAll();
+          } catch (e) {
+            this.showNotice('danger', String(e.message || e));
+          } finally {
+            this.busy = false;
+          }
+        },
+        askUnblock(ban) {
+          this.openDialog({
+            title: this.i18n.t('security.unblock_title'),
+            text: this.i18n.t('security.unblock_confirm', { address: ban.ip }),
+            confirm: this.i18n.t('security.unblock'),
+            danger: false,
+            action: () => this.unblock(ban.ip)
+          });
+        },
+        async unblock(ip) {
+          this.busy = true;
+          try {
+            await this.post('./api/security/bans/unban', { ip });
+            this.showNotice('success', this.i18n.t('security.unblock_done', { address: ip }));
+            await this.refreshAll();
+          } catch (e) {
+            this.showNotice('danger', String(e.message || e));
+          } finally {
+            this.busy = false;
+          }
+        },
+        prepareBlock(ip) {
+          this.blockForm.ip = ip;
+          this.$nextTick(() => {
+            const el = document.getElementById('block_ip');
+            if (el) {
+              el.scrollIntoView({ block: 'center' });
+              el.focus();
+            }
+          });
+        },
+        async submitBlock() {
+          const ip = this.blockForm.ip.trim();
+          if (!ip) return;
+          if (isLoopback(ip)) {
+            this.showNotice('danger', this.i18n.t('security.block_loopback'));
+            return;
+          }
+          this.busy = true;
+          try {
+            const payload = { ip, duration_seconds: Number(this.blockForm.duration) };
+            const reason = this.blockForm.reason.trim();
+            if (reason) payload.reason = reason;
+            await this.post('./api/security/bans/add', payload);
+            this.showNotice('success', this.i18n.t('security.block_done', { address: ip }));
+            this.blockForm.ip = '';
+            this.blockForm.reason = '';
+            await this.refreshAll();
+          } catch (e) {
+            this.showNotice('danger', String(e.message || e));
+          } finally {
+            this.busy = false;
+          }
+        },
+        // ---- CSV export (built in the browser from the current filtered view) ----
+        csvCell(value) {
+          let s = value === null || value === undefined ? '' : String(value);
+          // Stop spreadsheet programs from running attacker-controlled text as a formula
+          if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+          return '"' + s.replace(/"/g, '""') + '"';
+        },
+        async exportCsv() {
+          this.exporting = true;
+          try {
+            const rows = [];
+            let offset = 0;
+            let total = 0;
+            do {
+              const q = this.filterParams();
+              q.set('limit', String(CSV_PAGE));
+              q.set('offset', String(offset));
+              const r = await this.api('./api/security/events?' + q.toString());
+              total = Number(r.total) || 0;
+              const page = Array.isArray(r.events) ? r.events : [];
+              if (!page.length) break;
+              rows.push(...page);
+              offset += page.length;
+            } while (offset < total && rows.length < CSV_MAX_ROWS);
+
+            const head = ['time_utc', 'type', 'address', 'service', 'client', 'client_id', 'app', 'app_id', 'result', 'detail'];
+            const lines = [head.map((h) => this.csvCell(h)).join(',')];
+            for (const e of rows) {
+              lines.push([e.ts, e.type, e.ip, e.service, e.client_name, e.client_uuid, e.app_name, e.app_id, e.result, e.detail]
+                .map((v) => this.csvCell(v)).join(','));
+            }
+            const blob = new Blob(['﻿' + lines.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'security-log-' + new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-') + '.csv';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          } catch (e) {
+            this.showNotice('danger', this.i18n.t('security.export_error') + ' ' + String(e.message || e));
+          } finally {
+            this.exporting = false;
+          }
+        },
+      },
+    });
+
+    initApp(app);
+  </script>
+
+</body>

@@ -11,6 +11,7 @@ const defaultMoonlightPort = 47989
 
 const config = ref(props.config)
 const effectivePort = computed(() => +config.value?.port ?? defaultMoonlightPort)
+const isOff = (v) => [false, 0, 'false', '0', 'disabled', 'disable', 'no', 'off'].includes(typeof v === 'string' ? v.trim().toLowerCase() : v)
 </script>
 
 <template>
@@ -161,6 +162,71 @@ const effectivePort = computed(() => +config.value?.port ?? defaultMoonlightPort
       <label for="ping_timeout" class="form-label">{{ $t('config.ping_timeout') }}</label>
       <input type="text" class="form-control" id="ping_timeout" placeholder="10000" v-model="config.ping_timeout" />
       <div class="form-text">{{ $t('config.ping_timeout_desc') }}</div>
+    </div>
+
+    <!-- Security event log and automatic blocking -->
+    <hr class="my-4">
+    <h5 class="mb-3">
+      {{ $t('security.title') }}
+      <a class="btn btn-sm btn-outline-secondary ms-2" href="./security">{{ $t('navbar.security') }}</a>
+    </h5>
+
+    <!-- Security log -->
+    <Checkbox class="mb-3"
+              id="security_log"
+              locale-prefix="config"
+              v-model="config.security_log"
+              default="true"
+    ></Checkbox>
+
+    <!-- Security log size limit -->
+    <div class="mb-3" v-if="!isOff(config.security_log)">
+      <label for="security_log_max_mb" class="form-label">{{ $t('config.security_log_max_mb') }}</label>
+      <input type="number" min="1" max="100" class="form-control" id="security_log_max_mb" placeholder="10"
+             v-model="config.security_log_max_mb" />
+      <div class="form-text">{{ $t('config.security_log_max_mb_desc') }}</div>
+    </div>
+
+    <!-- Automatic blocking -->
+    <Checkbox class="mb-3"
+              id="ban_enabled"
+              locale-prefix="config"
+              v-model="config.ban_enabled"
+              default="true"
+    ></Checkbox>
+
+    <div v-if="!isOff(config.ban_enabled)">
+      <!-- Failures before blocking -->
+      <div class="mb-3">
+        <label for="ban_threshold" class="form-label">{{ $t('config.ban_threshold') }}</label>
+        <input type="number" min="3" max="1000" class="form-control" id="ban_threshold" placeholder="10"
+               v-model="config.ban_threshold" />
+        <div class="form-text">{{ $t('config.ban_threshold_desc') }}</div>
+      </div>
+
+      <!-- Failure window -->
+      <div class="mb-3">
+        <label for="ban_window_seconds" class="form-label">{{ $t('config.ban_window_seconds') }}</label>
+        <input type="number" min="10" max="86400" class="form-control" id="ban_window_seconds" placeholder="600"
+               v-model="config.ban_window_seconds" />
+        <div class="form-text">{{ $t('config.ban_window_seconds_desc') }}</div>
+      </div>
+
+      <!-- Block duration -->
+      <div class="mb-3">
+        <label for="ban_duration_seconds" class="form-label">{{ $t('config.ban_duration_seconds') }}</label>
+        <input type="number" min="0" max="2592000" class="form-control" id="ban_duration_seconds" placeholder="1800"
+               v-model="config.ban_duration_seconds" />
+        <div class="form-text">{{ $t('config.ban_duration_seconds_desc') }}</div>
+      </div>
+
+      <!-- Never-block list -->
+      <div class="mb-3">
+        <label for="ban_whitelist" class="form-label">{{ $t('config.ban_whitelist') }}</label>
+        <input type="text" class="form-control" id="ban_whitelist" placeholder="192.168.1.20, 10.0.0.0/24"
+               v-model="config.ban_whitelist" />
+        <div class="form-text">{{ $t('config.ban_whitelist_desc') }}</div>
+      </div>
     </div>
 
   </div>

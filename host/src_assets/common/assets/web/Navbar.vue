@@ -27,6 +27,9 @@
             <a class="nav-link" href="./password"><i class="fas fa-fw fa-user-shield"></i> {{ $t('navbar.password') }}</a>
           </li>
           <li class="nav-item">
+            <a class="nav-link" href="./security"><i class="fas fa-fw fa-shield-halved"></i> {{ $t('navbar.security') }}</a>
+          </li>
+          <li class="nav-item">
             <a class="nav-link" href="./troubleshooting"><i class="fas fa-fw fa-info"></i> {{ $t('navbar.troubleshoot') }}</a>
           </li>
           <li class="nav-item">
