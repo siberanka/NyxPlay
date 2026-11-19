@@ -995,6 +995,16 @@
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="1740"/>
+        <source>Check for updates automatically</source>
+        <translation>Güncellemeleri otomatik denetle</translation>
+    </message>
+    <message>
+        <location filename="../gui/SettingsView.qml" line="1750"/>
+        <source>Check for a newer version of NyxPlay each time it starts.</source>
+        <translation>NyxPlay&apos;in daha yeni bir sürümünü her başlatmada denetle.</translation>
+    </message>
+    <message>
+        <location filename="../gui/SettingsView.qml" line="1740"/>
         <source>Show performance stats while streaming</source>
         <translation>Yayın sırasında performans istatistiklerini göster</translation>
     </message>
@@ -1343,6 +1353,21 @@
         <location filename="../gui/main.qml" line="366"/>
         <source>Update available for NyxPlay: Version %1</source>
         <translation>NyxPlay için güncelleme mevcut: Sürüm %1</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="366"/>
+        <source>A newer version of NyxPlay is available. You can download it from the releases page.</source>
+        <translation>NyxPlay&apos;in daha yeni bir sürümü mevcut. Sürümler sayfasından indirebilirsiniz.</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="366"/>
+        <source>Dismiss</source>
+        <translation>Kapat</translation>
+    </message>
+    <message>
+        <location filename="../gui/main.qml" line="366"/>
+        <source>Download</source>
+        <translation>İndir</translation>
     </message>
     <message>
         <location filename="../gui/main.qml" line="413"/>

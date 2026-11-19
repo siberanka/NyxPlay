@@ -140,6 +140,8 @@ public:
     Q_PROPERTY(bool gamepadMouse MEMBER gamepadMouse NOTIFY gamepadMouseChanged)
     Q_PROPERTY(bool detectNetworkBlocking MEMBER detectNetworkBlocking NOTIFY detectNetworkBlockingChanged)
     Q_PROPERTY(bool showPerformanceOverlay MEMBER showPerformanceOverlay NOTIFY showPerformanceOverlayChanged)
+    Q_PROPERTY(bool checkForUpdates MEMBER checkForUpdates NOTIFY checkForUpdatesChanged)
+    Q_PROPERTY(QString dismissedUpdateVersion MEMBER dismissedUpdateVersion NOTIFY dismissedUpdateVersionChanged)
     Q_PROPERTY(AudioConfig audioConfig MEMBER audioConfig NOTIFY audioConfigChanged)
     Q_PROPERTY(VideoCodecConfig videoCodecConfig MEMBER videoCodecConfig NOTIFY videoCodecConfigChanged)
     Q_PROPERTY(bool enableHdr MEMBER enableHdr NOTIFY enableHdrChanged)
@@ -159,6 +161,9 @@ public:
     Q_PROPERTY(Language language MEMBER language NOTIFY languageChanged);
 
     Q_INVOKABLE bool retranslate();
+
+    // Remembers that the update notice for this version was dismissed (persisted immediately)
+    Q_INVOKABLE void dismissUpdateNotice(const QString& version);
 
     // Returns and clears a one-time startup notice code ("import", "repair")
     Q_INVOKABLE QString takeStartupNotice();
@@ -185,6 +190,8 @@ public:
     bool gamepadMouse;
     bool detectNetworkBlocking;
     bool showPerformanceOverlay;
+    bool checkForUpdates;
+    QString dismissedUpdateVersion;
     bool swapMouseButtons;
     bool muteOnFocusLoss;
     bool backgroundGamepad;
@@ -232,6 +239,8 @@ signals:
     void gamepadMouseChanged();
     void detectNetworkBlockingChanged();
     void showPerformanceOverlayChanged();
+    void checkForUpdatesChanged();
+    void dismissedUpdateVersionChanged();
     void mouseButtonsChanged();
     void muteOnFocusLossChanged();
     void backgroundGamepadChanged();

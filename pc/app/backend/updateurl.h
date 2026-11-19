@@ -4,7 +4,7 @@
 #include <QStringList>
 #include <QUrl>
 
-// Only HTTPS links into the project's own repository may be opened from the update manifest.
+// Only HTTPS links into the project's own repository (GitHub or its GitLab mirror) may be opened from the update manifest.
 // Dot segments (plain or percent-encoded) and encoded separators are rejected, the path is
 // normalised, and the prefix test is applied to the normalised path.
 inline bool normalizeTrustedUpdateUrl(const QString& urlString, QString* normalized = nullptr)
@@ -13,7 +13,8 @@ inline bool normalizeTrustedUpdateUrl(const QString& urlString, QString* normali
     if (!url.isValid() || url.scheme() != QLatin1String("https")) {
         return false;
     }
-    if (url.host() != QLatin1String("github.com") || url.port() != -1 || !url.userInfo().isEmpty()) {
+    if ((url.host() != QLatin1String("github.com") && url.host() != QLatin1String("gitlab.com")) ||
+            url.port() != -1 || !url.userInfo().isEmpty()) {
         return false;
     }
 

@@ -1794,6 +1794,22 @@ Flickable {
                 }
 
                 CheckBox {
+                    id: checkForUpdates
+                    width: parent.width
+                    text: qsTr("Check for updates automatically")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.checkForUpdates
+                    onCheckedChanged: {
+                        StreamingPreferences.checkForUpdates = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 5000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Check for a newer version of NyxPlay each time it starts.")
+                }
+
+                CheckBox {
                     id: showPerformanceOverlay
                     width: parent.width
                     text: qsTr("Show performance stats while streaming")

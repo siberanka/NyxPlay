@@ -44,6 +44,8 @@
 #define SER_PACKETSIZE "packetsize"
 #define SER_DETECTNETBLOCKING "detectnetblocking"
 #define SER_SHOWPERFOVERLAY "showperfoverlay"
+#define SER_CHECKUPDATES "checkupdates"
+#define SER_DISMISSEDUPDATE "dismissedupdate"
 #define SER_SWAPMOUSEBUTTONS "swapmousebuttons"
 #define SER_MUTEONFOCUSLOSS "muteonfocusloss"
 #define SER_BACKGROUNDGAMEPAD "backgroundgamepad"
@@ -145,6 +147,8 @@ void StreamingPreferences::reload()
     gamepadMouse = settings.value(SER_GAMEPADMOUSE, true).toBool();
     detectNetworkBlocking = settings.value(SER_DETECTNETBLOCKING, true).toBool();
     showPerformanceOverlay = settings.value(SER_SHOWPERFOVERLAY, false).toBool();
+    checkForUpdates = settings.value(SER_CHECKUPDATES, true).toBool();
+    dismissedUpdateVersion = settings.value(SER_DISMISSEDUPDATE, QString()).toString();
     packetSize = settings.value(SER_PACKETSIZE, 0).toInt();
     swapMouseButtons = settings.value(SER_SWAPMOUSEBUTTONS, false).toBool();
     muteOnFocusLoss = settings.value(SER_MUTEONFOCUSLOSS, false).toBool();
@@ -320,6 +324,14 @@ QString StreamingPreferences::getSuffixFromLanguage(StreamingPreferences::Langua
     }
 }
 
+void StreamingPreferences::dismissUpdateNotice(const QString& version)
+{
+    QSettings settings;
+    dismissedUpdateVersion = version;
+    settings.setValue(SER_DISMISSEDUPDATE, version);
+    emit dismissedUpdateVersionChanged();
+}
+
 void StreamingPreferences::save()
 {
     QSettings settings;
@@ -346,6 +358,8 @@ void StreamingPreferences::save()
     settings.setValue(SER_PACKETSIZE, packetSize);
     settings.setValue(SER_DETECTNETBLOCKING, detectNetworkBlocking);
     settings.setValue(SER_SHOWPERFOVERLAY, showPerformanceOverlay);
+    settings.setValue(SER_CHECKUPDATES, checkForUpdates);
+    settings.setValue(SER_DISMISSEDUPDATE, dismissedUpdateVersion);
     settings.setValue(SER_AUDIOCFG, static_cast<int>(audioConfig));
     settings.setValue(SER_HDR, enableHdr);
     settings.setValue(SER_YUV444, enableYUV444);

@@ -2,6 +2,10 @@
 
 #include <QObject>
 #include <QNetworkAccessManager>
+#include <QByteArray>
+#include <QStringList>
+
+class QNetworkReply;
 
 class AutoUpdateChecker : public QObject
 {
@@ -15,15 +19,20 @@ signals:
     void onUpdateAvailable(QString newVersion, QString url);
 
 private slots:
-    void handleUpdateCheckRequestFinished(QNetworkReply* reply);
+    void handleReadyRead();
+    void handleFinished();
 
 private:
-    void parseStringToVersionQuad(QString& string, QVector<int>& version);
+    void fetchNext();
 
-    int compareVersion(QVector<int>& version1, QVector<int>& version2);
+    void finish();
 
     QString getPlatform();
 
-    QVector<int> m_CurrentVersionQuad;
+    QString m_CurrentVersion;
     QNetworkAccessManager* m_Nam;
+    QNetworkReply* m_Reply;
+    QStringList m_Urls;
+    int m_NextUrl;
+    QByteArray m_Body;
 };

@@ -349,11 +349,19 @@ ApplicationWindow {
                     }
                 }
 
+                property string newVersion: ""
+
                 function updateAvailable(version, url)
                 {
                     ToolTip.text = qsTr("Update available for NyxPlay: Version %1").arg(version)
+                    updateButton.newVersion = version
                     updateButton.browserUrl = url
                     updateButton.visible = true
+
+                    // Announce each new version once, unless it was dismissed before
+                    if (StreamingPreferences.dismissedUpdateVersion !== version) {
+                        updateNotice.open()
+                    }
                 }
 
                 Component.onCompleted: {
@@ -362,7 +370,12 @@ ApplicationWindow {
                 }
 
                 Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocus)
+                    if (updateNotice.opened) {
+                        updateNoticeDownload.forceActiveFocus(Qt.TabFocus)
+                    }
+                    else {
+                        stackView.currentItem.forceActiveFocus(Qt.TabFocus)
+                    }
                 }
             }
 
@@ -456,6 +469,78 @@ ApplicationWindow {
         text: qsTr("This version of NyxPlay isn't optimized for your PC. Please download the '%1' version of NyxPlay for the best streaming performance.").arg(SystemProperties.friendlyNativeArchName)
         onAccepted: {
             Qt.openUrlExternally("https://github.com/siberanka/NyxPlay/releases");
+        }
+    }
+
+    // Non-modal, dismissible notice shown once per new version. It never takes the focus by itself;
+    // it is reachable with the Down key (or gamepad) from the update button in the toolbar.
+    Popup {
+        id: updateNotice
+        x: window.width - width - 10
+        y: 10
+        width: Math.min(360, window.width - 20)
+        modal: false
+        focus: false
+        closePolicy: Popup.NoAutoClose
+        padding: 12
+
+        function dismiss() {
+            StreamingPreferences.dismissUpdateNotice(updateButton.newVersion)
+            close()
+            updateButton.forceActiveFocus(Qt.TabFocus)
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 10
+
+            Label {
+                text: qsTr("Update available for NyxPlay: Version %1").arg(updateButton.newVersion)
+                font.bold: true
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+
+            Label {
+                text: qsTr("A newer version of NyxPlay is available. You can download it from the releases page.")
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+
+            RowLayout {
+                spacing: 10
+                Layout.alignment: Qt.AlignRight
+
+                Button {
+                    id: updateNoticeDismiss
+                    text: qsTr("Dismiss")
+                    flat: true
+                    activeFocusOnTab: true
+
+                    onClicked: updateNotice.dismiss()
+                    Keys.onReturnPressed: clicked()
+                    Keys.onEnterPressed: clicked()
+                    Keys.onEscapePressed: clicked()
+                    Keys.onRightPressed: updateNoticeDownload.forceActiveFocus(Qt.TabFocus)
+                    Keys.onUpPressed: updateButton.forceActiveFocus(Qt.TabFocus)
+                }
+
+                Button {
+                    id: updateNoticeDownload
+                    text: qsTr("Download")
+                    activeFocusOnTab: true
+                    visible: SystemProperties.hasBrowser
+
+                    onClicked: {
+                        Qt.openUrlExternally(updateButton.browserUrl)
+                        updateNotice.dismiss()
+                    }
+                    Keys.onReturnPressed: clicked()
+                    Keys.onEnterPressed: clicked()
+                    Keys.onEscapePressed: updateNoticeDismiss.clicked()
+                    Keys.onLeftPressed: updateNoticeDismiss.forceActiveFocus(Qt.TabFocus)
+                    Keys.onUpPressed: updateButton.forceActiveFocus(Qt.TabFocus)
+                }
+            }
         }
     }
 

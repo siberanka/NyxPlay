@@ -5,6 +5,7 @@
 #include "backend/identitystore.h"
 #include "backend/moonlightimport.h"
 #include "backend/updateurl.h"
+#include "backend/updatelogic.h"
 
 static QString wrap(const QString& body, int status = 200)
 {
@@ -369,6 +370,8 @@ private slots:
                                  << "https://github.com/siberanka/NyxPlay/releases/tag/v1";
         QTest::newRow("trailing slash") << "https://github.com/siberanka/NyxPlay/"
                                         << "https://github.com/siberanka/NyxPlay/";
+        QTest::newRow("gitlab mirror") << "https://gitlab.com/siberanka/NyxPlay/-/releases/v1"
+                                       << "https://gitlab.com/siberanka/NyxPlay/-/releases/v1";
     }
 
     void accepts()
@@ -411,6 +414,233 @@ private slots:
         QString normalized = "untouched";
         QVERIFY(!normalizeTrustedUpdateUrl(url, &normalized));
         QCOMPARE(normalized, QString("untouched"));
+    }
+};
+
+class UpdateLogicTest : public QObject
+{
+    Q_OBJECT
+
+    static QByteArray manifest(const QString& version, const QString& url = "https://github.com/siberanka/NyxPlay/releases/tag/v1",
+                               const QString& arch = "x86_64", const QString& platform = "windows")
+    {
+        return QString("[{\"platform\":\"%1\",\"arch\":\"%2\",\"version\":\"%3\",\"browser_url\":\"%4\"}]")
+                .arg(platform, arch, version, url).toUtf8();
+    }
+
+    static UpdateLogic::Result eval(const QByteArray& body, const QString& current = "2026.11.19.1",
+                                    const QString& kernel = "10.0.26100")
+    {
+        return UpdateLogic::evaluateManifest(body, current, "x86_64", "windows", kernel);
+    }
+
+private slots:
+    void parsesVersions_data()
+    {
+        QTest::addColumn<QString>("text");
+        QTest::addColumn<bool>("lenient");
+        QTest::addColumn<bool>("ok");
+        QTest::addColumn<QVector<int>>("expected");
+
+        QTest::newRow("four parts") << "2026.11.19.1" << false << true << QVector<int>{2026, 11, 19, 1};
+        QTest::newRow("no leading zero") << "2026.12.1.1" << false << true << QVector<int>{2026, 12, 1, 1};
+        QTest::newRow("leading zeros") << "2026.01.02.03" << false << true << QVector<int>{2026, 1, 2, 3};
+        QTest::newRow("short") << "1.0" << false << true << QVector<int>{1, 0};
+        QTest::newRow("whitespace") << " 3.2.1 " << false << true << QVector<int>{3, 2, 1};
+        QTest::newRow("empty") << "" << false << false << QVector<int>{};
+        QTest::newRow("suffix") << "2026.11.19.1-beta" << false << false << QVector<int>{};
+        QTest::newRow("letters") << "a.b.c" << false << false << QVector<int>{};
+        QTest::newRow("empty component") << "1..2" << false << false << QVector<int>{};
+        QTest::newRow("negative") << "1.-2" << false << false << QVector<int>{};
+        QTest::newRow("huge component") << "1.99999999999" << false << false << QVector<int>{};
+        QTest::newRow("too many parts") << "1.2.3.4.5.6.7.8.9" << false << false << QVector<int>{};
+        QTest::newRow("kernel lenient") << "6.5.0-generic" << true << true << QVector<int>{6, 5, 0};
+        QTest::newRow("kernel build") << "10.0.26100" << true << true << QVector<int>{10, 0, 26100};
+    }
+
+    void parsesVersions()
+    {
+        QFETCH(QString, text);
+        QFETCH(bool, lenient);
+        QFETCH(bool, ok);
+        QFETCH(QVector<int>, expected);
+        QVector<int> version;
+        QCOMPARE(UpdateLogic::parseVersion(text, version, lenient), ok);
+        QCOMPARE(version, expected);
+    }
+
+    void comparesCalendarVersions()
+    {
+        QVector<int> a, b;
+        QVERIFY(UpdateLogic::parseVersion("2026.12.1.1", a));
+        QVERIFY(UpdateLogic::parseVersion("2026.11.30.9", b));
+        QCOMPARE(UpdateLogic::compareVersions(a, b), 1);
+        QCOMPARE(UpdateLogic::compareVersions(b, a), -1);
+        QCOMPARE(UpdateLogic::compareVersions(a, a), 0);
+
+        QVERIFY(UpdateLogic::parseVersion("2026.11.19.2", a));
+        QVERIFY(UpdateLogic::parseVersion("2026.11.19.10", b));
+        QCOMPARE(UpdateLogic::compareVersions(a, b), -1);
+    }
+
+    void missingComponentsCountAsZero()
+    {
+        QVector<int> a, b;
+        QVERIFY(UpdateLogic::parseVersion("2026.11.19", a));
+        QVERIFY(UpdateLogic::parseVersion("2026.11.19.0", b));
+        QCOMPARE(UpdateLogic::compareVersions(a, b), 0);
+        QVERIFY(UpdateLogic::parseVersion("2026.11.19.1", b));
+        QCOMPARE(UpdateLogic::compareVersions(a, b), -1);
+    }
+
+    void detectsNewerVersion()
+    {
+        UpdateLogic::Result r = eval(manifest("2026.12.1.1"));
+        QCOMPARE(r.status, UpdateLogic::Status::UpdateAvailable);
+        QCOMPARE(r.version, QString("2026.12.1.1"));
+        QCOMPARE(r.url, QString("https://github.com/siberanka/NyxPlay/releases/tag/v1"));
+    }
+
+    void newerWithoutLeadingZeroBeatsOlder()
+    {
+        QCOMPARE(eval(manifest("2026.12.1.1"), "2026.11.30.9").status, UpdateLogic::Status::UpdateAvailable);
+        QCOMPARE(eval(manifest("2026.11.30.9"), "2026.12.1.1").status, UpdateLogic::Status::UpToDate);
+    }
+
+    void equalOrOlderIsUpToDate()
+    {
+        QCOMPARE(eval(manifest("2026.11.19.1")).status, UpdateLogic::Status::UpToDate);
+        QCOMPARE(eval(manifest("2026.11.18.5")).status, UpdateLogic::Status::UpToDate);
+        QVERIFY(!UpdateLogic::shouldTryFallback(UpdateLogic::Status::UpToDate));
+        QVERIFY(!UpdateLogic::shouldTryFallback(UpdateLogic::Status::UpdateAvailable));
+    }
+
+    void otherArchOrPlatformIsIgnored()
+    {
+        QCOMPARE(eval(manifest("2099.1.1.1", "https://github.com/siberanka/NyxPlay", "arm64")).status,
+                 UpdateLogic::Status::NoMatchingEntry);
+        QCOMPARE(eval(manifest("2099.1.1.1", "https://github.com/siberanka/NyxPlay", "x86_64", "osx")).status,
+                 UpdateLogic::Status::NoMatchingEntry);
+    }
+
+    void untrustedUrlFallsBackToReleasesPage_data()
+    {
+        QTest::addColumn<QString>("url");
+        QTest::newRow("other host") << "https://example.com/siberanka/NyxPlay/releases";
+        QTest::newRow("http") << "http://github.com/siberanka/NyxPlay/releases";
+        QTest::newRow("other repo") << "https://github.com/someone/else/releases";
+        QTest::newRow("dot dot") << "https://github.com/siberanka/NyxPlay/../../evil/x";
+        QTest::newRow("file") << "file:///C:/Windows/System32/calc.exe";
+        QTest::newRow("empty") << "";
+    }
+
+    void untrustedUrlFallsBackToReleasesPage()
+    {
+        QFETCH(QString, url);
+        UpdateLogic::Result r = eval(manifest("2099.1.1.1", url));
+        QCOMPARE(r.status, UpdateLogic::Status::UpdateAvailable);
+        QCOMPARE(r.url, UpdateLogic::fallbackReleasesUrl());
+    }
+
+    void gitlabMirrorUrlIsTrusted()
+    {
+        UpdateLogic::Result r = eval(manifest("2099.1.1.1", "https://gitlab.com/siberanka/NyxPlay/-/releases/v2099.1.1.1"));
+        QCOMPARE(r.status, UpdateLogic::Status::UpdateAvailable);
+        QCOMPARE(r.url, QString("https://gitlab.com/siberanka/NyxPlay/-/releases/v2099.1.1.1"));
+        QVERIFY(!normalizeTrustedUpdateUrl("https://gitlab.com/other/NyxPlay/x"));
+        QVERIFY(!normalizeTrustedUpdateUrl("https://gitlab.com.evil.example/siberanka/NyxPlay/x"));
+    }
+
+    void malformedManifestsAreRejected_data()
+    {
+        QTest::addColumn<QByteArray>("body");
+        QTest::newRow("empty") << QByteArray();
+        QTest::newRow("not json") << QByteArray("<html>rate limited</html>");
+        QTest::newRow("truncated") << QByteArray("[{\"platform\":\"windows\",");
+        QTest::newRow("object") << QByteArray("{\"platform\":\"windows\"}");
+        QTest::newRow("string") << QByteArray("\"x\"");
+        QTest::newRow("binary") << QByteArray("\x00\x01\x02\xff\xfe", 5);
+    }
+
+    void malformedManifestsAreRejected()
+    {
+        QFETCH(QByteArray, body);
+        UpdateLogic::Result r = eval(body);
+        QCOMPARE(r.status, UpdateLogic::Status::Malformed);
+        QVERIFY(UpdateLogic::shouldTryFallback(r.status));
+    }
+
+    void emptyArrayHasNoEntry()
+    {
+        UpdateLogic::Result r = eval("[]");
+        QCOMPARE(r.status, UpdateLogic::Status::NoMatchingEntry);
+        QVERIFY(UpdateLogic::shouldTryFallback(r.status));
+    }
+
+    void badEntriesAreSkipped_data()
+    {
+        QTest::addColumn<QByteArray>("body");
+        QTest::newRow("missing field") << QByteArray("[{\"platform\":\"windows\",\"arch\":\"x86_64\",\"version\":\"2099.1.1.1\"}]");
+        QTest::newRow("wrong type") << QByteArray("[{\"platform\":\"windows\",\"arch\":\"x86_64\",\"version\":20991,\"browser_url\":\"https://github.com/siberanka/NyxPlay\"}]");
+        QTest::newRow("non object") << QByteArray("[1,\"a\",null,[]]");
+        QTest::newRow("bad version") << QByteArray("[{\"platform\":\"windows\",\"arch\":\"x86_64\",\"version\":\"latest\",\"browser_url\":\"https://github.com/siberanka/NyxPlay\"}]");
+    }
+
+    void badEntriesAreSkipped()
+    {
+        QFETCH(QByteArray, body);
+        QCOMPARE(eval(body).status, UpdateLogic::Status::NoMatchingEntry);
+    }
+
+    void badEntryDoesNotHideGoodOne()
+    {
+        QByteArray body = "[1,{\"platform\":\"windows\"},{\"platform\":\"windows\",\"arch\":\"x86_64\",\"version\":\"x\",\"browser_url\":\"https://github.com/siberanka/NyxPlay\"},"
+                          "{\"platform\":\"windows\",\"arch\":\"x86_64\",\"version\":\"2099.1.1.1\",\"browser_url\":\"https://github.com/siberanka/NyxPlay/releases\"}]";
+        UpdateLogic::Result r = eval(body);
+        QCOMPARE(r.status, UpdateLogic::Status::UpdateAvailable);
+        QCOMPARE(r.version, QString("2099.1.1.1"));
+    }
+
+    void invalidCurrentVersionReportsNothing()
+    {
+        QCOMPARE(eval(manifest("2099.1.1.1"), "dev-build").status, UpdateLogic::Status::Malformed);
+    }
+
+    void oversizedBodyIsRejected()
+    {
+        QByteArray body = "[";
+        while (body.size() <= UpdateLogic::MaxManifestBytes) {
+            body += "{\"platform\":\"linux\",\"arch\":\"x86_64\",\"version\":\"1.0\",\"browser_url\":\"https://github.com/siberanka/NyxPlay\"},";
+        }
+        body += manifest("2099.1.1.1").mid(1);
+        QCOMPARE(eval(body).status, UpdateLogic::Status::Malformed);
+    }
+
+    void entryCountIsBounded()
+    {
+        QByteArray body = "[";
+        for (int i = 0; i < UpdateLogic::MaxManifestEntries; i++) {
+            body += "{},";
+        }
+        body += manifest("2099.1.1.1").mid(1);
+        QCOMPARE(eval(body).status, UpdateLogic::Status::NoMatchingEntry);
+    }
+
+    void kernelMinimumIsHonoured()
+    {
+        QByteArray body = "[{\"platform\":\"windows\",\"arch\":\"x86_64\",\"version\":\"2099.1.1.1\","
+                          "\"browser_url\":\"https://github.com/siberanka/NyxPlay\",\"kernel_version_at_least\":\"10.0.19045\"}]";
+        QCOMPARE(eval(body, "2026.11.19.1", "10.0.17763").status, UpdateLogic::Status::NoMatchingEntry);
+        QCOMPARE(eval(body, "2026.11.19.1", "10.0.26100").status, UpdateLogic::Status::UpdateAvailable);
+    }
+
+    void fallbackDecision()
+    {
+        // GitHub unusable, so the mirror is consulted; a usable answer stops the chain
+        QVERIFY(UpdateLogic::shouldTryFallback(eval("<html>").status));
+        QVERIFY(UpdateLogic::shouldTryFallback(eval("[]").status));
+        QVERIFY(UpdateLogic::shouldTryFallback(eval("not json").status));
+        QVERIFY(!UpdateLogic::shouldTryFallback(eval(manifest("2026.11.19.1")).status));
     }
 };
 
@@ -609,6 +839,7 @@ int main(int argc, char** argv)
     status |= runSuite<UuidTest>(argc, argv);
     status |= runSuite<IdentityStoreTest>(argc, argv);
     status |= runSuite<UpdateUrlTest>(argc, argv);
+    status |= runSuite<UpdateLogicTest>(argc, argv);
     status |= runSuite<MoonlightImportTest>(argc, argv);
     return status;
 }
