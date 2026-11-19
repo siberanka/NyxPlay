@@ -34,7 +34,9 @@
   #endif
 
   // standard includes
+  #include <algorithm>
   #include <atomic>
+  #include <cctype>
   #include <chrono>
   #include <csignal>
   #include <format>
@@ -407,6 +409,50 @@ namespace system_tray {
     tray.notification_title = "Client Connected";
     tray.notification_text = msg;
     tray.notification_icon = TRAY_ICON;
+    tray.tooltip = PROJECT_NAME;
+    tray_update(&tray);
+  }
+
+  void update_tray_update_available(std::string version) {
+    if (!tray_initialized) {
+      return;
+    }
+
+    // The notification texts must outlive the call: the tray keeps the pointers
+    static char title[128];
+    static char msg[256];
+
+    const bool turkish = config::sunshine.locale == "tr";
+    // Keep the shown text to a plain version number
+    if (version.starts_with("host-")) {
+      version.erase(0, 5);
+    }
+    version.erase(std::remove_if(version.begin(), version.end(), [](unsigned char c) {
+      return !(std::isalnum(c) || c == '.' || c == '-');
+    }), version.end());
+    if (version.size() > 40) {
+      version.resize(40);
+    }
+
+    snprintf(title, std::size(title), turkish ? "NyxPlay Host %s s\xC3\xBCr\xC3\xBCm\xC3\xBC mevcut" : "NyxPlay Host %s is available", version.c_str());
+    snprintf(msg, std::size(msg), "%s", turkish ? "Yenilikleri g\xC3\xB6rmek i\xC3\xA7in Web aray\xC3\xBCz\xC3\xBCn\xC3\xBC a\xC3\xA7\xC4\xB1n." : "Open the Web UI to see what's new.");
+  #ifdef _WIN32
+    strncpy(title, utf8ToAcp(title).c_str(), std::size(title) - 1);
+    strncpy(msg, utf8ToAcp(msg).c_str(), std::size(msg) - 1);
+  #endif
+
+    tray.notification_title = nullptr;
+    tray.notification_text = nullptr;
+    tray.notification_cb = nullptr;
+    tray.notification_icon = nullptr;
+    tray_update(&tray);
+    tray.icon = TRAY_ICON;
+    tray.notification_icon = TRAY_ICON;
+    tray.notification_title = title;
+    tray.notification_text = msg;
+    tray.notification_cb = []() {
+      launch_ui();
+    };
     tray.tooltip = PROJECT_NAME;
     tray_update(&tray);
   }

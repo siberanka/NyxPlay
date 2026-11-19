@@ -82,6 +82,13 @@ namespace system_tray {
   void update_tray_paired(std::string device_name);
 
   void update_tray_client_connected(std::string client_name);
+
+  /**
+   * @brief Spawns a notification about a new release. Clicking it opens the Web UI dashboard
+   * @param version The release tag
+   */
+  void update_tray_update_available(std::string version);
+
   /**
    * @brief Initializes and runs the system tray in a separate thread.
    * @return 0 if initialization was successful, non-zero otherwise.

@@ -20,6 +20,7 @@
 #include "process.h"
 #include "security_log.h"
 #include "system_tray.h"
+#include "update_check.h"
 #include "upnp.h"
 #include "uuid.h"
 #include "video.h"
@@ -459,10 +460,15 @@ int main(int argc, char *argv[]) {
 #endif
   }
 
+  // Looks for new releases in the background (about two minutes after start, then daily)
+  update_check::start();
+
   mainThreadLoop(shutdown_event);
 
   // Wait for shutdown, this is not necessary when we're using the main event loop
   shutdown_event->view();
+
+  update_check::stop();
 
   httpThread.join();
   configThread.join();

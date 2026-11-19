@@ -611,6 +611,7 @@ namespace config {
     "ipv4",  // Address family
     platf::appdata().string() + "/sunshine.log",  // log file
     false,  // notify_pre_releases
+    true,  // update_check
     false,  // legacy_ordering
     true,  // system_tray
     {},  // prep commands
@@ -1351,6 +1352,7 @@ namespace config {
     bool_f(vars, "enable_discovery", sunshine.enable_discovery);
     bool_f(vars, "envvar_compatibility_mode", sunshine.envvar_compatibility_mode);
     bool_f(vars, "notify_pre_releases", sunshine.notify_pre_releases);
+    bool_f(vars, "update_check", sunshine.update_check);
     bool_f(vars, "legacy_ordering", sunshine.legacy_ordering);
     bool_f(vars, "forward_rumble", input.forward_rumble);
 
@@ -1462,7 +1464,7 @@ namespace config {
       "nvenc_spatial_aq"sv, "nvenc_twopass"sv, "nvenc_vbv_increase"sv, "origin_web_ui_allowed"sv,
       "output_name"sv, "ping_timeout"sv, "pkey"sv, "port"sv, "qp"sv, "qsv_coder"sv, "qsv_preset"sv,
       "qsv_slow_hevc"sv, "rtsp_plaintext"sv, "server_cmd"sv, "stream_audio"sv, "sunshine_name"sv,
-      "sw_preset"sv, "sw_tune"sv, "system_tray"sv, "touchpad_as_ds4"sv, "upnp"sv,
+      "sw_preset"sv, "sw_tune"sv, "system_tray"sv, "touchpad_as_ds4"sv, "update_check"sv, "upnp"sv,
       "vaapi_strict_rc_buffer"sv, "virtual_display_driver"sv, "virtual_sink"sv, "vt_coder"sv,
       "vt_realtime"sv, "vt_software"sv, "wan_encryption_mode"sv, "ban_duration_seconds"sv, "ban_enabled"sv,
       "ban_threshold"sv, "ban_whitelist"sv, "ban_window_seconds"sv, "security_log"sv, "security_log_max_mb"sv

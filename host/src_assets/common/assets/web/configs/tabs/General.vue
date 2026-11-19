@@ -221,6 +221,14 @@ onMounted(() => {
               default="true"
     ></Checkbox>
 
+    <!-- Update check -->
+    <Checkbox class="mb-3"
+              id="update_check"
+              locale-prefix="config"
+              v-model="config.update_check"
+              default="true"
+    ></Checkbox>
+
     <!-- Notify Pre-Releases -->
     <Checkbox class="mb-3"
               id="notify_pre_releases"

@@ -692,7 +692,7 @@ namespace confighttp {
       "nvenc_latency_over_power", "nvenc_opengl_vulkan_on_dxgi", "nvenc_preset", "nvenc_realtime_hags",
       "nvenc_spatial_aq", "nvenc_twopass", "nvenc_vbv_increase", "origin_web_ui_allowed", "output_name",
       "ping_timeout", "pkey", "port", "qp", "qsv_coder", "qsv_preset", "qsv_slow_hevc", "rtsp_plaintext", "server_cmd",
-      "stream_audio", "sunshine_name", "sw_preset", "sw_tune", "system_tray", "touchpad_as_ds4", "upnp",
+      "stream_audio", "sunshine_name", "sw_preset", "sw_tune", "system_tray", "touchpad_as_ds4", "update_check", "upnp",
       "vaapi_strict_rc_buffer", "virtual_display_driver", "virtual_sink", "vt_coder", "vt_realtime",
       "vt_software", "wan_encryption_mode", "ban_duration_seconds", "ban_enabled", "ban_threshold",
       "ban_whitelist", "ban_window_seconds", "security_log", "security_log_max_mb"

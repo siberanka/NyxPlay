@@ -35,7 +35,7 @@
         <div class="alert alert-info" v-if="installedVersionNotStable">
           {{ $t('index.installed_version_not_stable') }}
         </div>
-        <div v-else-if="(!preReleaseBuildAvailable || !notifyPreReleases) && !stableBuildAvailable && !buildVersionIsDirty">
+        <div v-else-if="!loading && !updateCheckFailed && (!preReleaseBuildAvailable || !notifyPreReleases) && !stableBuildAvailable && !buildVersionIsDirty">
           <div class="alert alert-success">
             {{ $t('index.version_latest') }}
           </div>
@@ -46,7 +46,7 @@
               <div class="my-2">
                 <p>{{ $t('index.new_pre_release') }}</p>
               </div>
-              <a class="btn btn-success m-1" :href="preReleaseVersion.release.html_url" target="_blank">{{ $t('index.download') }}</a>
+              <a class="btn btn-success m-1" :href="preReleaseVersion.release.html_url" target="_blank" rel="noopener noreferrer">{{ $t('index.download') }}</a>
             </div>
             <pre><b>{{preReleaseVersion.release.name}}</b></pre>
             <pre>{{preReleaseVersion.release.body}}</pre>
@@ -58,7 +58,7 @@
               <div class="my-2">
                 <p>{{ $t('index.new_stable') }}</p>
               </div>
-              <a class="btn btn-success m-1" :href="githubVersion.release.html_url" target="_blank">{{ $t('index.download') }}</a>
+              <a class="btn btn-success m-1" :href="githubVersion.release.html_url" target="_blank" rel="noopener noreferrer">{{ $t('index.download') }}</a>
             </div>
             <h3>{{githubVersion.release.name}}</h3>
             <pre>{{githubVersion.release.body}}</pre>
@@ -80,7 +80,7 @@
   import Navbar from './Navbar.vue'
   import ClientCard from './ClientCard.vue'
   import ResourceCard from './ResourceCard.vue'
-  import NyxPlayVersion, { RELEASES_API, normalizeRelease } from './nyxplay_version'
+  import NyxPlayVersion, { fetchLatestVersions } from './nyxplay_version'
 
   console.log("Hello, NyxPlay Host!")
   let app = createApp({
@@ -93,6 +93,7 @@
       return {
         version: null,
         githubVersion: null,
+        updateCheckFailed: false,
         notifyPreReleases: false,
         preReleaseVersion: null,
         loading: true,
@@ -105,19 +106,20 @@
         this.notifyPreReleases = config.notify_pre_releases;
         this.version = new NyxPlayVersion(null, config.version);
         console.log("Version: ", this.version.version)
-        const releases = await fetch(RELEASES_API).then((r) => r.ok ? r.json() : []);
-        const hostReleases = Array.isArray(releases) ? releases.map(normalizeRelease).filter(NyxPlayVersion.isHostRelease) : [];
-        const stable = hostReleases.find(release => !release.prerelease && !release.draft);
-        if (stable) {
-          this.githubVersion = new NyxPlayVersion(stable, null);
-          console.log("Latest release: ", this.githubVersion.version)
-        }
-        const preRelease = hostReleases.find(release => release.prerelease && !release.draft);
-        if (preRelease) {
-          this.preReleaseVersion = new NyxPlayVersion(preRelease, null);
-          console.log("Latest pre-release: ", this.preReleaseVersion.version)
+      } catch (e) {
+        console.error(e);
+      }
+      try {
+        // Offline, rate limited or blocked checks must not claim that the installed version is current
+        const latest = await fetchLatestVersions();
+        if (latest) {
+          this.githubVersion = latest.stable;
+          this.preReleaseVersion = latest.preRelease;
+        } else {
+          this.updateCheckFailed = true;
         }
       } catch (e) {
+        this.updateCheckFailed = true;
         console.error(e);
       }
       try {
@@ -147,8 +149,7 @@
         return this.preReleaseVersion.isGreater(this.version, true) && this.preReleaseVersion.isGreater(this.githubVersion, true);
       },
       buildVersionIsDirty() {
-        return this.version.version?.split(".").length === 5 &&
-          this.version.version.indexOf("dirty") !== -1
+        return typeof this.version.version === "string" && this.version.version.indexOf("dirty") !== -1
       },
       /** Parse the text errors, calculating the text, the timestamp and the level */
       fancyLogs() {

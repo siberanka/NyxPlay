@@ -58,6 +58,8 @@ set(SUNSHINE_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/rtsp_parser.c"
         "${CMAKE_SOURCE_DIR}/third-party/moonlight-common-c/src/Video.h"
         "${CMAKE_SOURCE_DIR}/third-party/tray/src/tray.h"
+        "${CMAKE_SOURCE_DIR}/src/update_check.cpp"
+        "${CMAKE_SOURCE_DIR}/src/update_check.h"
         "${CMAKE_SOURCE_DIR}/src/upnp.cpp"
         "${CMAKE_SOURCE_DIR}/src/upnp.h"
         "${CMAKE_SOURCE_DIR}/src/cbs.cpp"

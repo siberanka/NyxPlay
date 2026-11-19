@@ -472,6 +472,8 @@
     "system_tray_desc": "NyxPlay Host simgesinin sistem tepsisinde gösterilip gösterilmeyeceği",
     "touchpad_as_ds4": "İstemci oyun kumandası bir dokunmatik yüzey olduğunu bildirirse DS4 oyun kumandasını taklit et",
     "touchpad_as_ds4_desc": "Devre dışı bırakılırsa, oyun kumandası türü seçimi sırasında dokunmatik yüzey varlığı dikkate alınmaz.",
+    "update_check": "Güncellemeleri denetle",
+    "update_check_desc": "Yeni NyxPlay Host sürümlerini arka planda denetler ve bir sürüm çıktığında sistem tepsisinde bildirim gösterir",
     "upnp": "UPnP",
     "upnp_desc": "İnternet üzerinden yayın için bağlantı noktası yönlendirmesini otomatik olarak yapılandırır",
     "vaapi_strict_rc_buffer": "AMD GPU'larda H.264/HEVC için kare bit hızı sınırlarını kesin olarak uygula",

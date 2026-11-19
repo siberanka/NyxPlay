@@ -264,13 +264,39 @@ editing the `conf` file in a text editor. Use the examples as reference.
     </tr>
 </table>
 
+### update_check
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Whether the host checks for new NyxPlay Host releases in the background (shortly after start and then once a
+            day) and shows a system tray notification when one is available. The check only reads the public release list
+            over HTTPS (GitHub, with the GitLab mirror as fallback); nothing about this PC is sent.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            update_check = disabled
+            @endcode</td>
+    </tr>
+</table>
+
 ### notify_pre_releases
 
 <table>
     <tr>
         <td>Description</td>
         <td colspan="2">
-            Whether to be notified of new pre-release versions of Sunshine.
+            Whether to be notified of new pre-release versions of NyxPlay Host, in the Web UI and in the update check
+            notification.
         </td>
     </tr>
     <tr>
