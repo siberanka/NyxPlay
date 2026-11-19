@@ -153,3 +153,37 @@ TEST(ServiceWatchdog, ReadyResetsGrace) {
   watchdog.on_ready();
   EXPECT_EQ(watchdog.grace_ms(), svc::ready_grace_initial_ms);
 }
+
+TEST(ServiceLoaderFailure, Describes) {
+  for (auto code : {svc::status_dll_not_found, svc::status_entrypoint_not_found, svc::status_invalid_image_format}) {
+    ASSERT_NE(svc::describe_loader_failure(code), nullptr);
+    EXPECT_NE(std::string(svc::describe_loader_failure(code)).find("reinstall NyxPlay Host"), std::string::npos);
+  }
+  EXPECT_NE(std::string(svc::describe_loader_failure(0xC0000135u)).find("DLL is missing"), std::string::npos);
+  EXPECT_EQ(svc::describe_loader_failure(0), nullptr);
+  EXPECT_EQ(svc::describe_loader_failure(1), nullptr);
+  EXPECT_EQ(svc::describe_loader_failure(0xC0000005u), nullptr);
+}
+
+TEST(ServiceLoaderFailure, ReportedOncePerSeries) {
+  svc::loader_failure_reporter_t reporter;
+  EXPECT_NE(reporter.on_exit(svc::status_dll_not_found, 200), nullptr);
+  EXPECT_EQ(reporter.on_exit(svc::status_dll_not_found, 150), nullptr);
+  EXPECT_EQ(reporter.on_exit(svc::status_dll_not_found, 150), nullptr);
+  // A different loader failure in the same series is still the same series
+  EXPECT_EQ(reporter.on_exit(svc::status_invalid_image_format, 150), nullptr);
+}
+
+TEST(ServiceLoaderFailure, NewSeriesAfterOtherExitOrHealthyRun) {
+  svc::loader_failure_reporter_t reporter;
+  EXPECT_NE(reporter.on_exit(svc::status_dll_not_found, 100), nullptr);
+  // An unrelated exit ends the series
+  EXPECT_EQ(reporter.on_exit(1, 100), nullptr);
+  EXPECT_NE(reporter.on_exit(svc::status_dll_not_found, 100), nullptr);
+  // So does a long run
+  EXPECT_EQ(reporter.on_exit(svc::status_dll_not_found, svc::backoff_healthy_run_ms), nullptr);
+  EXPECT_NE(reporter.on_exit(svc::status_entrypoint_not_found, 100), nullptr);
+  // And a planned restart
+  reporter.reset();
+  EXPECT_NE(reporter.on_exit(svc::status_entrypoint_not_found, 100), nullptr);
+}

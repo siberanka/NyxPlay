@@ -101,6 +101,62 @@ namespace svc {
     std::uint64_t grace = ready_grace_initial_ms;
   };
 
+  /// Exit codes the Windows loader gives a process that could not even start.
+  constexpr std::uint32_t status_dll_not_found = 0xC0000135u;
+  constexpr std::uint32_t status_entrypoint_not_found = 0xC0000139u;
+  constexpr std::uint32_t status_invalid_image_format = 0xC000007Bu;
+
+  /**
+   * @brief Plain-words cause for an exit code that means the host executable failed to load.
+   * @return The explanation, or nullptr when @p exit_code is not a loader failure.
+   */
+  constexpr const char *describe_loader_failure(std::uint32_t exit_code) {
+    switch (exit_code) {
+      case status_dll_not_found:
+        return "the host executable could not start because a required DLL is missing or damaged; reinstall NyxPlay Host";
+      case status_entrypoint_not_found:
+        return "the host executable could not start because a required DLL has the wrong version; reinstall NyxPlay Host";
+      case status_invalid_image_format:
+        return "the host executable could not start because it or a required DLL is damaged or built for another architecture; reinstall NyxPlay Host";
+      default:
+        return nullptr;
+    }
+  }
+
+  /**
+   * @brief Names a loader failure once per series of consecutive failures, so the restart loop does not
+   *        repeat the same explanation every few seconds.
+   */
+  class loader_failure_reporter_t {
+  public:
+    /**
+     * @brief Report that the host exited with @p exit_code after running for @p ran_ms.
+     * @return The explanation to log, or nullptr when there is nothing new to say.
+     */
+    const char *on_exit(std::uint32_t exit_code, std::uint64_t ran_ms) {
+      auto message = describe_loader_failure(exit_code);
+      if (message == nullptr || ran_ms >= backoff_healthy_run_ms) {
+        reported = false;
+        return nullptr;
+      }
+      if (reported) {
+        return nullptr;
+      }
+      reported = true;
+      return message;
+    }
+
+    /**
+     * @brief Start a new series (planned restart, successful run).
+     */
+    void reset() {
+      reported = false;
+    }
+
+  private:
+    bool reported = false;
+  };
+
   /**
    * @brief Whether a log file of @p size bytes has to be rotated.
    */

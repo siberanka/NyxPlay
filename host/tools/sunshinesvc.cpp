@@ -415,6 +415,7 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
 
   svc::restart_backoff_t backoff;
   svc::startup_watchdog_t watchdog;
+  svc::loader_failure_reporter_t loader_failures;
   DWORD delay_ms = svc::backoff_initial_ms;
   DWORD last_reported_key = 0;
 
@@ -563,6 +564,9 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
               auto ran_ms = GetTickCount64() - start_tick;
               delay_ms = backoff.on_stopped(ran_ms);
               LogLine(log_file_handle, std::format("The host exited with code {} after {} s, restarting in {} s", exit_code, ran_ms / 1000, delay_ms / 1000));
+              if (auto cause = loader_failures.on_exit(exit_code, ran_ms)) {
+                LogLine(log_file_handle, std::format("Cause: {} (exit code {:#010x})", cause, exit_code));
+              }
             }
             still_running = false;
             break;
@@ -582,6 +586,7 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
 
     if (planned_restart) {
       backoff.reset();
+      loader_failures.reset();
     }
 
     CloseHandle(process_info.hThread);
