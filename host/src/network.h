@@ -49,6 +49,12 @@ namespace net {
 
   net_e from_address(const std::string_view &view);
 
+  /// Peers of the control stream host: one per concurrent stream plus room for the connections that are being set up.
+  constexpr std::size_t control_peer_count = 32;
+
+  /// Connections from one address: several clients behind one NAT address, and the stale connection of a client that reconnects.
+  constexpr std::size_t control_connections_per_address = 8;
+
   host_t host_create(af_e af, ENetAddress &addr, std::uint16_t port);
 
   /**

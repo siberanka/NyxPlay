@@ -74,3 +74,28 @@ TEST_F(AppsLoaderTest, OnlyBrokenEntriesFallBackToDesktop) {
   ASSERT_TRUE(loaded);
   EXPECT_TRUE(has_app(*loaded, "Desktop (fallback)"));
 }
+
+TEST_F(AppsLoaderTest, AppListCopyIsIndependentOfAReload) {
+  write({{"env", json::object()}, {"apps", json::array({{{"name", "One"}, {"uuid", "u1"}}, {{"name", "Two"}, {"uuid", "u2"}}})}});
+  auto loaded = proc::parse(file);
+  ASSERT_TRUE(loaded);
+
+  const auto copy = loaded->get_apps_copy();
+  ASSERT_EQ(copy.size(), loaded->get_apps().size());
+  ASSERT_FALSE(copy.empty());
+
+  write({{"env", json::object()}, {"apps", json::array({{{"name", "Other"}, {"uuid", "u3"}}})}});
+  auto reloaded = proc::parse(file);
+  ASSERT_TRUE(reloaded);
+  loaded->replace_configuration(std::move(*reloaded));
+
+  EXPECT_TRUE(has_app(*loaded, "Other"));
+  EXPECT_FALSE(has_app(*loaded, "One"));
+  // The copy taken before still shows the old list
+  EXPECT_TRUE(std::ranges::any_of(copy, [](const proc::ctx_t &app) {
+    return app.name == "One";
+  }));
+  EXPECT_FALSE(std::ranges::any_of(copy, [](const proc::ctx_t &app) {
+    return app.name == "Other";
+  }));
+}

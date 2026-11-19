@@ -4,6 +4,7 @@
  */
 
 // standard includes
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <fstream>
@@ -25,6 +26,7 @@ extern "C" {
 
 // local includes
 #include "config.h"
+#include "control_intercept.h"
 #include "crypto.h"
 #include "display_device.h"
 #include "globals.h"
@@ -33,6 +35,7 @@ extern "C" {
 #include "network.h"
 #include "platform/common.h"
 #include "process.h"
+#include "replay_window.h"
 #include "security_log.h"
 #include "stream.h"
 #include "sync.h"
@@ -98,6 +101,11 @@ namespace stream {
     video,  ///< Video
     audio  ///< Audio
   };
+
+  /// The name of a client for a log line: it is chosen by the client, so no line breaks or control characters.
+  static std::string log_name(const std::string &name) {
+    return security_log::sanitize_text(name, security_log::max_name_bytes);
+  }
 
 #pragma pack(push, 1)
 
@@ -255,6 +263,61 @@ namespace stream {
 
 #pragma pack(pop)
 
+  /**
+   * @brief Decrypt and authenticate one `IDX_ENCRYPTED` control packet.
+   * @param cipher The AES-GCM cipher of the client.
+   * @param iv Scratch space for the initialization vector.
+   * @param control_v2 `true` if the client uses the deterministic 12-byte IV construction (`SS_ENC_CONTROL_V2`).
+   * @param packet The packet as received: encrypted header type, length, sequence number, GCM tag and ciphertext.
+   * @param plaintext Receives the decrypted `control_header_v2` and payload.
+   * @param seq Receives the sequence number of the packet.
+   */
+  control_decrypt_e decrypt_control_message(crypto::cipher::gcm_t &cipher, crypto::aes_t &iv, bool control_v2, std::string_view packet, std::vector<uint8_t> &plaintext, std::uint32_t &seq) {
+    if (packet.size() < sizeof(control_encrypted_t)) {
+      return control_decrypt_e::malformed;
+    }
+
+    auto header = (control_encrypted_p) packet.data();
+
+    auto length = util::endian::little(header->length);
+    seq = util::endian::little(header->seq);
+
+    if (length < (16 + 4 + 4)) {
+      return control_decrypt_e::malformed;
+    }
+
+    // 'length' covers the sequence number, the GCM tag and the ciphertext; it is client supplied
+    // and must fit in what was actually received
+    if ((std::size_t) length + sizeof(control_encrypted_t::encryptedHeaderType) + sizeof(control_encrypted_t::length) > packet.size()) {
+      return control_decrypt_e::malformed;
+    }
+
+    auto tagged_cipher_length = length - 4;
+    std::string_view tagged_cipher {(char *) header->payload(), (size_t) tagged_cipher_length};
+
+    if (control_v2) {
+      // We use the deterministic IV construction algorithm specified in NIST SP 800-38D
+      // Section 8.2.1. The sequence number is our "invocation" field and the 'CC' in the
+      // high bytes is the "fixed" field. Because each client provides their own unique
+      // key, our values in the fixed field need only uniquely identify each independent
+      // use of the client key with AES-GCM in our code.
+      //
+      // The sequence number is 32 bits long which allows for 2^32 control stream messages
+      // to be received from each client before the IV repeats.
+      iv.resize(12);
+      std::copy_n((uint8_t *) &seq, sizeof(seq), std::begin(iv));
+      iv[10] = 'C';  // Client originated
+      iv[11] = 'C';  // Control stream
+    } else {
+      // Nvidia old style encryption uses a 16-byte IV
+      iv.resize(16);
+
+      iv[0] = (std::uint8_t) seq;
+    }
+
+    return cipher.decrypt(tagged_cipher, plaintext, &iv) ? control_decrypt_e::bad_tag : control_decrypt_e::ok;
+  }
+
   constexpr std::size_t round_to_pkcs7_padded(std::size_t size) {
     return ((size + 15) / 16) * 16;
   }
@@ -287,28 +350,61 @@ namespace stream {
 
   class control_server_t {
   public:
+    control_server_t() = default;
+    control_server_t(const control_server_t &) = delete;
+    control_server_t &operator=(const control_server_t &) = delete;
+
+    ~control_server_t() {
+      control_intercept::set_hooks(nullptr);
+    }
+
     int bind(net::af_e address_family, std::uint16_t port) {
       _host = net::host_create(address_family, _addr, port);
 
       if (_host) {
+        _hooks.connect_expected = [this](std::uint32_t connect_data, const ENetAddress &source) {
+          return expects_connect(connect_data, source);
+        };
+        _hooks.authenticate = [this](ENetPeer *peer, std::string_view message) {
+          return authenticate_foreign(peer, message);
+        };
+        control_intercept::set_hooks(&_hooks);
+
         // Packets of blocked addresses are dropped before ENet sees them (no peer, no handshake)
-        _host->intercept = [](ENetHost *host, ENetEvent *) -> int {
-          if (!security_log::any_blocked()) {
-            return 0;
+        _host->intercept = [](ENetHost *host, ENetEvent *event) -> int {
+          if (security_log::any_blocked()) {
+            const auto address = platf::from_sockaddr((sockaddr *) &host->receivedPeerAddress.address);
+            boost::system::error_code ec;
+            const auto parsed = boost::asio::ip::make_address(address, ec);
+            if (!ec && security_log::is_blocked(parsed)) {
+              security_log::note_blocked(parsed, security_log::service::control);
+              return 1;
+            }
           }
-          const auto address = platf::from_sockaddr((sockaddr *) &host->receivedPeerAddress.address);
-          boost::system::error_code ec;
-          const auto parsed = boost::asio::ip::make_address(address, ec);
-          if (ec || !security_log::is_blocked(parsed)) {
-            return 0;
-          }
-          security_log::note_blocked(parsed, security_log::service::control);
-          return 1;
+
+          // Connection requests nobody waits for and datagrams from an address a connection is not bound to
+          return control_intercept::filter(host, event);
         };
       }
 
       return !(bool) _host;
     }
+
+    /**
+     * @brief Whether a launched stream waits for a control connection with this connect data from this address.
+     */
+    bool expects_connect(std::uint32_t connect_data, const ENetAddress &source);
+
+    /**
+     * @brief Authenticate a control message from an address the connection of `peer` is not bound to.
+     * @details Changes no state: the message is decrypted again when its handler runs.
+     */
+    control_intercept::message_e authenticate_foreign(ENetPeer *peer, std::string_view message);
+
+    /**
+     * @brief Log, at most every few seconds, what the datagram inspection dropped.
+     */
+    void report_intercepted();
 
     // Get session associated with address.
     // If none are found, try to find a session not yet claimed. (It will be marked by a port of value 0
@@ -361,6 +457,8 @@ namespace stream {
 
     ENetAddress _addr;
     net::host_t _host;
+    control_intercept::hooks_t _hooks;
+    std::chrono::steady_clock::time_point _report_time;
   };
 
   struct broadcast_ctx_t {
@@ -433,6 +531,8 @@ namespace stream {
       crypto::aes_t incoming_iv;
       crypto::aes_t outgoing_iv;
 
+      replay_window_t incoming_replay;  // Sequence numbers of the control messages accepted so far
+
       std::uint32_t connect_data;  // Used for new clients with ML_FF_SESSION_ID_V1
       std::string expected_peer_address;  // Only used for legacy clients without ML_FF_SESSION_ID_V1
 
@@ -457,7 +557,8 @@ namespace stream {
     std::uint32_t launch_session_id;
     std::string device_name;
     std::string device_uuid;
-    crypto::PERM permission;
+    // Written by the Web UI thread when an administrator changes the client, read by the control stream thread
+    std::atomic<crypto::PERM> permission {crypto::PERM::_no};
 
     std::list<crypto::command_entry_t> do_cmds;
     std::list<crypto::command_entry_t> undo_cmds;
@@ -536,6 +637,83 @@ namespace stream {
 
   static auto broadcast = safe::make_shared<broadcast_ctx_t>(start_broadcast, end_broadcast);
 
+  /**
+   * @brief Identify a control connection of a stream that is still waiting for it.
+   * @details By the unique connect data if the client supports it, only clients without session ID
+   *          support fall back to matching the IP address.
+   */
+  static bool connect_matches(const session_t &session, std::uint32_t connect_data, const std::string &peer_addr) {
+    if (session.config.mlFeatureFlags & ML_FF_SESSION_ID_V1) {
+      return session.control.connect_data == connect_data;
+    }
+
+    return session.control.expected_peer_address == peer_addr;
+  }
+
+  bool control_server_t::expects_connect(std::uint32_t connect_data, const ENetAddress &source) {
+    TUPLE_2D(peer_port, peer_addr, platf::from_sockaddr_ex((sockaddr *) &source.address));
+    auto lg = _sessions.lock();
+    return std::any_of(std::begin(*_sessions), std::end(*_sessions), [&](const session_t *session_p) {
+      return !session_p->control.peer && connect_matches(*session_p, connect_data, peer_addr);
+    });
+  }
+
+  control_intercept::message_e control_server_t::authenticate_foreign(ENetPeer *peer, std::string_view message) {
+    session_t *session = nullptr;
+    {
+      auto lg = _peer_to_session.lock();
+      auto it = _peer_to_session->find(peer);
+      if (it != _peer_to_session->end()) {
+        session = it->second;
+      }
+    }
+
+    // Only the encrypted control protocol can prove where a client is
+    std::uint16_t type;
+    if (session == nullptr || session->config.controlProtocolType != 13 || message.size() < sizeof(type)) {
+      return control_intercept::message_e::invalid;
+    }
+
+    std::memcpy(&type, message.data(), sizeof(type));
+    if (type != packetTypes[IDX_ENCRYPTED]) {
+      return control_intercept::message_e::invalid;
+    }
+
+    std::uint32_t seq;
+    std::vector<uint8_t> plaintext;
+    if (decrypt_control_message(session->control.cipher, session->control.incoming_iv, session->config.encryptionFlagsEnabled & SS_ENC_CONTROL_V2, message, plaintext, seq) != control_decrypt_e::ok) {
+      return control_intercept::message_e::invalid;
+    }
+
+    return session->control.incoming_replay.fresh(seq) ? control_intercept::message_e::fresh : control_intercept::message_e::replayed;
+  }
+
+  void control_server_t::report_intercepted() {
+    const auto now = std::chrono::steady_clock::now();
+    if (now - _report_time < 10s) {
+      return;
+    }
+
+    auto report = control_intercept::take_report();
+    if (report.foreign_datagrams == 0 && report.rejected_connects == 0 && report.moved_peers == 0) {
+      return;
+    }
+    _report_time = now;
+
+    if (report.foreign_datagrams > 0) {
+      BOOST_LOG(warning) << "Ignored "sv << report.foreign_datagrams << " control datagram(s) that did not come from the address of their connection and carried no valid message, last from ["sv
+                         << platf::from_sockaddr((sockaddr *) &report.last_foreign.address) << ']';
+    }
+    if (report.rejected_connects > 0) {
+      BOOST_LOG(warning) << "Ignored "sv << report.rejected_connects << " control connection request(s) that no stream waits for, last from ["sv
+                         << platf::from_sockaddr((sockaddr *) &report.last_rejected.address) << ']';
+    }
+    if (report.moved_peers > 0) {
+      BOOST_LOG(info) << "Control connection moved to a new client address "sv << report.moved_peers << " time(s), last to ["sv
+                      << platf::from_sockaddr((sockaddr *) &report.last_foreign.address) << ']';
+    }
+  }
+
   session_t *control_server_t::get_session(const net::peer_t peer, uint32_t connect_data) {
     {
       // Fast path - look up existing session by peer
@@ -557,21 +735,10 @@ namespace stream {
         continue;
       }
 
-      // Identify the connection by the unique connect data if the client supports it.
-      // Only fall back to IP address matching for clients without session ID support.
-      if (session_p->config.mlFeatureFlags & ML_FF_SESSION_ID_V1) {
-        if (session_p->control.connect_data != connect_data) {
-          continue;
-        } else {
-          BOOST_LOG(debug) << "Initialized new control stream session by connect data match [v2]"sv;
-        }
-      } else {
-        if (session_p->control.expected_peer_address != peer_addr) {
-          continue;
-        } else {
-          BOOST_LOG(debug) << "Initialized new control stream session by IP address match [v1]"sv;
-        }
+      if (!connect_matches(*session_p, connect_data, peer_addr)) {
+        continue;
       }
+      BOOST_LOG(debug) << "Initialized new control stream session by "sv << ((session_p->config.mlFeatureFlags & ML_FF_SESSION_ID_V1) ? "connect data match [v2]"sv : "IP address match [v1]"sv);
 
       // Once the control stream connection is established, RTSP session state can be torn down
       rtsp_stream::launch_session_clear(session_p->launch_session_id);
@@ -647,6 +814,8 @@ namespace stream {
   void control_server_t::iterate(std::chrono::milliseconds timeout) {
     ENetEvent event;
     auto res = enet_host_service(_host.get(), &event, timeout.count());
+
+    report_intercepted();
 
     if (res > 0) {
       auto session = get_session(event.peer, event.data);
@@ -1081,7 +1250,7 @@ namespace stream {
       return -1;
     }
 
-    BOOST_LOG(debug) << "Sent text input state to ["sv << session->device_name << "]: "sv << (state.active ? "active"sv : "inactive"sv);
+    BOOST_LOG(debug) << "Sent text input state to ["sv << log_name(session->device_name) << "]: "sv << (state.active ? "active"sv : "inactive"sv);
     return 0;
   }
 
@@ -1209,7 +1378,7 @@ namespace stream {
       BOOST_LOG(debug) << "type [IDX_EXEC_SERVER_CMD]"sv;
 
       if (!(session->permission & crypto::PERM::server_cmd)) {
-        BOOST_LOG(debug) << "Permission Exec Server Cmd deined for [" << session->device_name << "]";
+        BOOST_LOG(debug) << "Permission Exec Server Cmd deined for [" << log_name(session->device_name) << "]";
         return;
       }
 
@@ -1247,7 +1416,7 @@ namespace stream {
       BOOST_LOG(debug) << "type [IDX_SET_CLIPBOARD] size: "sv << payload.size();
 
       if (!(session->permission & crypto::PERM::clipboard_set)) {
-        BOOST_LOG(debug) << "Permission Clipboard Set deined for [" << session->device_name << "]";
+        BOOST_LOG(debug) << "Permission Clipboard Set deined for [" << log_name(session->device_name) << "]";
         return;
       }
     });
@@ -1256,7 +1425,7 @@ namespace stream {
       BOOST_LOG(debug) << "type [IDX_FILE_TRANSFER_NONCE_REQUEST] size: "sv << payload.size();
 
       if (!(session->permission & crypto::PERM::file_upload)) {
-        BOOST_LOG(debug) << "Permission File Upload deined for [" << session->device_name << "]";
+        BOOST_LOG(debug) << "Permission File Upload deined for [" << log_name(session->device_name) << "]";
         return;
       }
     });
@@ -1270,55 +1439,27 @@ namespace stream {
         return;
       }
 
-      auto header = (control_encrypted_p) (payload.data() - 2);
+      std::string_view packet {payload.data() - sizeof(control_encrypted_t::encryptedHeaderType), payload.size() + sizeof(control_encrypted_t::encryptedHeaderType)};
 
-      auto length = util::endian::little(header->length);
-      auto seq = util::endian::little(header->seq);
-
-      if (length < (16 + 4 + 4)) {
-        BOOST_LOG(warning) << "Control: Runt packet"sv;
-        return;
-      }
-
-      // 'length' covers the sequence number, the GCM tag and the ciphertext; it is client supplied
-      // and must fit in what was actually received (payload = length field + 'length' bytes)
-      if ((std::size_t) length + sizeof(control_encrypted_t::length) > payload.size()) {
-        BOOST_LOG(warning) << "Control: Truncated encrypted packet"sv;
-        return;
-      }
-
-      auto tagged_cipher_length = length - 4;
-      std::string_view tagged_cipher {(char *) header->payload(), (size_t) tagged_cipher_length};
-
-      auto &cipher = session->control.cipher;
-      auto &iv = session->control.incoming_iv;
-      if (session->config.encryptionFlagsEnabled & SS_ENC_CONTROL_V2) {
-        // We use the deterministic IV construction algorithm specified in NIST SP 800-38D
-        // Section 8.2.1. The sequence number is our "invocation" field and the 'CC' in the
-        // high bytes is the "fixed" field. Because each client provides their own unique
-        // key, our values in the fixed field need only uniquely identify each independent
-        // use of the client's key with AES-GCM in our code.
-        //
-        // The sequence number is 32 bits long which allows for 2^32 control stream messages
-        // to be received from each client before the IV repeats.
-        iv.resize(12);
-        std::copy_n((uint8_t *) &seq, sizeof(seq), std::begin(iv));
-        iv[10] = 'C';  // Client originated
-        iv[11] = 'C';  // Control stream
-      } else {
-        // Nvidia's old style encryption uses a 16-byte IV
-        iv.resize(16);
-
-        iv[0] = (std::uint8_t) seq;
-      }
-
+      std::uint32_t seq;
       std::vector<uint8_t> plaintext;
-      if (cipher.decrypt(tagged_cipher, plaintext, &iv)) {
-        // something went wrong :(
+      switch (decrypt_control_message(session->control.cipher, session->control.incoming_iv, session->config.encryptionFlagsEnabled & SS_ENC_CONTROL_V2, packet, plaintext, seq)) {
+        case control_decrypt_e::malformed:
+          BOOST_LOG(warning) << "Control: Malformed encrypted packet"sv;
+          return;
+        case control_decrypt_e::bad_tag:
+          // something went wrong :(
+          BOOST_LOG(error) << "Failed to verify tag"sv;
 
-        BOOST_LOG(error) << "Failed to verify tag"sv;
+          session::stop(*session);
+          return;
+        case control_decrypt_e::ok:
+          break;
+      }
 
-        session::stop(*session);
+      // A message that was accepted before was recorded or injected again
+      if (!session->control.incoming_replay.accept(seq)) {
+        BOOST_LOG(debug) << "Dropping replayed or outdated control message ["sv << seq << ']';
         return;
       }
 
@@ -2226,7 +2367,7 @@ namespace stream {
     bool update_device_info(session_t& session, const std::string& name, const crypto::PERM& newPerm) {
       // Input groups that are revoked while keys, buttons or contacts are held must be released
       const auto removed_inputs = static_cast<crypto::PERM>(
-        static_cast<std::uint32_t>(session.permission) &
+        static_cast<std::uint32_t>(session.permission.load()) &
         ~static_cast<std::uint32_t>(newPerm) &
         static_cast<std::uint32_t>(crypto::PERM::_all_inputs)
       );
@@ -2235,15 +2376,15 @@ namespace stream {
         input::release_denied(session.input, removed_inputs);
       }
       if (!(newPerm & crypto::PERM::_allow_view)) {
-        BOOST_LOG(debug) << "Session: View permission revoked for [" << session.device_name << "], disconnecting...";
+        BOOST_LOG(debug) << "Session: View permission revoked for [" << log_name(session.device_name) << "], disconnecting...";
         graceful_stop(session);
         return true;
       }
 
-      BOOST_LOG(debug) << "Session: Permission updated for [" << session.device_name << "]";
+      BOOST_LOG(debug) << "Session: Permission updated for [" << log_name(session.device_name) << "]";
 
       if (session.device_name != name) {
-        BOOST_LOG(debug) << "Session: Device name changed from [" << session.device_name << "] to [" << name << "]";
+        BOOST_LOG(debug) << "Session: Device name changed from [" << log_name(session.device_name) << "] to [" << log_name(name) << "]";
         session.device_name = name;
       }
 
@@ -2374,11 +2515,8 @@ namespace stream {
       session.control.expected_peer_address = addr_string;
       BOOST_LOG(debug) << "Expecting incoming session connections from "sv << addr_string;
 
-      // Insert this session into the session list
-      {
-        auto lg = session.broadcast_ref->control_server._sessions.lock();
-        session.broadcast_ref->control_server._sessions->push_back(&session);
-      }
+      // The control thread reads the deadline as soon as the session is listed
+      session.pingTimeout = std::chrono::steady_clock::now() + config::stream.ping_timeout;
 
       auto addr = boost::asio::ip::make_address(addr_string);
       session.video.peer.address(addr);
@@ -2387,7 +2525,11 @@ namespace stream {
       session.audio.peer.address(addr);
       session.audio.peer.port(0);
 
-      session.pingTimeout = std::chrono::steady_clock::now() + config::stream.ping_timeout;
+      // Insert this session into the session list
+      {
+        auto lg = session.broadcast_ref->control_server._sessions.lock();
+        session.broadcast_ref->control_server._sessions->push_back(&session);
+      }
 
       session.audioThread = std::thread {audioThread, &session};
       session.videoThread = std::thread {videoThread, &session};
@@ -2448,7 +2590,7 @@ namespace stream {
 
       session->text_input.requested = launch_session.text_input_events;
       if (session->text_input.requested) {
-        BOOST_LOG(info) << "Client ["sv << session->device_name << "] requested text input focus notifications"sv;
+        BOOST_LOG(info) << "Client ["sv << log_name(session->device_name) << "] requested text input focus notifications"sv;
         session->text_input.monitor = text_input::acquire();
       }
 

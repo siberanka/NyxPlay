@@ -8,6 +8,7 @@
  #define BOOST_PROCESS_VERSION 1
 #endif
 // standard includes
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <thread>
@@ -206,8 +207,54 @@ namespace proc {
 #endif
   }
 
+  int clamp_scale_factor(int scale_factor) {
+    return std::clamp(scale_factor, min_scale_factor, max_scale_factor);
+  }
+
+  std::optional<std::pair<std::uint32_t, std::uint32_t>> scaled_render_size(std::uint32_t width, std::uint32_t height, int scale_factor) {
+    if (scale_factor < min_scale_factor || scale_factor > max_scale_factor) {
+      return std::nullopt;
+    }
+
+    std::uint64_t scaled_width = width;
+    std::uint64_t scaled_height = height;
+    if (scale_factor != 100) {
+      scaled_width = scaled_width * static_cast<std::uint64_t>(scale_factor) / 100;
+      scaled_height = scaled_height * static_cast<std::uint64_t>(scale_factor) / 100;
+
+      // Chop the last bit to ensure the scaled resolution is even numbered
+      // Most odd resolutions won't work well
+      scaled_width &= ~std::uint64_t {1};
+      scaled_height &= ~std::uint64_t {1};
+    }
+
+    if (scaled_width < 1 || scaled_width > max_render_dimension || scaled_height < 1 || scaled_height > max_render_dimension) {
+      return std::nullopt;
+    }
+
+    return std::pair<std::uint32_t, std::uint32_t> {static_cast<std::uint32_t>(scaled_width), static_cast<std::uint32_t>(scaled_height)};
+  }
+
   int proc_t::execute(const ctx_t& app, std::shared_ptr<rtsp_stream::launch_session_t> launch_session) {
     std::lock_guard lock {_lock.mutex};
+
+    uint32_t client_width = launch_session->width ? launch_session->width : 1920;
+    uint32_t client_height = launch_session->height ? launch_session->height : 1080;
+
+    int scale_factor = launch_session->scale_factor;
+    if (app.scale_factor != 100) {
+      scale_factor = app.scale_factor;
+    }
+
+    // The size reaches the virtual display driver and the display settings: never pass on an absurd one
+    const auto render_size = scaled_render_size(client_width, client_height, scale_factor);
+    if (!render_size) {
+      BOOST_LOG(error) << "Rejecting launch: scaling "sv << client_width << 'x' << client_height << " by "sv << scale_factor << "% is out of range"sv;
+      return 400;
+    }
+
+    uint32_t render_width = render_size->first;
+    uint32_t render_height = render_size->second;
 
     if (_app_id == input_only_app_id) {
       terminate(false, false);
@@ -222,27 +269,6 @@ namespace proc {
     _app_name = app.name;
     _launch_session = launch_session;
     allow_client_commands = app.allow_client_commands;
-
-    uint32_t client_width = launch_session->width ? launch_session->width : 1920;
-    uint32_t client_height = launch_session->height ? launch_session->height : 1080;
-
-    uint32_t render_width = client_width;
-    uint32_t render_height = client_height;
-
-    int scale_factor = launch_session->scale_factor;
-    if (_app.scale_factor != 100) {
-      scale_factor = _app.scale_factor;
-    }
-
-    if (scale_factor != 100) {
-      render_width *= ((float)scale_factor / 100);
-      render_height *= ((float)scale_factor / 100);
-
-      // Chop the last bit to ensure the scaled resolution is even numbered
-      // Most odd resolutions won't work well
-      render_width &= ~1;
-      render_height &= ~1;
-    }
 
     launch_session->width = render_width;
     launch_session->height = render_height;
@@ -921,12 +947,27 @@ namespace proc {
   // Returns default image if image configuration is not set.
   // Returns http content-type header compatible image type.
   std::string proc_t::get_app_image(int app_id) {
-    auto iter = std::find_if(_apps.begin(), _apps.end(), [&app_id](const auto app) {
-      return app.id == std::to_string(app_id);
-    });
-    auto app_image_path = iter == _apps.end() ? std::string() : iter->image_path;
+    std::string app_image_path;
+    {
+      std::lock_guard lock {_lock.mutex};
+      const auto id = std::to_string(app_id);
+      auto iter = std::find_if(_apps.begin(), _apps.end(), [&id](const auto &app) {
+        return app.id == id;
+      });
+      app_image_path = iter == _apps.end() ? std::string() : iter->image_path;
+    }
 
     return validate_app_image_path(app_image_path);
+  }
+
+  std::vector<ctx_t> proc_t::get_apps_copy() const {
+    std::lock_guard lock {_lock.mutex};
+    return _apps;
+  }
+
+  void proc_t::replace_configuration(proc_t &&loaded) {
+    std::lock_guard lock {_lock.mutex};
+    *this = std::move(loaded);
   }
 
   std::string proc_t::get_last_run_app_name() {
@@ -1464,7 +1505,7 @@ namespace proc {
           ctx.wait_all = app_node.value("wait-all", true);
           ctx.exit_timeout = std::chrono::seconds { app_node.value("exit-timeout", 5) };
           ctx.virtual_display = app_node.value("virtual-display", false);
-          ctx.scale_factor = app_node.value("scale-factor", 100);
+          ctx.scale_factor = clamp_scale_factor(app_node.value("scale-factor", 100));
           ctx.use_app_identity = app_node.value("use-app-identity", false);
           ctx.per_client_app_identity = app_node.value("per-client-app-identity", false);
           ctx.allow_client_commands = app_node.value("allow-client-commands", true);
@@ -1696,7 +1737,7 @@ namespace proc {
     auto proc_opt = proc::parse(file_name);
 
     if (proc_opt) {
-      proc = std::move(*proc_opt);
+      proc.replace_configuration(std::move(*proc_opt));
     }
   }
 }  // namespace proc

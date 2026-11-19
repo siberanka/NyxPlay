@@ -238,6 +238,14 @@ namespace rtsp_stream {
   void terminate_sessions();
 
   /**
+   * @brief Find the end of the header of an RTSP message that is read in pieces.
+   * @param data Everything received so far.
+   * @param searched How many bytes at the start of `data` were searched before; the terminator may begin in them.
+   * @return The offset right after the empty line that ends the header, or `std::string_view::npos`.
+   */
+  std::size_t find_header_end(std::string_view data, std::size_t searched);
+
+  /**
    * @brief Stop the streams of an address group and discard a launch it left pending.
    * @param group_key Key from security_log::group_key(), i.e. an IPv4 address or an IPv6 /64.
    */

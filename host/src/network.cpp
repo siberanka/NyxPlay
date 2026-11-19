@@ -163,8 +163,13 @@ namespace net {
     enet_address_set_host(&addr, any_addr.data());
     enet_address_set_port(&addr, port);
 
-    // Maximum of 128 clients, which should be enough for anyone
-    auto host = host_t {enet_host_create(af == IPV4 ? AF_INET : AF_INET6, &addr, 128, 0, 0, 0)};
+    auto host = host_t {enet_host_create(af == IPV4 ? AF_INET : AF_INET6, &addr, control_peer_count, 0, 0, 0)};
+
+    if (host) {
+      // A public address is shared by every client behind one NAT, so this must leave room for several streams,
+      // a client that reconnects before its previous connection timed out and a few unfinished handshakes
+      host->duplicatePeers = control_connections_per_address;
+    }
 
     // Enable opportunistic QoS tagging (automatically disables if the network appears to drop tagged packets)
     enet_socket_set_option(host->socket, ENET_SOCKOPT_QOS, 1);

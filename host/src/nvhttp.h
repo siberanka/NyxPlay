@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstddef>
 #include <list>
+#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -58,9 +59,36 @@ namespace nvhttp {
   constexpr auto OTP_EXPIRE_DURATION = 180s;
 
   /**
-   * @brief Wrong OTP attempts after which the current one-time PIN is invalidated.
+   * @brief Wrong OTP attempts of one address after which its further attempts are ignored.
    */
   constexpr int MAX_OTP_FAILURES = 5;
+
+  /**
+   * @brief Wrong OTP attempts of all addresses together after which the current one-time PIN is invalidated.
+   */
+  constexpr int MAX_OTP_FAILURES_TOTAL = 20;
+
+  /**
+   * @brief Counts the wrong attempts to use the current one-time PIN, per source address and in total.
+   * @details One address can only use up its own attempts, so it cannot invalidate the one-time PIN
+   *          an administrator just created for someone else. A small total cap remains for attackers that
+   *          come from many addresses. Not thread safe, the caller serializes access.
+   */
+  class otp_attempt_limiter_t {
+  public:
+    /// @return `false` once the address used up its attempts.
+    bool allowed(const std::string &address) const;
+
+    /// @return `true` if the one-time PIN has to be invalidated (the total cap is reached).
+    bool record_failure(const std::string &address);
+
+    /// Forget all failures (new, used or invalidated one-time PIN).
+    void reset();
+
+  private:
+    std::map<std::string, int> failures_;
+    int total_ = 0;
+  };
 
   /**
    * @brief Maximum number of pairing sessions retained at one time.
@@ -105,6 +133,14 @@ namespace nvhttp {
 
   std::shared_ptr<rtsp_stream::launch_session_t>
   make_launch_session(bool host_audio, bool input_only, const args_t &args, const crypto::named_cert_t* named_cert_p);
+
+  /**
+   * @brief Drop the client do/undo commands of a launch unless the app and the device both allow them.
+   * @param launch_session The launch to restrict.
+   * @param app_allows Whether the app allows commands of clients.
+   * @param device_allows Whether the paired device is allowed to run its own commands.
+   */
+  void restrict_client_commands(rtsp_stream::launch_session_t &launch_session, bool app_allows, bool device_allows);
 
   /**
    * @brief Setup the nvhttp server.
@@ -211,6 +247,15 @@ namespace nvhttp {
    * @return `true` when the name is within the storage limit.
    */
   bool is_valid_pairing_name(std::string_view name);
+
+  /**
+   * @brief Make a client supplied device name safe to store, show and put into JSON.
+   * @details Control characters and text direction/separator characters are dropped, every invalid UTF-8
+   *          byte becomes U+FFFD and the result is cut on a code point boundary within
+   *          `MAX_PAIRING_CLIENT_NAME_SIZE` bytes. Everything else is kept.
+   * @param name The name as sent by the client.
+   */
+  std::string sanitize_pairing_name(std::string_view name);
 
   /**
    * @brief Insert a newly created pairing session into the bounded pending storage.
@@ -402,6 +447,16 @@ namespace nvhttp {
    * @return The client record (never modified after it was published), or `nullptr` if unknown.
    */
   std::shared_ptr<const crypto::named_cert_t> get_client(std::string_view uuid);
+
+  /**
+   * @brief Bring a launch session that waited for its stream up to date with its client.
+   * @details An administrator may change the permissions of a client, or remove it, between the launch
+   *          request and the start of the stream. The permissions and the right to run client commands
+   *          of the current record apply to the stream, never the ones of the request.
+   * @param launch_session The launch session to update.
+   * @return `false` if the client is gone or may no longer view, the stream must not start then.
+   */
+  bool refresh_launch_session(rtsp_stream::launch_session_t &launch_session);
 
   /**
    * @brief Move the deadline of a pairing session out once the PIN has been delivered.

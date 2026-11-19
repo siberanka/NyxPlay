@@ -393,3 +393,86 @@ TEST(LaunchSessionTest, ShortRikeyIsRejectedWithAClearReason) {
     EXPECT_STREQ(e.what(), "Invalid rikey");
   }
 }
+
+TEST_F(ClientRegistryTest, StateFileSurvivesANameThatIsNotUtf8) {
+  // A device name sent by a client is not guaranteed to be valid UTF-8
+  ASSERT_TRUE(nvhttp::test_access::add_client(make_client(std::string("Phone \xFF\xFE end"), uuid_a, 0)));
+  ASSERT_TRUE(nvhttp::test_access::save());
+
+  const auto parsed = nlohmann::json::parse(read_file(scratch / "state.json"));
+  const auto &devices = parsed.at("root").at("named_devices");
+  ASSERT_EQ(devices.size(), 1U);
+  const auto name = devices[0].at("name").get<std::string>();
+  EXPECT_EQ(name.find("Phone "), 0U);
+  EXPECT_NE(name.find(" end"), std::string::npos);
+}
+
+namespace {
+  std::shared_ptr<rtsp_stream::launch_session_t> make_pending_launch(const std::string &uuid, const crypto::PERM perm) {
+    auto launch = std::make_shared<rtsp_stream::launch_session_t>();
+    launch->unique_id = uuid;
+    launch->perm = perm;
+    launch->client_do_cmds.push_back({"do-cmd", false});
+    launch->client_undo_cmds.push_back({"undo-cmd", false});
+    return launch;
+  }
+
+  bool change_client(const std::string &uuid, const crypto::PERM perm, const bool allow_client_commands) {
+    return nvhttp::update_device_info(uuid, "Phone", "", {}, {}, perm, true, allow_client_commands, false);
+  }
+}  // namespace
+
+TEST_F(ClientRegistryTest, PendingLaunchTakesTheCurrentPermissions) {
+  auto client = make_client("Phone", uuid_a, 0, crypto::PERM::_all);
+  client->allow_client_commands = true;
+  ASSERT_TRUE(nvhttp::test_access::add_client(client));
+
+  auto launch = make_pending_launch(uuid_a, crypto::PERM::_all);
+  const auto reduced = static_cast<crypto::PERM>(static_cast<std::uint32_t>(crypto::PERM::view) | static_cast<std::uint32_t>(crypto::PERM::input_mouse));
+  ASSERT_TRUE(change_client(uuid_a, reduced, true));
+
+  EXPECT_TRUE(nvhttp::refresh_launch_session(*launch));
+  EXPECT_EQ(launch->perm, reduced);
+  EXPECT_EQ(launch->client_do_cmds.size(), 1U);
+  EXPECT_EQ(launch->client_undo_cmds.size(), 1U);
+}
+
+TEST_F(ClientRegistryTest, PendingLaunchLosesClientCommandsWhenTheDeviceDisallowsThem) {
+  auto client = make_client("Phone", uuid_a, 0, crypto::PERM::_all);
+  client->allow_client_commands = true;
+  ASSERT_TRUE(nvhttp::test_access::add_client(client));
+
+  auto launch = make_pending_launch(uuid_a, crypto::PERM::_all);
+  ASSERT_TRUE(change_client(uuid_a, crypto::PERM::_all, false));
+
+  EXPECT_TRUE(nvhttp::refresh_launch_session(*launch));
+  EXPECT_TRUE(launch->client_do_cmds.empty());
+  EXPECT_TRUE(launch->client_undo_cmds.empty());
+}
+
+TEST_F(ClientRegistryTest, PendingLaunchOfAClientThatMayNoLongerViewIsRefused) {
+  ASSERT_TRUE(nvhttp::test_access::add_client(make_client("Phone", uuid_a, 0, crypto::PERM::_all)));
+
+  auto launch = make_pending_launch(uuid_a, crypto::PERM::_all);
+  ASSERT_TRUE(change_client(uuid_a, crypto::PERM::input_mouse, true));
+
+  EXPECT_FALSE(nvhttp::refresh_launch_session(*launch));
+}
+
+TEST_F(ClientRegistryTest, PendingLaunchOfAnUnpairedClientIsRefused) {
+  ASSERT_TRUE(nvhttp::test_access::add_client(make_client("Phone", uuid_a, 0, crypto::PERM::_all)));
+  auto launch = make_pending_launch(uuid_a, crypto::PERM::_all);
+
+  nvhttp::erase_all_clients();
+
+  EXPECT_FALSE(nvhttp::refresh_launch_session(*launch));
+  auto unknown = make_pending_launch(uuid_b, crypto::PERM::_all);
+  EXPECT_FALSE(nvhttp::refresh_launch_session(*unknown));
+}
+
+TEST_F(ClientRegistryTest, PendingLaunchOfTheHostItselfIsLeftAlone) {
+  auto launch = make_pending_launch(http::unique_id, crypto::PERM::_no);
+  EXPECT_TRUE(nvhttp::refresh_launch_session(*launch));
+  EXPECT_EQ(launch->perm, crypto::PERM::_no);
+  EXPECT_EQ(launch->client_do_cmds.size(), 1U);
+}

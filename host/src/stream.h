@@ -5,7 +5,10 @@
 #pragma once
 
 // standard includes
+#include <cstdint>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 // lib includes
 #include <boost/asio.hpp>
@@ -47,6 +50,15 @@ namespace stream {
 
     parity_plan_t plan_parity(size_t data_shards, size_t fecpercentage, size_t minparityshards);
   }  // namespace fec
+
+  /// Result of the decryption of a control stream packet.
+  enum class control_decrypt_e {
+    ok,  ///< Authenticated and decrypted.
+    malformed,  ///< Too short or inconsistent lengths.
+    bad_tag,  ///< The GCM tag does not verify.
+  };
+
+  control_decrypt_e decrypt_control_message(crypto::cipher::gcm_t &cipher, crypto::aes_t &iv, bool control_v2, std::string_view packet, std::vector<uint8_t> &plaintext, std::uint32_t &seq);
 
   namespace session {
     enum class state_e : int {

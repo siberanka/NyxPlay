@@ -74,7 +74,7 @@ namespace nvhttp {
   static std::string otp_passphrase;
   static std::string otp_device_name;
   static std::chrono::time_point<std::chrono::steady_clock> otp_creation_time;
-  static int otp_failures = 0;
+  static otp_attempt_limiter_t otp_limiter;
 
   class SunshineHTTPSServer: public SimpleWeb::ServerBase<SunshineHTTPS> {
   public:
@@ -224,6 +224,13 @@ namespace nvhttp {
     ADD,  ///< Add certificate
     REMOVE  ///< Remove certificate
   };
+
+  /**
+   * @brief Text that a peer chose, made safe for a log line (no line breaks or control characters, bounded).
+   */
+  static std::string log_text(std::string_view text) {
+    return security_log::sanitize_text(text, security_log::max_detail_bytes);
+  }
 
   std::string get_arg(const args_t &args, const char *name, const char *default_value) {
     auto it = args.find(name);
@@ -396,7 +403,8 @@ namespace nvhttp {
     try {
       {
         std::ofstream out(temp_path, std::ios::binary | std::ios::trunc);
-        out << root.dump(4);  // Pretty-print with an indent of 4 spaces.
+        // Pretty-print with an indent of 4 spaces; text that is not UTF-8 is replaced instead of throwing
+        out << root.dump(4, ' ', false, nlohmann::json::error_handler_t::replace);
         out.flush();
         if (!out.good()) {
           throw std::runtime_error("write failed");
@@ -603,11 +611,14 @@ namespace nvhttp {
 
     // If launched from client
     if (named_cert_p->uuid != http::unique_id) {
-      auto rikey = util::from_hex_vec(get_arg(args, "rikey"), true);
-      if (rikey.size() != 16) {
-        // AES-128: a shorter key would make the cipher read past the buffer
+      // AES-128 key as exactly 32 hexadecimal digits: a shorter key would make the cipher read past the buffer
+      const auto rikey_text = get_arg(args, "rikey");
+      if (rikey_text.size() != 32 || !std::ranges::all_of(rikey_text, [](const unsigned char character) {
+            return std::isxdigit(character) != 0;
+          })) {
         throw std::invalid_argument("Invalid rikey");
       }
+      auto rikey = util::from_hex_vec(rikey_text, true);
       std::copy(rikey.cbegin(), rikey.cend(), std::back_inserter(launch_session->gcm_key));
 
       launch_session->host_audio = host_audio;
@@ -644,10 +655,10 @@ namespace nvhttp {
     if (named_cert_p->display_mode.empty()) {
       auto mode_str = get_arg(args, "mode", config::video.fallback_mode.c_str());
       mode = std::stringstream(mode_str);
-      BOOST_LOG(info) << "Display mode for client ["sv << named_cert_p->name <<"] requested to ["sv << mode_str << ']';
+      BOOST_LOG(info) << "Display mode for client ["sv << log_text(named_cert_p->name) <<"] requested to ["sv << log_text(mode_str) << ']';
     } else {
       mode = std::stringstream(named_cert_p->display_mode);
-      BOOST_LOG(info) << "Display mode for client ["sv << named_cert_p->name <<"] overriden to ["sv << named_cert_p->display_mode << ']';
+      BOOST_LOG(info) << "Display mode for client ["sv << log_text(named_cert_p->name) <<"] overriden to ["sv << named_cert_p->display_mode << ']';
     }
 
     // Split mode by the char "x", to populate width/height/fps
@@ -695,8 +706,19 @@ namespace nvhttp {
     launch_session->device_name = named_cert_p->name.empty() ? "NyxPlayDisplay"s : named_cert_p->name;
     launch_session->unique_id = named_cert_p->uuid;
     launch_session->perm = named_cert_p->perm;
-    launch_session->enable_sops = util::from_view(get_arg(args, "sops", "0"));
-    launch_session->surround_info = util::from_view(get_arg(args, "surroundAudioInfo", "196610"));
+    // These values end up in the environment of launched commands and in the audio setup: accept only what clients send
+    const auto sops = util::from_view(get_arg(args, "sops", "0"));
+    const auto hdr_mode = util::from_view(get_arg(args, "hdrMode", "0"));
+    const auto gcmap = util::from_view(get_arg(args, "gcmap", "0"));
+    const auto surround_info = util::from_view(get_arg(args, "surroundAudioInfo", "196610"));
+    // The low 16 bits are the channel count, the high 16 bits the channel mask
+    if ((sops != 0 && sops != 1) || (hdr_mode != 0 && hdr_mode != 1) || gcmap < 0 || gcmap > 0xFFFF || surround_info < 0 || surround_info > 0x7FFFFFFF || (surround_info & 0xFFFF) < 1 || (surround_info & 0xFFFF) > 8) {
+      BOOST_LOG(warning) << "Rejecting out of range stream options from client"sv;
+      throw std::invalid_argument("Invalid stream options");
+    }
+
+    launch_session->enable_sops = sops == 1;
+    launch_session->surround_info = static_cast<int>(surround_info);
     // The surround parameters are a short digit string (channels, streams, coupled streams, mapping).
     // The value ends up in the SDP and in the environment of launched commands: accept nothing else.
     launch_session->surround_params = (get_arg(args, "surroundParams", ""));
@@ -707,10 +729,17 @@ namespace nvhttp {
       BOOST_LOG(warning) << "Ignoring malformed surroundParams from client"sv;
       launch_session->surround_params.clear();
     }
-    launch_session->gcmap = util::from_view(get_arg(args, "gcmap", "0"));
-    launch_session->enable_hdr = util::from_view(get_arg(args, "hdrMode", "0"));
+    launch_session->gcmap = static_cast<int>(gcmap);
+    launch_session->enable_hdr = hdr_mode == 1;
     launch_session->virtual_display = util::from_view(get_arg(args, "virtualDisplay", "0")) || named_cert_p->always_use_virtual_display;
-    launch_session->scale_factor = util::from_view(get_arg(args, "scaleFactor", "100"));
+
+    // The percentage scales the display that is created for the client
+    const auto scale_factor = util::from_view(get_arg(args, "scaleFactor", "100"));
+    if (scale_factor < proc::min_scale_factor || scale_factor > proc::max_scale_factor) {
+      BOOST_LOG(warning) << "Rejecting out of range scaleFactor from client: "sv << scale_factor;
+      throw std::invalid_argument("Invalid scaleFactor");
+    }
+    launch_session->scale_factor = static_cast<uint32_t>(scale_factor);
     launch_session->text_input_events = util::from_view(get_arg(args, "nyxTextInput", "0")) != 0;
 
     launch_session->client_do_cmds = named_cert_p->do_cmds;
@@ -742,6 +771,13 @@ namespace nvhttp {
     }
 
     return true;
+  }
+
+  void restrict_client_commands(rtsp_stream::launch_session_t &launch_session, bool app_allows, bool device_allows) {
+    if (!app_allows || !device_allows) {
+      launch_session.client_do_cmds.clear();
+      launch_session.client_undo_cmds.clear();
+    }
   }
 
   /**
@@ -885,6 +921,80 @@ namespace nvhttp {
 
   bool is_valid_pairing_name(const std::string_view name) {
     return name.size() <= MAX_PAIRING_CLIENT_NAME_SIZE;
+  }
+
+  std::string sanitize_pairing_name(const std::string_view name) {
+    constexpr std::string_view replacement = "\xEF\xBF\xBD";  // U+FFFD
+
+    std::string result;
+    std::size_t index = 0;
+    while (index < name.size()) {
+      const auto lead = static_cast<std::uint8_t>(name[index]);
+      std::size_t length = 1;
+      std::uint32_t code_point = lead;
+      bool valid = true;
+
+      if (lead < 0x80) {
+        length = 1;
+      } else if (lead >= 0xC2 && lead <= 0xDF) {
+        length = 2;
+        code_point = lead & 0x1F;
+      } else if (lead >= 0xE0 && lead <= 0xEF) {
+        length = 3;
+        code_point = lead & 0x0F;
+      } else if (lead >= 0xF0 && lead <= 0xF4) {
+        length = 4;
+        code_point = lead & 0x07;
+      } else {
+        valid = false;
+      }
+
+      if (valid && length > 1) {
+        if (index + length > name.size()) {
+          valid = false;
+        } else {
+          for (std::size_t offset = 1; offset < length; ++offset) {
+            const auto next = static_cast<std::uint8_t>(name[index + offset]);
+            if ((next & 0xC0) != 0x80) {
+              valid = false;
+              break;
+            }
+            code_point = (code_point << 6) | (next & 0x3F);
+          }
+        }
+
+        // Overlong encodings, surrogates and values beyond Unicode are not UTF-8
+        if (valid && ((length == 3 && code_point < 0x800) || (length == 4 && (code_point < 0x10000 || code_point > 0x10FFFF)) || (code_point >= 0xD800 && code_point <= 0xDFFF))) {
+          valid = false;
+        }
+      }
+
+      if (!valid) {
+        if (result.size() + replacement.size() > MAX_PAIRING_CLIENT_NAME_SIZE) {
+          break;
+        }
+        result.append(replacement);
+        ++index;
+        continue;
+      }
+
+      const std::string_view character = name.substr(index, length);
+      index += length;
+
+      // Control characters and the characters that rearrange or break up text have no place in a name
+      const bool dropped = code_point < 0x20 || (code_point >= 0x7F && code_point <= 0x9F) || code_point == 0x200E || code_point == 0x200F ||
+                           (code_point >= 0x2028 && code_point <= 0x202E) || (code_point >= 0x2066 && code_point <= 0x2069);
+      if (dropped) {
+        continue;
+      }
+
+      if (result.size() + character.size() > MAX_PAIRING_CLIENT_NAME_SIZE) {
+        break;
+      }
+      result.append(character);
+    }
+
+    return result;
   }
 
   void expire_pair_sessions(const std::chrono::steady_clock::time_point now) {
@@ -1256,12 +1366,12 @@ namespace nvhttp {
   void print_req(std::shared_ptr<typename SimpleWeb::ServerBase<T>::Request> request) {
     BOOST_LOG(debug) << "TUNNEL :: "sv << tunnel<T>::to_string;
 
-    BOOST_LOG(debug) << "METHOD :: "sv << request->method;
-    BOOST_LOG(debug) << "DESTINATION :: "sv << request->path;
+    BOOST_LOG(debug) << "METHOD :: "sv << log_text(request->method);
+    BOOST_LOG(debug) << "DESTINATION :: "sv << log_text(request->path);
 
     for (auto &[name, val] : request->header) {
       const bool secret = boost::iequals(name, "Authorization") || boost::iequals(name, "Cookie");
-      BOOST_LOG(debug) << name << " -- " << (secret ? "REDACTED"sv : std::string_view {val});
+      BOOST_LOG(debug) << log_text(name) << " -- " << (secret ? "REDACTED"sv : std::string_view {log_text(val)});
     }
 
     BOOST_LOG(debug) << " [--] "sv;
@@ -1271,7 +1381,7 @@ namespace nvhttp {
       "rikey", "rikeyid", "clientcert", "salt", "otpauth", "clientchallenge", "serverchallengeresp", "clientpairingsecret"
     };
     for (auto &[name, val] : request->parse_query_string()) {
-      BOOST_LOG(debug) << name << " -- " << (secret_args.contains(boost::algorithm::to_lower_copy(name)) ? "REDACTED"sv : std::string_view {val});
+      BOOST_LOG(debug) << log_text(name) << " -- " << (secret_args.contains(boost::algorithm::to_lower_copy(name)) ? "REDACTED"sv : std::string_view {log_text(val)});
     }
 
     BOOST_LOG(debug) << " [--] "sv;
@@ -1333,9 +1443,7 @@ namespace nvhttp {
           deviceName = "Legacy Moonlight Client";
         }
 
-        if (deviceName.size() > MAX_PAIRING_CLIENT_NAME_SIZE) {
-          deviceName.resize(MAX_PAIRING_CLIENT_NAME_SIZE);
-        }
+        deviceName = sanitize_pairing_name(deviceName);
 
         sess.client.uniqueID = uniqID;
         sess.service = std::is_same_v<T, SunshineHTTPS> ? "https" : "http";
@@ -1397,9 +1505,12 @@ namespace nvhttp {
             one_time_pin.clear();
             otp_passphrase.clear();
             otp_device_name.clear();
-            otp_failures = 0;
+            otp_limiter.reset();
             tree.put("root.<xmlattr>.status_code", 503);
             tree.put("root.<xmlattr>.status_message", "OTP auth not available.");
+          } else if (!otp_limiter.allowed(new_sess.async_insert_pin.address)) {
+            // This address used up its attempts: it must not be able to use up the one-time PIN of the administrator
+            BOOST_LOG(warning) << "Too many wrong OTP attempts from ["sv << new_sess.async_insert_pin.address << "], ignoring further attempts"sv;
           } else {
             auto hash = util::hex(crypto::hash(one_time_pin + new_sess.async_insert_pin.salt + otp_passphrase), true);
             auto expected = hash.to_string_view();
@@ -1416,14 +1527,14 @@ namespace nvhttp {
               one_time_pin.clear();
               otp_passphrase.clear();
               otp_device_name.clear();
-              otp_failures = 0;
-            } else if (++otp_failures >= MAX_OTP_FAILURES) {
+              otp_limiter.reset();
+            } else if (otp_limiter.record_failure(new_sess.async_insert_pin.address)) {
               // Do not allow guessing the passphrase while the OTP is valid
               BOOST_LOG(warning) << "Too many wrong OTP attempts, the one-time PIN was invalidated"sv;
               one_time_pin.clear();
               otp_passphrase.clear();
               otp_device_name.clear();
-              otp_failures = 0;
+              otp_limiter.reset();
             }
           }
 
@@ -1576,7 +1687,7 @@ namespace nvhttp {
           }
         }
       } else {
-        BOOST_LOG(debug) << "Permission Get ServerCommand denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
+        BOOST_LOG(debug) << "Permission Get ServerCommand denied for [" << log_text(named_cert_p->name) << "] (" << (uint32_t)named_cert_p->perm << ")";
       }
 
       tree.put("root.Permission", std::to_string((uint32_t)named_cert_p->perm));
@@ -1744,7 +1855,7 @@ namespace nvhttp {
       auto current_appid = proc::proc.running();
       auto should_hide_inactive_apps = config::input.enable_input_only_mode && current_appid > 0 && current_appid != proc::input_only_app_id;
 
-      auto app_list = proc::proc.get_apps();
+      auto app_list = proc::proc.get_apps_copy();
 
       bool enable_legacy_ordering = config::sunshine.legacy_ordering && named_cert_p->enable_legacy_ordering;
       size_t bits;
@@ -1787,7 +1898,7 @@ namespace nvhttp {
         apps.push_back(std::make_pair("App", std::move(app_node)));
       }
     } else {
-      BOOST_LOG(debug) << "Permission ListApp denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
+      BOOST_LOG(debug) << "Permission ListApp denied for [" << log_text(named_cert_p->name) << "] (" << (uint32_t)named_cert_p->perm << ")";
 
       pt::ptree app_node;
 
@@ -1830,7 +1941,7 @@ namespace nvhttp {
     request_event.app_id = !appuuid_str.empty() ? appuuid_str : appid_str;
     auto perm = PERM::launch;
 
-    BOOST_LOG(verbose) << "Launching app [" << appid_str << "] with UUID [" << appuuid_str << "]";
+    BOOST_LOG(verbose) << "Launching app [" << log_text(appid_str) << "] with UUID [" << log_text(appuuid_str) << "]";
     // BOOST_LOG(verbose) << "QS: " << request->query_string;
 
     // If we have already launched an app, we should allow clients with view permission to join the input only or current app's session.
@@ -1844,7 +1955,7 @@ namespace nvhttp {
     }
 
     if (!(named_cert_p->perm & perm)) {
-      BOOST_LOG(debug) << "Permission LaunchApp denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
+      BOOST_LOG(debug) << "Permission LaunchApp denied for [" << log_text(named_cert_p->name) << "] (" << (uint32_t)named_cert_p->perm << ")";
 
       tree.put("root.resume", 0);
       tree.put("root.<xmlattr>.status_code", 403);
@@ -1955,16 +2066,14 @@ namespace nvhttp {
         }
       }
     } else if (appid > 0 || !appuuid_str.empty()) {
-      if (appid == current_appid || (!appuuid_str.empty() && appuuid_str == current_app_uuid)) {
+      // With nothing running the app id 0 of a request that only names an app UUID is not the running app
+      if (current_appid != 0 && (appid == current_appid || (!appuuid_str.empty() && appuuid_str == current_app_uuid))) {
         // We're basically resuming the same app
 
         BOOST_LOG(debug) << "Resuming app [" << proc::proc.get_last_run_app_name() << "] from launch app path...";
         request_event.type = security_log::type::resume;
 
-        if (!proc::proc.allow_client_commands || !named_cert_p->allow_client_commands) {
-          launch_session->client_do_cmds.clear();
-          launch_session->client_undo_cmds.clear();
-        }
+        restrict_client_commands(*launch_session, proc::proc.allow_client_commands, named_cert_p->allow_client_commands);
 
         if (current_appid == proc::input_only_app_id) {
           launch_session->input_only = true;
@@ -1981,23 +2090,21 @@ namespace nvhttp {
           }
         }
       } else {
-        const auto& apps = proc::proc.get_apps();
+        // A copy: the list is replaced when the apps file is reloaded
+        const auto apps = proc::proc.get_apps_copy();
         auto app_iter = std::find_if(apps.begin(), apps.end(), [&appid_str, &appuuid_str](const auto _app) {
           return _app.id == appid_str || _app.uuid == appuuid_str;
         });
 
         if (app_iter == apps.end()) {
-          BOOST_LOG(error) << "Couldn't find app with ID ["sv << appid_str << "] or UUID ["sv << appuuid_str << ']';
+          BOOST_LOG(error) << "Couldn't find app with ID ["sv << log_text(appid_str) << "] or UUID ["sv << log_text(appuuid_str) << ']';
           tree.put("root.<xmlattr>.status_code", 404);
           tree.put("root.<xmlattr>.status_message", "Cannot find requested application");
           tree.put("root.gamesession", 0);
           return;
         }
 
-        if (!app_iter->allow_client_commands) {
-          launch_session->client_do_cmds.clear();
-          launch_session->client_undo_cmds.clear();
-        }
+        restrict_client_commands(*launch_session, app_iter->allow_client_commands, named_cert_p->allow_client_commands);
 
         auto err = proc::proc.execute(*app_iter, launch_session);
         if (err) {
@@ -2016,6 +2123,8 @@ namespace nvhttp {
       tree.put("root.<xmlattr>.status_code", 403);
       tree.put("root.<xmlattr>.status_message", "How did you get here?");
       tree.put("root.gamesession", 0);
+
+      return;
     }
 
     if (!rtsp_stream::launch_session_raise(launch_session)) {
@@ -2054,7 +2163,7 @@ namespace nvhttp {
     auto named_cert_p = get_verified_cert(request);
     client_request_event_t request_event {request, tree, named_cert_p, security_log::type::resume};
     if (!(named_cert_p->perm & PERM::_allow_view)) {
-      BOOST_LOG(debug) << "Permission ViewApp denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
+      BOOST_LOG(debug) << "Permission ViewApp denied for [" << log_text(named_cert_p->name) << "] (" << (uint32_t)named_cert_p->perm << ")";
 
       tree.put("root.resume", 0);
       tree.put("root.<xmlattr>.status_code", 403);
@@ -2110,10 +2219,7 @@ namespace nvhttp {
       return;
     }
 
-    if (!proc::proc.allow_client_commands || !named_cert_p->allow_client_commands) {
-      launch_session->client_do_cmds.clear();
-      launch_session->client_undo_cmds.clear();
-    }
+    restrict_client_commands(*launch_session, proc::proc.allow_client_commands, named_cert_p->allow_client_commands);
 
     if (config::input.enable_input_only_mode && current_appid == proc::input_only_app_id) {
       launch_session->input_only = true;
@@ -2198,7 +2304,7 @@ namespace nvhttp {
     client_request_event_t request_event {request, tree, named_cert_p, security_log::type::cancel};
     request_event.app_name = proc::proc.get_last_run_app_name();
     if (!(named_cert_p->perm & PERM::launch)) {
-      BOOST_LOG(debug) << "Permission CancelApp denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
+      BOOST_LOG(debug) << "Permission CancelApp denied for [" << log_text(named_cert_p->name) << "] (" << (uint32_t)named_cert_p->perm << ")";
 
       tree.put("root.resume", 0);
       tree.put("root.<xmlattr>.status_code", 403);
@@ -2231,7 +2337,7 @@ namespace nvhttp {
     auto named_cert_p = get_verified_cert(request);
 
     if (!(named_cert_p->perm & PERM::_all_actions)) {
-      BOOST_LOG(debug) << "Permission Get AppAsset denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
+      BOOST_LOG(debug) << "Permission Get AppAsset denied for [" << log_text(named_cert_p->name) << "] (" << (uint32_t)named_cert_p->perm << ")";
       record_permission_denied(request, named_cert_p, "app asset"sv);
 
       fg.disable();
@@ -2261,7 +2367,7 @@ namespace nvhttp {
       !(named_cert_p->perm & PERM::_allow_view)
       || !(named_cert_p->perm & PERM::clipboard_read)
     ) {
-      BOOST_LOG(debug) << "Permission Read Clipboard denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
+      BOOST_LOG(debug) << "Permission Read Clipboard denied for [" << log_text(named_cert_p->name) << "] (" << (uint32_t)named_cert_p->perm << ")";
       record_permission_denied(request, named_cert_p, "clipboard read"sv);
 
       response->write(SimpleWeb::StatusCode::client_error_unauthorized);
@@ -2288,7 +2394,7 @@ namespace nvhttp {
     }
 
     if (!found) {
-      BOOST_LOG(debug) << "Client ["<< named_cert_p->name << "] trying to get clipboard is not connected to a stream";
+      BOOST_LOG(debug) << "Client ["<< log_text(named_cert_p->name) << "] trying to get clipboard is not connected to a stream";
 
       response->write(SimpleWeb::StatusCode::client_error_forbidden);
       response->close_connection_after_response = true;
@@ -2322,7 +2428,7 @@ namespace nvhttp {
       !(named_cert_p->perm & PERM::_allow_view)
       || !(named_cert_p->perm & PERM::clipboard_set)
     ) {
-      BOOST_LOG(debug) << "Permission Write Clipboard denied for [" << named_cert_p->name << "] (" << (uint32_t)named_cert_p->perm << ")";
+      BOOST_LOG(debug) << "Permission Write Clipboard denied for [" << log_text(named_cert_p->name) << "] (" << (uint32_t)named_cert_p->perm << ")";
       record_permission_denied(request, named_cert_p, "clipboard write"sv);
 
       response->write(SimpleWeb::StatusCode::client_error_unauthorized);
@@ -2349,7 +2455,7 @@ namespace nvhttp {
     }
 
     if (!found) {
-      BOOST_LOG(debug) << "Client ["<< named_cert_p->name << "] trying to set clipboard is not connected to a stream";
+      BOOST_LOG(debug) << "Client ["<< log_text(named_cert_p->name) << "] trying to set clipboard is not connected to a stream";
 
       response->write(SimpleWeb::StatusCode::client_error_forbidden);
       response->close_connection_after_response = true;
@@ -2431,7 +2537,7 @@ namespace nvhttp {
         X509_NAME_oneline(X509_get_subject_name(x509.get()), subject_name, sizeof(subject_name));
 
         if (verified) {
-          BOOST_LOG(debug) << subject_name << " -- "sv << "verified, device name: "sv << named_cert_p->name;
+          BOOST_LOG(debug) << subject_name << " -- "sv << "verified, device name: "sv << log_text(named_cert_p->name);
         } else {
           BOOST_LOG(debug) << subject_name << " -- "sv << "denied"sv;
         }
@@ -2538,6 +2644,21 @@ namespace nvhttp {
     tcp.join();
   }
 
+  bool otp_attempt_limiter_t::allowed(const std::string &address) const {
+    const auto it = failures_.find(address);
+    return it == failures_.end() || it->second < MAX_OTP_FAILURES;
+  }
+
+  bool otp_attempt_limiter_t::record_failure(const std::string &address) {
+    ++failures_[address];
+    return ++total_ >= MAX_OTP_FAILURES_TOTAL;
+  }
+
+  void otp_attempt_limiter_t::reset() {
+    failures_.clear();
+    total_ = 0;
+  }
+
   std::string request_otp(const std::string& passphrase, const std::string& deviceName) {
     if (passphrase.size() < 4) {
       return "";
@@ -2546,9 +2667,9 @@ namespace nvhttp {
     std::lock_guard lock(map_id_sess_mutex);
     one_time_pin = crypto::rand_alphabet(4, "0123456789"sv);
     otp_passphrase = passphrase;
-    otp_device_name = deviceName.substr(0, MAX_PAIRING_CLIENT_NAME_SIZE);
+    otp_device_name = sanitize_pairing_name(deviceName);
     otp_creation_time = std::chrono::steady_clock::now();
-    otp_failures = 0;
+    otp_limiter.reset();
 
     return one_time_pin;
   }
@@ -2658,6 +2779,24 @@ namespace nvhttp {
     return nullptr;
   }
 
+  bool refresh_launch_session(rtsp_stream::launch_session_t &launch_session) {
+    // Launches of the host itself have no paired client
+    if (launch_session.unique_id == http::unique_id) {
+      return true;
+    }
+
+    const auto client = get_client(launch_session.unique_id);
+    if (!client || !(client->perm & crypto::PERM::_allow_view)) {
+      return false;
+    }
+
+    // The record may have changed since the request that created the launch session
+    launch_session.perm = client->perm;
+    restrict_client_commands(launch_session, true, client->allow_client_commands);
+
+    return true;
+  }
+
   bool unpair_client(const std::string_view uuid) {
     bool removed = false;
     bool now_empty = false;
@@ -2704,7 +2843,7 @@ namespace nvhttp {
         one_time_pin.clear();
         otp_passphrase.clear();
         otp_device_name.clear();
-        otp_failures = 0;
+        otp_limiter.reset();
       }
       std::lock_guard client_lock(client_auth_mutex);
       client_root = client_t {};

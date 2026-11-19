@@ -177,7 +177,8 @@ namespace confighttp {
     SimpleWeb::CaseInsensitiveMultimap headers;
     headers.emplace("Content-Type", "application/json");
     add_security_headers(headers);
-    response->write(output_tree.dump(), headers);
+    // Client supplied text that is not UTF-8 must not make the response fail
+    response->write(output_tree.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace), headers);
   }
 
   /**
@@ -194,7 +195,7 @@ namespace confighttp {
     tree["error"] = message;
     extra_headers.emplace("Content-Type", "application/json");
     add_security_headers(extra_headers);
-    response->write(code, tree.dump(), extra_headers);
+    response->write(code, tree.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace), extra_headers);
   }
 
   /**
@@ -2541,7 +2542,8 @@ namespace confighttp {
       std::string uuid = input_tree["uuid"].get<std::string>();
 
       nlohmann::json output_tree;
-      const auto &apps = proc::proc.get_apps();
+      // A copy: the list is replaced when the apps file is reloaded
+      const auto apps = proc::proc.get_apps_copy();
       for (auto &app : apps) {
         if (app.uuid == uuid) {
           crypto::named_cert_t named_cert {

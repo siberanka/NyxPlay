@@ -26,9 +26,11 @@ extern "C" {
 // local includes
 #include "config.h"
 #include "globals.h"
+#include "httpcommon.h"
 #include "input.h"
 #include "logging.h"
 #include "network.h"
+#include "nvhttp.h"
 #include "rtsp.h"
 #include "rtsp_validation.h"
 #include "security_log.h"
@@ -489,23 +491,21 @@ namespace rtsp_stream {
         socket->read();
       });
 
-      auto begin = std::max(socket->begin - 4, socket->begin);
-      auto buf_size = bytes + (begin - socket->begin);
-      auto end = begin + buf_size;
+      // The end of the header may be split between two reads
+      const auto searched = (std::size_t) (socket->begin - socket->msg_buf.data());
+      auto end = socket->begin + bytes;
 
-      constexpr auto needle = "\r\n\r\n"sv;
-
-      auto it = std::search(begin, begin + buf_size, std::begin(needle), std::end(needle));
-      if (it == end) {
+      const auto header_end = find_header_end(std::string_view {socket->msg_buf.data(), searched + bytes}, searched);
+      if (header_end == std::string_view::npos) {
         socket->begin = end;
 
         return;
       }
 
       // Emulate read completion for payload data
-      socket->begin = it + needle.size();
+      socket->begin = socket->msg_buf.data() + header_end;
       socket->crlf = socket->begin;
-      buf_size = end - socket->begin;
+      auto buf_size = (std::size_t) (end - socket->begin);
 
       fg.disable();
       handle_plaintext_payload(socket, ec, buf_size);
@@ -536,6 +536,19 @@ namespace rtsp_stream {
 
     std::shared_ptr<launch_session_t> session;
   };
+
+  std::size_t find_header_end(std::string_view data, std::size_t searched) {
+    constexpr auto needle = "\r\n\r\n"sv;
+
+    // A terminator that started before the new data can only reach back by its length minus one
+    const auto start = searched >= needle.size() - 1 ? searched - (needle.size() - 1) : 0;
+    if (start >= data.size()) {
+      return std::string_view::npos;
+    }
+
+    const auto found = data.find(needle, start);
+    return found == std::string_view::npos ? found : found + needle.size();
+  }
 
   class rtsp_server_t {
   public:
@@ -1714,6 +1727,16 @@ namespace rtsp_stream {
       session.client_do_cmds.clear();
     }
 
+    // The administrator may have changed or removed the client since the launch request
+    if (!nvhttp::refresh_launch_session(session)) {
+      BOOST_LOG(warning) << "Rejecting ANNOUNCE from ["sv << remote_address << "], the client of launch session "sv << session.id << " is gone or may no longer view"sv;
+      if (previous.empty()) {
+        launch_slot_t::release_announce(session);
+      }
+      respond(sock, session, &option, 403, "Forbidden", req->sequenceNumber, {});
+      return;
+    }
+
     auto stream_session = stream::session::alloc(config, session);
 
     if (stream::session::start(*stream_session, remote_address)) {
@@ -1728,6 +1751,15 @@ namespace rtsp_stream {
 
     // The session is listed once it runs, a cancel can not see a half started session
     server->insert(stream_session);
+
+    // A change of the client made while the session was being set up could not find it yet: apply it now
+    if (session.unique_id != http::unique_id) {
+      if (const auto client = nvhttp::get_client(session.unique_id)) {
+        stream::session::update_device_info(*stream_session, client->name, client->perm);
+      } else {
+        stream::session::stop(*stream_session);
+      }
+    }
 
     // The replaced stream never got a control connection, stopping it does not touch the app or the display
     for (auto &old : previous) {

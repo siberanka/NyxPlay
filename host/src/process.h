@@ -14,10 +14,12 @@
 
 // standard includes
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 
 // lib includes
 #include <boost/process/v1/child.hpp>
@@ -145,6 +147,18 @@ namespace proc {
 
     const std::vector<ctx_t> &get_apps() const;
     std::vector<ctx_t> &get_apps();
+
+    /**
+     * @brief A copy of the app list, taken under the lock of the app state.
+     * @details The list is replaced when the apps file is reloaded: threads other than the loader work on a copy.
+     */
+    std::vector<ctx_t> get_apps_copy() const;
+
+    /**
+     * @brief Replace the app list and the environment with the ones of a freshly loaded configuration.
+     */
+    void replace_configuration(proc_t &&loaded);
+
     std::string get_app_image(int app_id);
     std::string get_last_run_app_name();
     std::string get_running_app_uuid();
@@ -170,7 +184,7 @@ namespace proc {
 
     // The app state is used by the HTTPS, control, RTSP and web UI threads. Public members hold this lock,
     // it is recursive because terminate() is reached from running() and pause().
-    movable_mutex_t _lock;
+    mutable movable_mutex_t _lock;
 
     int _app_id = 0;
     std::string _app_name;
@@ -224,6 +238,22 @@ namespace proc {
   void terminate_process_group(boost::process::v1::child &proc, boost::process::v1::group &group, std::chrono::seconds exit_timeout);
 
   extern proc_t proc;
+
+  /// Smallest and largest accepted resolution scale factor, in percent.
+  constexpr int min_scale_factor = 20;
+  constexpr int max_scale_factor = 400;
+  /// Largest accepted width or height of a rendered (scaled) stream.
+  constexpr std::uint32_t max_render_dimension = 16384;
+
+  /// @return The scale factor limited to the accepted range.
+  int clamp_scale_factor(int scale_factor);
+
+  /**
+   * @brief Size of the display to render for a client size and a scale factor.
+   * @details A scaled size is made even. Without scaling the size is kept as is.
+   * @return Nothing if the factor or the resulting size is out of range.
+   */
+  std::optional<std::pair<std::uint32_t, std::uint32_t>> scaled_render_size(std::uint32_t width, std::uint32_t height, int scale_factor);
 
   extern int input_only_app_id;
   extern std::string input_only_app_id_str;
