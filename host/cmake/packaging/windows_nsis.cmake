@@ -27,11 +27,11 @@ endif()
 set(NYX_STRINGS_TEMPLATE "
         Function NYX_FN_NAME
           StrCmp $LANGUAGE 1055 0 english
-          StrCpy $NYX_MSG_IMPORT 'Bir Apollo veya Sunshine kurulumu bulundu. Ayarları, uygulamaları ve eşleştirilmiş cihazları ${PROJECT_DISPLAY_NAME} içine aktarmak istiyor musunuz?${NYX_NL}${NYX_NL}İki sunucu aynı bağlantı noktalarını kullanamaz: sonrasında diğer sunucuyu durdurun veya kaldırın ya da ayarlardan bağlantı noktasını değiştirin.'
+          StrCpy $NYX_MSG_IMPORT 'Bir Apollo veya Sunshine kurulumu bulundu. Ayarları, uygulamaları ve eşleştirilmiş cihazları ${PROJECT_DISPLAY_NAME} içine aktarmak istiyor musunuz?${NYX_NL}${NYX_NL}İki host aynı bağlantı noktalarını kullanamaz: sonrasında diğer hostu durdurun veya kaldırın ya da ayarlardan bağlantı noktasını değiştirin.'
           StrCpy $NYX_MSG_OLD '${PROJECT_DISPLAY_NAME} zaten kurulu. Yenisini kurmadan önce eski sürüm kaldırılsın mı?'
           StrCpy $NYX_MSG_FAILED 'Kurulum sırasında bazı adımlar tamamlanamadı. Ayrıntılar için kurulum günlüğüne bakın:'
           StrCpy $NYX_MSG_GAMEPAD 'Sanal Oyun Kumandası (ViGEmBus) kaldırılsın mı?'
-          StrCpy $NYX_MSG_SUDOVDA 'SudoVDA Sanal Ekran Sürücüsü kaldırılsın mı? Apollo veya başka bir sunucu hâlâ kullanıyorsa kaldırmayın.'
+          StrCpy $NYX_MSG_SUDOVDA 'SudoVDA Sanal Ekran Sürücüsü kaldırılsın mı? Apollo veya başka bir host hâlâ kullanıyorsa kaldırmayın.'
           StrCpy $NYX_MSG_DELETE '$INSTDIR${NYX_BS}config içindeki yapılandırma, kimlik bilgileri ve kapak görselleri kaldırılsın mı?'
           Return
         english:
