@@ -21,6 +21,29 @@ The original license files are kept unchanged in every component:
 [`pc/LICENSE`](pc/LICENSE) and the `LICENSE.txt` files of the vendored `moonlight-common-c` copies.
 Third party libraries pulled in as git submodules keep their own licenses.
 
+## Third party components shipped in NyxPlay for Android
+
+| Component | Version | Authors | License |
+|-----------|---------|---------|---------|
+| [OpenSSL](https://www.openssl.org/) (static, AES and random numbers only) | 1.1.1q | The OpenSSL Project Authors, Eric Young, Tim Hudson | OpenSSL License and original SSLeay License |
+| [Opus](https://opus-codec.org/) (static) | 1.5.2 | Xiph.Org Foundation, Skype Limited, Broadcom and contributors | BSD-3-Clause |
+| [ENet](https://github.com/lsalzman/enet) ([Moonlight fork](https://github.com/cgutman/enet)) | submodule `115a10b` | Lee Salzman, Cameron Gutman | MIT |
+| Reed-Solomon FEC (`reedsolomon/`, derived from [nanors](https://github.com/sleepybishop/nanors)) | vendored | Luigi Rizzo, Alain Knaff, Christopher Taylor | BSD-2-Clause (header of `rs.c`) |
+| [Bouncy Castle](https://www.bouncycastle.org/) (`bcprov`, `bcpkix`, `bcutil`) | 1.87 | The Legion of the Bouncy Castle Inc. | MIT |
+| [OkHttp](https://square.github.io/okhttp/) and [Okio](https://square.github.io/okio/) | 4.12.0 and 3.6.0 | Square, Inc. | Apache-2.0 |
+| [JmDNS](https://github.com/jmdns/jmdns) | 3.6.2 | Arthur van Hoff, Rick Blair, Werner Randelshofer, Pierre Frisch and contributors | Apache-2.0 |
+| [Gson](https://github.com/google/gson) | 2.13.1 | Google Inc. | Apache-2.0 |
+| [JCodec](https://github.com/jcodec/jcodec) | 0.2.5 | JCodec Project | BSD-2-Clause |
+| [OpenCV](https://opencv.org/) (native library and Java API) | 4.12.0 | OpenCV team | Apache-2.0 |
+| [LiteRT](https://github.com/google-ai-edge/LiteRT) (TensorFlow Lite runtime and GPU delegate) | 1.4.0 | Google LLC | Apache-2.0 |
+| AndroidX libraries, Material Components, Kotlin standard library | see `android/app/build.gradle` | Google LLC, JetBrains s.r.o. | Apache-2.0 |
+| [SearchPreference](https://github.com/ByteHamster/SearchPreference) | 2.5.1 | ByteHamster | MIT |
+| [ShieldControllerExtensions](https://github.com/cgutman/ShieldControllerExtensions) | 1.0.1 | Cameron Gutman | MIT |
+| [MPAndroidChart](https://github.com/PhilJay/MPAndroidChart) | 3.1.0 | Philipp Jahoda | Apache-2.0 |
+| [Apache Commons Text and Lang](https://commons.apache.org/) | 1.3 and 3.18.0 | The Apache Software Foundation | Apache-2.0 |
+| LLVM libc++ (`libc++_shared.so`, Android NDK) | NDK 28.2 | LLVM Project | Apache-2.0 with LLVM Exceptions |
+| MiDaS v2 depth model (`midas-midas-v2-w8a8.tflite`) | w8a8 build | Intel Intelligent Systems Lab (René Ranftl et al.) | MIT |
+
 ## NyxPlay specific assets
 
 | Asset | Location | License |
