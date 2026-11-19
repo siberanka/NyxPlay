@@ -4,6 +4,12 @@
  */
 #pragma once
 
+// standard includes
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <string>
+
 /**
  * @brief Handles the system tray icon and notification system.
  */
@@ -100,4 +106,19 @@ namespace system_tray {
    * @return 0 after stopping the threaded tray.
    */
   int end_tray_threaded();
+
+  /**
+   * @brief Waits until the desktop shell is available.
+   * @param shell_ready Returns true once the shell can host a tray icon.
+   * @param stop Set to true to give up waiting.
+   * @param poll How often @p shell_ready is evaluated.
+   * @return true if the shell became available, false if @p stop was set first.
+   */
+  bool wait_for_shell(const std::function<bool()> &shell_ready, const std::atomic<bool> &stop, std::chrono::milliseconds poll = std::chrono::milliseconds(1000));
+
+  /**
+   * @brief Takes the release notice that was queued while the tray did not exist yet.
+   * @return The queued release tag, or an empty string if there is none.
+   */
+  std::string take_pending_update_notice();
 }  // namespace system_tray

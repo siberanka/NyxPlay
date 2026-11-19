@@ -40,6 +40,8 @@
   #include <chrono>
   #include <csignal>
   #include <format>
+  #include <functional>
+  #include <mutex>
   #include <string>
   #include <thread>
 
@@ -55,6 +57,7 @@
   #include "logging.h"
   #include "platform/common.h"
   #include "process.h"
+  #include "system_tray.h"
   #include "network.h"
   #include "src/entry_handler.h"
 
@@ -68,6 +71,37 @@ namespace system_tray {
   static std::thread tray_thread;
   static std::atomic tray_thread_running = false;
   static std::atomic tray_thread_should_exit = false;
+
+  // Latest release notice that arrived while the tray did not exist yet; guarded by the mutex,
+  // which also orders it against tray_initialized becoming true
+  static std::mutex pending_update_mutex;
+  static std::string pending_update_version;
+
+  bool wait_for_shell(const std::function<bool()> &shell_ready, const std::atomic<bool> &stop, std::chrono::milliseconds poll) {
+    while (!stop) {
+      if (shell_ready()) {
+        return true;
+      }
+      // Sleep in short slices so a stop request is honoured promptly
+      for (auto left = poll; left.count() > 0 && !stop; left -= std::min(left, 100ms)) {
+        std::this_thread::sleep_for(std::min(left, 100ms));
+      }
+    }
+    return false;
+  }
+
+  std::string take_pending_update_notice() {
+    std::lock_guard lg {pending_update_mutex};
+    std::string out;
+    out.swap(pending_update_version);
+    return out;
+  }
+
+  #ifdef _WIN32
+  static bool shell_ready() {
+    return GetShellWindow() != nullptr && FindWindowW(L"Shell_TrayWnd", nullptr) != nullptr;
+  }
+  #endif
 
   void tray_open_ui_cb([[maybe_unused]] struct tray_menu *item) {
     BOOST_LOG(info) << "Opening UI from system tray"sv;
@@ -198,11 +232,20 @@ namespace system_tray {
       }
     }
 
-    // Wait for the shell to be initialized before registering the tray icon.
-    // This ensures the tray icon works reliably after a logoff/logon cycle.
-    while (GetShellWindow() == nullptr) {
-      Sleep(1000);
+    // Wait for the shell (desktop and taskbar) before registering the tray icon, which may not
+    // exist yet when the host starts before anyone logs on. Gives up when asked to stop.
+    const auto wait_start = std::chrono::steady_clock::now();
+    if (!shell_ready()) {
+      BOOST_LOG(info) << "Waiting for the desktop shell before creating the system tray"sv;
+      if (!wait_for_shell(shell_ready, tray_thread_should_exit)) {
+        BOOST_LOG(info) << "System tray start cancelled before the desktop shell appeared"sv;
+        return 2;
+      }
     }
+
+    // The host may run with higher integrity than Explorer (SYSTEM service), and UIPI would drop
+    // the broadcast that tells us to re-add the icon after Explorer restarts.
+    ChangeWindowMessageFilter(RegisterWindowMessageA("TaskbarCreated"), MSGFLT_ADD);
   #endif
 
     if (tray_init(&tray) < 0) {
@@ -210,8 +253,23 @@ namespace system_tray {
       return 1;
     }
 
+    std::string pending;
+    {
+      // Publish readiness and take a notice that arrived earlier under one lock, so none is lost
+      std::lock_guard lg {pending_update_mutex};
+      tray_initialized = true;
+      pending.swap(pending_update_version);
+    }
+  #ifdef _WIN32
+    const auto waited = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - wait_start).count();
+    BOOST_LOG(info) << "System tray created after "sv << waited << " s"sv;
+  #else
     BOOST_LOG(info) << "System tray created"sv;
-    tray_initialized = true;
+  #endif
+
+    if (!pending.empty()) {
+      update_tray_update_available(std::move(pending));
+    }
     return 0;
   }
 
@@ -414,8 +472,13 @@ namespace system_tray {
   }
 
   void update_tray_update_available(std::string version) {
-    if (!tray_initialized) {
-      return;
+    {
+      std::lock_guard lg {pending_update_mutex};
+      if (!tray_initialized) {
+        // Shown once, right after the tray has been created; a newer notice replaces it
+        pending_update_version = std::move(version);
+        return;
+      }
     }
 
     // The notification texts must outlive the call: the tray keeps the pointers
@@ -461,9 +524,11 @@ namespace system_tray {
   static void tray_thread_worker() {
     BOOST_LOG(info) << "System tray thread started"sv;
 
-    // Initialize the tray in this thread
-    if (init_tray() != 0) {
-      BOOST_LOG(error) << "Failed to initialize tray in thread"sv;
+    // Initialize the tray in this thread; this waits for the shell if it is not up yet
+    if (const int result = init_tray(); result != 0) {
+      if (result != 2) {
+        BOOST_LOG(error) << "Failed to initialize tray in thread"sv;
+      }
       tray_thread_running = false;
       return;
     }
@@ -488,7 +553,7 @@ namespace system_tray {
   }
 
   int init_tray_threaded() {
-    if (tray_thread_running) {
+    if (tray_thread.joinable()) {
       BOOST_LOG(warning) << "Tray thread is already running"sv;
       return 1;
     }
@@ -507,34 +572,10 @@ namespace system_tray {
 
     tray_thread_should_exit = false;
 
+    // Do not wait for the tray: when the host starts before a user logs on, the shell (and so
+    // the tray) only appears later, and startup must not be held up until then.
     try {
       tray_thread = std::thread(tray_thread_worker);
-
-      // Wait for the thread to start and initialize
-      const auto start_time = std::chrono::steady_clock::now();
-      while (!tray_thread_running && !tray_thread_should_exit) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-        // Timeout after 10 seconds
-        if (std::chrono::steady_clock::now() - start_time > std::chrono::seconds(10)) {
-          BOOST_LOG(error) << "Tray thread initialization timeout"sv;
-          tray_thread_should_exit = true;
-          if (tray_thread.joinable()) {
-            tray_thread.join();
-          }
-          return 1;
-        }
-      }
-
-      if (!tray_thread_running) {
-        BOOST_LOG(error) << "Tray thread failed to start"sv;
-        if (tray_thread.joinable()) {
-          tray_thread.join();
-        }
-        return 1;
-      }
-
-      BOOST_LOG(info) << "System tray thread initialized successfully"sv;
       return 0;
     } catch (const std::exception &e) {
       BOOST_LOG(error) << "Failed to create tray thread: " << e.what();
@@ -543,16 +584,14 @@ namespace system_tray {
   }
 
   int end_tray_threaded() {
-    if (!tray_thread_running) {
+    // The thread may still be waiting for the shell, so join whenever it was started
+    if (!tray_thread.joinable()) {
       return 0;
     }
 
     BOOST_LOG(info) << "Stopping system tray thread"sv;
     tray_thread_should_exit = true;
-
-    if (tray_thread.joinable()) {
-      tray_thread.join();
-    }
+    tray_thread.join();
 
     BOOST_LOG(info) << "System tray thread stopped"sv;
     return 0;
