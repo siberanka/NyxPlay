@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026.11.19.1
+
+### Added
+- Host: security log of pairing, Web UI logins, rejected certificates, launches, resumes, cancels, stream start and end, app exits and admin actions, with client, app and source address; shown on the new Security page of the Web UI with filters, statistics and CSV export.
+- Host: automatic blocking of addresses that repeatedly fail pairing, Web UI login or RTSP checks, on every port; blocks survive restarts and can be reviewed and lifted on the Security page. New settings: security_log, security_log_max_mb, ban_enabled, ban_threshold, ban_window_seconds, ban_duration_seconds, ban_whitelist. The host PC itself is never blocked.
+
+### Security
+- Host: the control stream ignores datagrams from other addresses for an established client (a stream can no longer be ended by an outside sender), accepts connects only for a launched stream, and rejects replayed encrypted control messages.
+- Host: per-device "allow client commands" is honoured for every launch, launch options (scaleFactor, audio, HDR and key fields) are validated, a stream uses the client's current permissions, OTP failures are counted per address, and pairing device names are sanitised.
+
+### Fixed
+- Installer: selecting Run at Startup during an upgrade now switches the service to automatic start; a start type chosen earlier is kept otherwise.
+- Host service: a host that stays running without opening its ports is restarted after a grace period.
+- Host: RTSP requests whose header end arrives in two parts are handled; a launch without a valid app returns an error.
+
+### Changed
+- Turkish translations reviewed for the host Web UI, installer, Android and PC clients; Web UI configuration tabs and remaining fixed texts are translated.
+
+### Known issues
+- Older clients that use an unencrypted control stream lose the stream when their network address changes (encrypted clients, which all current clients use, keep working).
+
 ## 2026.11.16.1
 
 ### Security
