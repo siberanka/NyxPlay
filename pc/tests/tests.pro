@@ -8,6 +8,8 @@ CONFIG -= app_bundle
 TEMPLATE = app
 TARGET = backend_tests
 
+DEFINES += RELEASE_FIXTURE_DIR=\\\"$$PWD/fixtures/release\\\"
+
 INCLUDEPATH += $$PWD/../app $$PWD/../app/backend $$PWD/../moonlight-common-c/moonlight-common-c/src
 
 win32 {
@@ -33,6 +35,7 @@ SOURCES += \
     ../app/backend/identitymanager.cpp \
     ../app/backend/identitystore.cpp \
     ../app/backend/moonlightimport.cpp \
+    ../app/backend/releaseverify.cpp \
     ../app/settings/compatfetcher.cpp \
     ../app/path.cpp
 
@@ -44,5 +47,6 @@ HEADERS += \
     ../app/backend/identitymanager.h \
     ../app/backend/identitystore.h \
     ../app/backend/moonlightimport.h \
+    ../app/backend/releaseverify.h \
     ../app/settings/compatfetcher.h \
     ../app/path.h

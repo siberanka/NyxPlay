@@ -200,6 +200,7 @@ SOURCES += \
     streaming/bandwidth.cpp \
     streaming/streamutils.cpp \
     backend/autoupdatechecker.cpp \
+    backend/releaseverify.cpp \
     path.cpp \
     settings/mappingmanager.cpp \
     gui/sdlgamepadkeynavigation.cpp \
@@ -241,6 +242,7 @@ HEADERS += \
     streaming/streamutils.h \
     backend/autoupdatechecker.h \
     backend/updateurl.h \
+    backend/releaseverify.h \
     backend/updatelogic.h \
     path.h \
     settings/mappingmanager.h \

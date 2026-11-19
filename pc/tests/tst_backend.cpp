@@ -6,6 +6,7 @@
 #include "backend/moonlightimport.h"
 #include "backend/updateurl.h"
 #include "backend/updatelogic.h"
+#include "backend/releaseverify.h"
 
 static QString wrap(const QString& body, int status = 200)
 {
@@ -811,6 +812,269 @@ private slots:
     }
 };
 
+class ReleaseVerifyTest : public QObject
+{
+    Q_OBJECT
+
+    QByteArray sums;
+    QByteArray sig;
+    QByteArray bare;   // the signature without its trailing line feed
+    QTemporaryDir work;
+
+    static QByteArray readAll(const QString& path)
+    {
+        QFile f(path);
+        return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+    }
+
+    QString write(const QString& name, const QByteArray& content)
+    {
+        QString path = work.filePath(name);
+        QFile f(path);
+        if (f.open(QIODevice::WriteOnly)) {
+            f.write(content);
+        }
+        return path;
+    }
+
+    static QByteArray largeContent()
+    {
+        QByteArray data(5 * 1024 * 1024 + 17, Qt::Uninitialized);
+        for (qsizetype i = 0; i < data.size(); i++) {
+            data[i] = static_cast<char>((i * 31 + 7) & 0xFF);
+        }
+        return data;
+    }
+
+    static QList<QByteArray> otherKey()
+    {
+        // An unrelated public key (RFC 8032 test vector 1)
+        return { QByteArray::fromHex("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a") };
+    }
+
+    const QString installerName = "NyxPlayHost-2026.11.19.2-windows-x64.exe";
+    const QString largeName = "NyxPlay-2026.11.19.2-arm64-v8a-release.apk";
+    const QString emptyName = "NyxPlay-empty.bin";
+
+private slots:
+    void initTestCase()
+    {
+        QVERIFY(work.isValid());
+        const QString dir = QStringLiteral(RELEASE_FIXTURE_DIR);
+        sums = readAll(dir + "/SHA256SUMS.txt");
+        sig = readAll(dir + "/SHA256SUMS.txt.sig");
+        QVERIFY(!sums.isEmpty());
+        QVERIFY(sig.size() == 89);
+        bare = sig.left(88);
+    }
+
+    void embeddedKeyFingerprint()
+    {
+        QCOMPARE(ReleaseVerify::trustedKeys().size(), 1);
+        QCOMPARE(ReleaseVerify::keyFingerprint(ReleaseVerify::trustedKeys().first()),
+                 QString("db9a08158e93637d47eb44baa4e8c8c72973c611f2a115a54367a07b4aa8eca1"));
+    }
+
+    void realSignatureVerifies()
+    {
+        QVERIFY(ReleaseVerify::verifySignature(sums, sig) == ReleaseVerify::Result::Ok);
+        QVERIFY(ReleaseVerify::verifySignature(sums, bare) == ReleaseVerify::Result::Ok);
+    }
+
+    void tamperedSumsAreRejected()
+    {
+        QByteArray changed = sums;
+        changed[0] = changed[0] == 'a' ? 'b' : 'a';
+        QVERIFY(ReleaseVerify::verifySignature(changed, sig) == ReleaseVerify::Result::BadSignature);
+        QVERIFY(ReleaseVerify::verifySignature(sums + "\n", sig) == ReleaseVerify::Result::BadSignature);
+        QVERIFY(ReleaseVerify::verifySignature(sums.mid(1), sig) == ReleaseVerify::Result::BadSignature);
+    }
+
+    void tamperedSignatureIsRejected()
+    {
+        QByteArray changed = sig;
+        changed[0] = changed[0] == 'A' ? 'B' : 'A';
+        QVERIFY(ReleaseVerify::verifySignature(sums, changed) == ReleaseVerify::Result::BadSignature);
+        changed = sig;
+        changed[40] = changed[40] == 'A' ? 'B' : 'A';
+        QVERIFY(ReleaseVerify::verifySignature(sums, changed) == ReleaseVerify::Result::BadSignature);
+    }
+
+    void wrongKeyIsRejected()
+    {
+        QVERIFY(ReleaseVerify::verifySignature(sums, sig, otherKey()) == ReleaseVerify::Result::BadSignature);
+        QVERIFY(ReleaseVerify::verifySignature(sums, sig, { QByteArray(32, '\0') }) != ReleaseVerify::Result::Ok);
+        QVERIFY(ReleaseVerify::verifySignature(sums, sig, { QByteArray(31, 'x') }) == ReleaseVerify::Result::BadSignature);
+        QVERIFY(ReleaseVerify::verifySignature(sums, sig, QList<QByteArray>()) == ReleaseVerify::Result::BadSignature);
+        // A key list accepts the signature when any key matches (key rotation)
+        QList<QByteArray> rotated = otherKey();
+        rotated.append(ReleaseVerify::trustedKeys());
+        QVERIFY(ReleaseVerify::verifySignature(sums, sig, rotated) == ReleaseVerify::Result::Ok);
+    }
+
+    void malformedSignatureText()
+    {
+        using ReleaseVerify::Result;
+        QVERIFY(ReleaseVerify::verifySignature(sums, "") == Result::Malformed);
+        QVERIFY(ReleaseVerify::verifySignature(sums, "\n") == Result::Malformed);
+        QVERIFY(ReleaseVerify::verifySignature(sums, bare.left(87)) == Result::Malformed);
+        QVERIFY(ReleaseVerify::verifySignature(sums, bare.left(86)) == Result::Malformed);
+        QVERIFY(ReleaseVerify::verifySignature(sums, bare + "A") == Result::Malformed);
+        QVERIFY(ReleaseVerify::verifySignature(sums, bare + "\n\n") == Result::Malformed);
+        QVERIFY(ReleaseVerify::verifySignature(sums, bare + "\r\n") == Result::Malformed);
+        QVERIFY(ReleaseVerify::verifySignature(sums, " " + bare) == Result::Malformed);
+
+        QByteArray badChar = bare;
+        badChar[10] = '*';
+        QVERIFY(ReleaseVerify::verifySignature(sums, badChar) == Result::Malformed);
+        badChar[10] = '-';   // URL-safe alphabet is not accepted
+        QVERIFY(ReleaseVerify::verifySignature(sums, badChar) == Result::Malformed);
+
+        // Non-zero padding bits in the last character
+        QByteArray bits = bare;
+        bits[85] = 'B';
+        QVERIFY(ReleaseVerify::verifySignature(sums, bits) == Result::Malformed);
+
+        // 63 and 65 bytes of valid Base64, and no padding
+        QVERIFY(ReleaseVerify::verifySignature(sums, QByteArray(84, 'A') + "A=") == Result::Malformed);
+        QVERIFY(ReleaseVerify::verifySignature(sums, QByteArray(86, 'A')) == Result::Malformed);
+        QVERIFY(ReleaseVerify::verifySignature(sums, QByteArray(88, 'A')) == Result::Malformed);
+    }
+
+    void rfc8032VectorThroughTheKeyList()
+    {
+        // Empty message, RFC 8032 section 7.1 test 1
+        QByteArray signature = "5VZDAMNgrHKQhuLMgG6CioSHfx645dl02HPgZSJJAVVfuIIVkKM7rMYeOXAc+bRr0lv18FlbviRlUUFDjnoQCw==";
+        QVERIFY(ReleaseVerify::verifySignature(QByteArray(), signature, otherKey()) == ReleaseVerify::Result::Ok);
+    }
+
+    void parsesTheFixture()
+    {
+        QVector<ReleaseVerify::SumsEntry> entries;
+        QVERIFY(ReleaseVerify::parseSums(sums, &entries) == ReleaseVerify::Result::Ok);
+        QCOMPARE(entries.size(), 3);
+        QCOMPARE(entries[1].name, emptyName);
+        QCOMPARE(entries[1].sha256Hex, QString("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+    }
+
+    void strictSumsFormat()
+    {
+        using ReleaseVerify::Result;
+        const QByteArray hash(64, 'a');
+        QVector<ReleaseVerify::SumsEntry> entries;
+        QVERIFY(ReleaseVerify::parseSums(hash + "  file.bin\n", &entries) == Result::Ok);
+        QVERIFY(ReleaseVerify::parseSums(hash + "  file.bin", &entries) == Result::Ok);   // missing final LF is tolerated
+        QVERIFY(ReleaseVerify::parseSums("", &entries) == Result::Malformed);
+        QVERIFY(ReleaseVerify::parseSums("\n", &entries) == Result::Malformed);
+        QVERIFY(ReleaseVerify::parseSums(hash + "  file.bin\n\n", &entries) == Result::Malformed);   // empty line
+        QVERIFY(ReleaseVerify::parseSums(hash + " *file.bin\n", &entries) == Result::Malformed);   // binary mode marker
+        QVERIFY(ReleaseVerify::parseSums(hash + " file.bin\n", &entries) == Result::Malformed);
+        QVERIFY(ReleaseVerify::parseSums(hash + "   file.bin\n", &entries) == Result::Malformed);
+        QVERIFY(ReleaseVerify::parseSums(QByteArray(64, 'A') + "  file.bin\n", &entries) == Result::Malformed);   // upper case hex
+        QVERIFY(ReleaseVerify::parseSums(QByteArray(63, 'a') + "  file.bin\n", &entries) == Result::Malformed);
+        QVERIFY(ReleaseVerify::parseSums(QByteArray(65, 'a') + "  file.bin\n", &entries) == Result::Malformed);
+        QVERIFY(ReleaseVerify::parseSums(QByteArray(63, 'a') + "g  file.bin\n", &entries) == Result::Malformed);
+        QVERIFY(ReleaseVerify::parseSums(hash + "  file.bin\r\n", &entries) == Result::Malformed);
+        QVERIFY(ReleaseVerify::parseSums(hash + "  \n", &entries) == Result::Malformed);   // no name
+        QVERIFY(ReleaseVerify::parseSums(hash + "  file name.bin\n", &entries) == Result::Malformed);
+        QVERIFY(ReleaseVerify::parseSums(hash + "  " + QByteArray(256, 'x') + "\n", &entries) == Result::Malformed);
+        QVERIFY(ReleaseVerify::parseSums(hash + "  " + QByteArray(255, 'x') + "\n", &entries) == Result::Ok);
+        QVERIFY(ReleaseVerify::parseSums(QByteArray(ReleaseVerify::MaxSumsSize + 1, 'a'), &entries) == Result::Malformed);
+        QVERIFY(entries.isEmpty());
+    }
+
+    void pathLikeNamesAreMalformed()
+    {
+        using ReleaseVerify::Result;
+        const QByteArray hash(64, 'b');
+        QVector<ReleaseVerify::SumsEntry> entries;
+        const QList<QByteArray> names = { "../evil.exe", "dir/file.bin", "dir\\file.bin", "/abs.bin", "C:file.bin",
+                                          "..", ".", "a%2Fb", "file.bin:stream", "na\xC3\xAFve" };
+        for (const QByteArray& name : names) {
+            QVERIFY2(ReleaseVerify::parseSums(hash + "  " + name + "\n", &entries) == Result::Malformed, name.constData());
+        }
+        QVERIFY(ReleaseVerify::parseSums(hash + "  ...\n", &entries) == Result::Ok);
+        QString hex;
+        QVERIFY(ReleaseVerify::findHash(sums, "../" + installerName, &hex) == Result::NotListed);
+        QVERIFY(ReleaseVerify::findHash(sums, "x/" + installerName, &hex) == Result::NotListed);
+    }
+
+    void duplicateAndMissingEntries()
+    {
+        using ReleaseVerify::Result;
+        const QByteArray a(64, 'a');
+        const QByteArray b(64, 'b');
+        QString hex;
+        QVERIFY(ReleaseVerify::findHash(a + "  one.bin\n" + b + "  one.bin\n", "one.bin", &hex) == Result::Malformed);
+        QVERIFY(ReleaseVerify::findHash(a + "  one.bin\n" + a + "  one.bin\n", "one.bin", &hex) == Result::Malformed);
+        QVERIFY(ReleaseVerify::findHash(a + "  one.bin\n" + b + "  two.bin\n", "two.bin", &hex) == Result::Ok);
+        QCOMPARE(hex, QString(b));
+        QVERIFY(ReleaseVerify::findHash(a + "  one.bin\n" + b + "  two.bin\n", "three.bin", &hex) == Result::NotListed);
+        QVERIFY(hex.isEmpty());
+        // Exact match only: no case folding, no prefix or suffix match
+        QVERIFY(ReleaseVerify::findHash(a + "  one.bin\n", "One.bin", &hex) == Result::NotListed);
+        QVERIFY(ReleaseVerify::findHash(a + "  one.bin\n", "one.bi", &hex) == Result::NotListed);
+        QVERIFY(ReleaseVerify::findHash(a + "  one.bin\n", "one.bin.", &hex) == Result::NotListed);
+        QVERIFY(ReleaseVerify::findHash(a + "  one.bin\n", "", &hex) == Result::NotListed);
+        QVERIFY(ReleaseVerify::findHash(sums, installerName, &hex) == Result::Ok);
+        QCOMPARE(hex, QString("fb5c85338c609e0c9284185f942c7683275e2248086e5824611ef30f5ecd6a58"));
+    }
+
+    void fileMatchesSignedHash()
+    {
+        using ReleaseVerify::Result;
+        QString path = write(installerName, "nyxplay fixture installer\n");
+        QVERIFY(ReleaseVerify::verifyFile(sums, installerName, path) == Result::Ok);
+        path = write(emptyName, "");
+        QVERIFY(ReleaseVerify::verifyFile(sums, emptyName, path) == Result::Ok);
+    }
+
+    void hashMismatch()
+    {
+        using ReleaseVerify::Result;
+        QString path = write(installerName, "nyxplay fixture installer\n\n");
+        QVERIFY(ReleaseVerify::verifyFile(sums, installerName, path) == Result::HashMismatch);
+        path = write(installerName, "Nyxplay fixture installer\n");
+        QVERIFY(ReleaseVerify::verifyFile(sums, installerName, path) == Result::HashMismatch);
+        path = write(installerName, "");
+        QVERIFY(ReleaseVerify::verifyFile(sums, installerName, path) == Result::HashMismatch);
+    }
+
+    void notListedAndIoError()
+    {
+        using ReleaseVerify::Result;
+        QString other = write("other.bin", "x");
+        QVERIFY(ReleaseVerify::verifyFile(sums, "other.bin", other) == Result::NotListed);
+        QVERIFY(ReleaseVerify::verifyFile(sums, installerName, work.filePath("does-not-exist.bin")) == Result::IoError);
+        QVERIFY(ReleaseVerify::verifyFile(sums, installerName, work.path()) == Result::IoError);   // a directory
+        QVERIFY(ReleaseVerify::verifyFile("garbage", installerName, other) == Result::Malformed);
+        QString hex;
+        QVERIFY(ReleaseVerify::hashFile(work.filePath("does-not-exist.bin"), &hex) == Result::IoError);
+        QVERIFY(hex.isEmpty());
+    }
+
+    void largeFileIsStreamedInChunks()
+    {
+        using ReleaseVerify::Result;
+        QByteArray data = largeContent();
+        QString path = write(largeName, data);
+        QVERIFY(ReleaseVerify::verifyFile(sums, largeName, path) == Result::Ok);
+        // One changed byte near the end is detected
+        data[data.size() - 5] = static_cast<char>(data[data.size() - 5] ^ 0x01);
+        path = write(largeName, data);
+        QVERIFY(ReleaseVerify::verifyFile(sums, largeName, path) == Result::HashMismatch);
+    }
+
+    void constantTimeCompare()
+    {
+        QVERIFY(ReleaseVerify::constantTimeEqual("abc", "abc"));
+        QVERIFY(ReleaseVerify::constantTimeEqual("", ""));
+        QVERIFY(!ReleaseVerify::constantTimeEqual("abc", "abd"));
+        QVERIFY(!ReleaseVerify::constantTimeEqual("abc", "ab"));
+        QVERIFY(!ReleaseVerify::constantTimeEqual("abc", "abcd"));
+    }
+};
+
 template <typename T>
 static int runSuite(int argc, char** argv)
 {
@@ -841,6 +1105,7 @@ int main(int argc, char** argv)
     status |= runSuite<UpdateUrlTest>(argc, argv);
     status |= runSuite<UpdateLogicTest>(argc, argv);
     status |= runSuite<MoonlightImportTest>(argc, argv);
+    status |= runSuite<ReleaseVerifyTest>(argc, argv);
     return status;
 }
 
