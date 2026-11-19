@@ -1,0 +1,4 @@
+# Signed test fixtures: the signature covers the exact bytes, so never convert line endings
+host/tests/fixtures/release/** -text
+pc/tests/fixtures/release/** -text
+android/app/src/test/resources/release/** -text
