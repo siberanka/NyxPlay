@@ -1,3 +1,5 @@
+#include <string>
+
 #include <QGuiApplication>
 #include <QStyleHints>
 #include <QQmlApplicationEngine>
@@ -34,8 +36,6 @@
 #endif
 
 #if defined(Q_OS_WIN32)
-#include "antihookingprotection.h"
-
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <dxgi1_6.h>
@@ -423,8 +423,41 @@ void configureSignalHandlers()
 
 #endif
 
+#ifdef Q_OS_WIN32
+// AntiHooking.dll installs its LoadLibrary hooks from DllMain, so it has to be
+// loaded before Qt or SDL load anything. It is optional: antivirus products
+// sometimes quarantine it, and a missing file must not stop the client.
+static bool loadAntiHookingProtection()
+{
+    wchar_t exePath[MAX_PATH];
+    DWORD len = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    if (len == 0 || len >= MAX_PATH) {
+        return false;
+    }
+
+    // Only the application directory is trusted, never the current directory or PATH.
+    std::wstring dllPath(exePath, len);
+    size_t slash = dllPath.find_last_of(L"\\/");
+    if (slash == std::wstring::npos) {
+        return false;
+    }
+    dllPath.resize(slash + 1);
+    dllPath += L"AntiHooking.dll";
+
+    // SYSTEM32 covers the DLL's own dependencies (the C++ runtime), which are
+    // found in the application directory first.
+    return LoadLibraryExW(dllPath.c_str(), nullptr,
+                          LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32) != nullptr;
+}
+#endif
+
 int main(int argc, char *argv[])
 {
+#ifdef Q_OS_WIN32
+    const bool antiHookingLoaded = loadAntiHookingProtection();
+    const DWORD antiHookingError = antiHookingLoaded ? ERROR_SUCCESS : GetLastError();
+#endif
+
     SDL_SetMainReady();
 
     // Set the app version for the QCommandLineParser's showVersion() command
@@ -519,9 +552,14 @@ int main(int argc, char *argv[])
 #endif
 
 #if defined(Q_OS_WIN32)
-    // Force AntiHooking.dll to be statically imported and loaded
-    // by ntdll on Win32 platforms by calling a dummy function.
-    AntiHookingDummyImport();
+    if (antiHookingLoaded) {
+        qInfo() << "AntiHooking.dll loaded:" << (GetModuleHandleW(L"AntiHooking.dll") != nullptr);
+    }
+    else {
+        qWarning() << "AntiHooking.dll could not be loaded (error" << antiHookingError
+                   << "); continuing without protection against injected overlays."
+                   << "Restore AntiHooking.dll next to NyxPlay.exe to enable it.";
+    }
 #elif defined(APP_IMAGE)
     // Force libssl.so to be directly linked to our binary, so
     // linuxdeployqt can find it and include it in our AppImage.
