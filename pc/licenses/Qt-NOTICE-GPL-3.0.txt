@@ -1,4 +1,4 @@
-Qt 6.12.0 (Qt6Core, Qt6Gui, Qt6Network, Qt6OpenGL, Qt6Qml*, Qt6Quick*, Qt6Svg and plugins)
+Qt 6.12.1 (Qt6Core, Qt6Gui, Qt6Network, Qt6OpenGL, Qt6Qml*, Qt6Quick*, Qt6Svg and plugins)
 Copyright (C) The Qt Company Ltd. and other contributors.
 
 NyxPlay uses the open source edition of Qt under the GNU Lesser General Public License version 3
@@ -7,7 +7,7 @@ reproduced below as published in the Qt sources). Qt is linked dynamically: the 
 plugins and QML modules in this package are unmodified Qt binaries that you may replace with your
 own build of the same Qt version. Qt is a trademark of The Qt Company Ltd.
 
-Qt source code: https://download.qt.io/official_releases/qt/6.12/6.12.0/ and
+Qt source code: https://download.qt.io/official_releases/qt/6.12/6.12.1/ and
 https://code.qt.io/cgit/qt/ (GitHub mirror https://github.com/qt).
 Licence texts: https://github.com/qt/qtbase/tree/dev/LICENSES
 Third-party code bundled inside Qt modules (for example zlib, libpng, FreeType, HarfBuzz, PCRE2,

@@ -317,7 +317,7 @@ $notices = New-Object System.Text.StringBuilder
 [void]$notices.AppendLine('projects listed below and, on request, from the NyxPlay repository.')
 [void]$notices.AppendLine('')
 $components = @(
-    @('Qt 6.12.0 (Core, Gui, Network, Qml, Quick, Quick Controls 2, Svg and others)', 'LGPL-3.0 (LGPL-3.0.txt, Qt-NOTICE-GPL-3.0.txt)', 'https://www.qt.io, source: https://download.qt.io'),
+    @('Qt 6.12.1 (Core, Gui, Network, Qml, Quick, Quick Controls 2, Svg and others)', 'LGPL-3.0 (LGPL-3.0.txt, Qt-NOTICE-GPL-3.0.txt)', 'https://www.qt.io, source: https://download.qt.io'),
     @('FFmpeg (avcodec 63.1.102, avformat, avutil, swscale)', 'LGPL-2.1 or later (LGPL-2.1-FFmpeg.txt)', 'https://ffmpeg.org'),
     @('libplacebo v7.387.0', 'LGPL-2.1 or later (LGPL-2.1-libplacebo.txt)', 'https://code.videolan.org/videolan/libplacebo'),
     @('dav1d 1.5.4', 'BSD-2-Clause (BSD-2-Clause-dav1d.txt)', 'https://code.videolan.org/videolan/dav1d'),
