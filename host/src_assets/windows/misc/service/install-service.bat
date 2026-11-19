@@ -57,7 +57,8 @@ if "%SAVED%"=="4" (
 )
 
 rem The saved value is consumed. Remember that the user's choice was restored, so the optional
-rem "launch on startup" step does not override it.
+rem "launch on startup" step does not override it (unless that component was newly selected in this
+rem installation, see autostart-service.bat).
 "%REGEXE%" delete "%SETTINGS_KEY%" /v ServiceStartType /f /reg:64 >nul 2>&1
 if exist "%LEGACY_FILE%" del "%LEGACY_FILE%" >nul 2>&1
 "%REGEXE%" add "%SETTINGS_KEY%" /v StartTypeRestored /t REG_DWORD /d %RESTORED% /f /reg:64 >nul 2>&1

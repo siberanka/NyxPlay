@@ -319,8 +319,17 @@ SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
         Pop $0
         StrCpy $1 'Installing and starting the host service'
         Call NyxCritical
+        # The script exists only when Run at Startup is selected in this installation. A component that was not
+        # installed before was switched on now (or this is a first installation): that choice always wins. When it was
+        # already installed, a start type the user changed since is kept (see autostart-service.bat).
         IfFileExists '$INSTDIR${NYX_BS}scripts${NYX_BS}autostart-service.bat' 0 nyx_no_autostart
+        IntCmp $autostart_was_installed 0 nyx_autostart_force nyx_autostart_keep nyx_autostart_keep
+        nyx_autostart_force:
+        nsExec::ExecToLog /TIMEOUT=60000 '${NYX_SCRIPTS}autostart-service.bat${NYX_Q} force'
+        Goto nyx_autostart_done
+        nyx_autostart_keep:
         nsExec::ExecToLog /TIMEOUT=60000 '${NYX_SCRIPTS}autostart-service.bat${NYX_Q}'
+        nyx_autostart_done:
         Pop $0
         StrCpy $1 'Enabling launch on startup'
         Call NyxOptional

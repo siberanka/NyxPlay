@@ -8,7 +8,10 @@
 #include <format>
 #include <functional>
 #include <string>
+#include <vector>
+#include <winsock2.h>
 #include <Windows.h>
+#include <iphlpapi.h>
 #include <sddl.h>
 #include <WtsApi32.h>
 
@@ -30,6 +33,8 @@ HANDLE event_source;
 constexpr DWORD STOP_WAIT_HINT_MS = 30 * 1000;
 constexpr DWORD TERMINATION_HELPER_TIMEOUT_MS = 8 * 1000;
 constexpr DWORD HOST_EXIT_TIMEOUT_MS = 15 * 1000;
+// How often a host that is not listening yet is checked by the startup watchdog.
+constexpr DWORD HOST_READY_POLL_MS = 2 * 1000;
 
 /**
  * @brief Publish the service status. Called from the control handler thread and from ServiceMain().
@@ -314,6 +319,45 @@ bool RunTerminationHelper(HANDLE console_token, DWORD pid) {
 }
 
 /**
+ * @brief Whether process @p pid owns a listening TCP socket (IPv4 or IPv6).
+ *
+ * Returns true when the answer cannot be determined, so a failing query never causes a healthy host to be restarted.
+ */
+static bool HostIsListening(DWORD pid) {
+  for (ULONG family : {(ULONG) AF_INET, (ULONG) AF_INET6}) {
+    std::vector<BYTE> buffer(8192);
+    ULONG result = ERROR_INSUFFICIENT_BUFFER;
+    for (int attempt = 0; attempt < 4 && result == ERROR_INSUFFICIENT_BUFFER; attempt++) {
+      auto size = (ULONG) buffer.size();
+      result = GetExtendedTcpTable(buffer.data(), &size, FALSE, family, TCP_TABLE_OWNER_PID_LISTENER, 0);
+      if (result == ERROR_INSUFFICIENT_BUFFER) {
+        buffer.resize(size + 4096);
+      }
+    }
+    if (result != NO_ERROR) {
+      return true;
+    }
+
+    if (family == AF_INET) {
+      auto table = (PMIB_TCPTABLE_OWNER_PID) buffer.data();
+      for (DWORD i = 0; i < table->dwNumEntries; i++) {
+        if (table->table[i].dwOwningPid == pid) {
+          return true;
+        }
+      }
+    } else {
+      auto table = (PMIB_TCP6TABLE_OWNER_PID) buffer.data();
+      for (DWORD i = 0; i < table->dwNumEntries; i++) {
+        if (table->table[i].dwOwningPid == pid) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * @brief Tell SCM that the service failed to start and stopped.
  */
 static void FailStartup(DWORD error) {
@@ -370,6 +414,7 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
   ReportStatus(SERVICE_RUNNING, SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PRESHUTDOWN | SERVICE_ACCEPT_SESSIONCHANGE, 0);
 
   svc::restart_backoff_t backoff;
+  svc::startup_watchdog_t watchdog;
   DWORD delay_ms = svc::backoff_initial_ms;
   DWORD last_reported_key = 0;
 
@@ -451,12 +496,46 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
     FreeProcThreadAttributeList(startup_info.lpAttributeList);
     last_reported_key = 0;
 
+    // Gracefully terminates the host, forcefully if it does not exit in time
+    auto stop_host = [&]() {
+      if (!RunTerminationHelper(console_token, process_info.dwProcessId) ||
+          WaitReportingProgress(process_info.hProcess, HOST_EXIT_TIMEOUT_MS) != WAIT_OBJECT_0) {
+        TerminateProcess(process_info.hProcess, ERROR_PROCESS_ABORTED);
+      }
+    };
+
     bool planned_restart = false;
+    bool host_ready = false;
     bool still_running;
     do {
-      // Wait for the stop event to be set, Sunshine.exe to terminate, or the console session to change
+      // Wait for the stop event to be set, Sunshine.exe to terminate, or the console session to change.
+      // Until the host listens on a port the wait is bounded so the startup watchdog can check on it.
       const HANDLE wait_objects[] = {stop_event, process_info.hProcess, session_change_event};
-      switch (WaitForMultipleObjects(_countof(wait_objects), wait_objects, FALSE, INFINITE)) {
+      switch (WaitForMultipleObjects(_countof(wait_objects), wait_objects, FALSE, host_ready ? INFINITE : HOST_READY_POLL_MS)) {
+        case WAIT_TIMEOUT:
+          {
+            auto ran_ms = GetTickCount64() - start_tick;
+            switch (watchdog.evaluate(ran_ms, HostIsListening(process_info.dwProcessId))) {
+              case svc::host_state_t::ready:
+                host_ready = true;
+                watchdog.on_ready();
+                break;
+              case svc::host_state_t::stuck:
+                // Alive but never reachable (a service started at boot can hang while the graphics driver,
+                // network or desktop is not ready). Restart it instead of waiting forever.
+                watchdog.on_stuck();
+                stop_host();
+                delay_ms = backoff.on_stopped(ran_ms);
+                LogLine(log_file_handle, std::format("The host opened no listening port within {} s, restarting in {} s", ran_ms / 1000, delay_ms / 1000));
+                still_running = false;
+                continue;
+              case svc::host_state_t::starting:
+                break;
+            }
+            still_running = true;
+            continue;
+          }
+
         case WAIT_OBJECT_0 + 2:
           if (WTSGetActiveConsoleSessionId() == console_session_id) {
             // The active console session didn't actually change. Let Sunshine keep running.
@@ -468,11 +547,7 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
         case WAIT_OBJECT_0:
           // The service is shutting down, so try to gracefully terminate Sunshine.exe.
           // If it doesn't terminate in time, we will forcefully terminate it.
-          if (!RunTerminationHelper(console_token, process_info.dwProcessId) ||
-              WaitReportingProgress(process_info.hProcess, HOST_EXIT_TIMEOUT_MS) != WAIT_OBJECT_0) {
-            // If it won't terminate gracefully, kill it now
-            TerminateProcess(process_info.hProcess, ERROR_PROCESS_ABORTED);
-          }
+          stop_host();
           still_running = false;
           break;
 

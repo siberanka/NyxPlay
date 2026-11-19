@@ -117,3 +117,39 @@ TEST(ServicePath, StripComponents) {
   EXPECT_EQ(svc::strip_components(L"nyxplay-host-svc.exe", 2), L"nyxplay-host-svc.exe");
   EXPECT_EQ(svc::strip_components(L"C:\\a\\Şükrü İğdır\\tools\\x.exe", 2), L"C:\\a\\Şükrü İğdır");
 }
+
+TEST(ServiceWatchdog, ReadyAsSoonAsListening) {
+  svc::startup_watchdog_t watchdog;
+  EXPECT_EQ(watchdog.evaluate(0, true), svc::host_state_t::ready);
+  EXPECT_EQ(watchdog.evaluate(svc::ready_grace_initial_ms * 10, true), svc::host_state_t::ready);
+}
+
+TEST(ServiceWatchdog, StartingWithinGrace) {
+  svc::startup_watchdog_t watchdog;
+  EXPECT_EQ(watchdog.evaluate(0, false), svc::host_state_t::starting);
+  EXPECT_EQ(watchdog.evaluate(svc::ready_grace_initial_ms - 1, false), svc::host_state_t::starting);
+}
+
+TEST(ServiceWatchdog, StuckAfterGrace) {
+  svc::startup_watchdog_t watchdog;
+  EXPECT_EQ(watchdog.evaluate(svc::ready_grace_initial_ms, false), svc::host_state_t::stuck);
+}
+
+TEST(ServiceWatchdog, GraceGrowsAndIsBounded) {
+  svc::startup_watchdog_t watchdog;
+  watchdog.on_stuck();
+  EXPECT_EQ(watchdog.grace_ms(), svc::ready_grace_initial_ms * 2);
+  EXPECT_EQ(watchdog.evaluate(svc::ready_grace_initial_ms, false), svc::host_state_t::starting);
+  for (int i = 0; i < 20; i++) {
+    watchdog.on_stuck();
+  }
+  EXPECT_EQ(watchdog.grace_ms(), svc::ready_grace_max_ms);
+}
+
+TEST(ServiceWatchdog, ReadyResetsGrace) {
+  svc::startup_watchdog_t watchdog;
+  watchdog.on_stuck();
+  watchdog.on_stuck();
+  watchdog.on_ready();
+  EXPECT_EQ(watchdog.grace_ms(), svc::ready_grace_initial_ms);
+}

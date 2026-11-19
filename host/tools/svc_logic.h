@@ -18,6 +18,10 @@ namespace svc {
   constexpr std::uint64_t backoff_healthy_run_ms = 60000;
   /// The log file is rotated before a start when it is larger than this.
   constexpr std::uint64_t log_rotate_bytes = 10ull * 1024 * 1024;
+  /// A host that has opened no listening port this long after its start is considered stuck and is restarted.
+  constexpr std::uint64_t ready_grace_initial_ms = 3 * 60 * 1000;
+  /// Upper limit of that period; it grows after every stuck run so a genuinely slow start is not restarted forever.
+  constexpr std::uint64_t ready_grace_max_ms = 10 * 60 * 1000;
 
   /**
    * @brief Exponential restart backoff: 3 s, 6 s, 12 s ... capped at 60 s.
@@ -46,6 +50,55 @@ namespace svc {
 
   private:
     std::uint32_t delay = backoff_initial_ms;
+  };
+
+  /// State of a running host as seen by the startup watchdog.
+  enum class host_state_t {
+    starting,  ///< No listening port yet, still within the grace period.
+    ready,  ///< The host listens on at least one port.
+    stuck  ///< No listening port after the grace period.
+  };
+
+  /**
+   * @brief Detects a host that is alive but never became reachable (for example hung while the graphics driver,
+   *        network or desktop was not ready at boot). The grace period doubles after each stuck run.
+   */
+  class startup_watchdog_t {
+  public:
+    /**
+     * @brief Classify a host that has been running for @p ran_ms.
+     * @param listening Whether the host process owns a listening TCP socket.
+     */
+    host_state_t evaluate(std::uint64_t ran_ms, bool listening) const {
+      if (listening) {
+        return host_state_t::ready;
+      }
+      return ran_ms >= grace ? host_state_t::stuck : host_state_t::starting;
+    }
+
+    /**
+     * @brief The host became reachable: the next run gets the initial grace period again.
+     */
+    void on_ready() {
+      grace = ready_grace_initial_ms;
+    }
+
+    /**
+     * @brief The host was stuck: allow the next run more time.
+     */
+    void on_stuck() {
+      grace = std::min<std::uint64_t>(grace * 2, ready_grace_max_ms);
+    }
+
+    /**
+     * @brief Grace period applied to the current run.
+     */
+    std::uint64_t grace_ms() const {
+      return grace;
+    }
+
+  private:
+    std::uint64_t grace = ready_grace_initial_ms;
   };
 
   /**
