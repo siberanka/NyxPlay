@@ -172,7 +172,7 @@
               aria-labelledby="findCoverToggle">
               <div class="modal-header px-2">
                 <h4 class="modal-title">{{ $t('apps.covers_found') }}</h4>
-                <button type="button" class="btn-close mr-2" aria-label="Close" @click="closeCoverFinder"></button>
+                <button type="button" class="btn-close mr-2" :aria-label="$t('_common.close')" @click="closeCoverFinder"></button>
               </div>
               <div class="modal-body cover-results px-3 pt-3" :class="{ busy: coverFinderBusy }">
                 <div class="row">
@@ -773,7 +773,7 @@
       },
       showDeleteForm(app) {
         const resp = confirm(
-          "Are you sure to delete " + app.name + "?"
+          this.$t('apps.delete_confirm', { name: app.name })
         );
         if (resp) {
           this.actionDisabled = true;

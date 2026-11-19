@@ -111,7 +111,7 @@
             </div>
             <div class="align-items-top d-flex flex-row justify-content-center">
               <div v-for="group in permissionGroups" class="d-flex flex-column mx-2">
-                <div class="mx-2">{{ group.name }}:</div>
+                <div class="mx-2">{{ $t(`permissions.group_${group.name}`) }}:</div>
                 <button v-for="perm in group.permissions" class="my-1 btn btn-sm" :disabled="isSuppressed(client.editPerm, perm.name, perm.suppressed_by)" :class="(isSuppressed(client.editPerm, perm.name, perm.suppressed_by) || checkPermission(client.editPerm, perm.name)) ? 'btn-success' : 'btn-outline-secondary'" @click="togglePermission(client, perm.name)">
                   {{ $t(`permissions.${perm.name}`) }}
                 </button>
@@ -318,7 +318,7 @@
   };
 
   const permissionGroups = [
-    { name: 'Action', permissions: [
+    { name: 'action', permissions: [
       {
         name: 'list',
         suppressed_by: ['view', 'launch']
@@ -330,7 +330,7 @@
         suppressed_by: []
       }
     ] },
-    { name: 'Operation', permissions: [
+    { name: 'operation', permissions: [
       {
         name: 'clipboard_set',
         suppressed_by: []
@@ -344,7 +344,7 @@
         suppressed_by: []
       }
     ] },
-    { name: 'Input', permissions: [
+    { name: 'input', permissions: [
       {
         name: 'input_controller',
         suppressed_by: []

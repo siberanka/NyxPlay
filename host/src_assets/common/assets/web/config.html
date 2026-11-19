@@ -29,7 +29,7 @@
       <ul class="nav nav-tabs">
         <li class="nav-item" v-for="tab in tabs" :key="tab.id">
           <a class="nav-link" :class="{'active': tab.id === currentTab}" href="#"
-            @click="currentTab = tab.id">{{tab.name}}</a>
+            @click="currentTab = tab.id">{{ $t(tab.name) }}</a>
         </li>
       </ul>
 
@@ -147,7 +147,7 @@
         tabs: [ // TODO: Move the options to each Component instead, encapsulate.
           {
             id: "general",
-            name: "General",
+            name: "config.tab_general",
             options: {
               "locale": "en",
               "sunshine_name": "",
@@ -164,7 +164,7 @@
           },
           {
             id: "input",
-            name: "Input",
+            name: "config.tab_input",
             options: {
               "controller": "enabled",
               "gamepad": "auto",
@@ -188,7 +188,7 @@
           },
           {
             id: "av",
-            name: "Audio/Video",
+            name: "config.tab_av",
             options: {
               "audio_sink": "",
               "virtual_sink": "",
@@ -220,7 +220,7 @@
           },
           {
             id: "network",
-            name: "Network",
+            name: "config.tab_network",
             options: {
               "upnp": "disabled",
               "address_family": "ipv4",
@@ -242,7 +242,7 @@
           },
           {
             id: "files",
-            name: "Config Files",
+            name: "config.tab_files",
             options: {
               "file_apps": "",
               "credentials_file": "",
@@ -254,7 +254,7 @@
           },
           {
             id: "advanced",
-            name: "Advanced",
+            name: "config.tab_advanced",
             options: {
               "fec_percentage": 20,
               "qp": 28,
@@ -271,7 +271,7 @@
           },
           {
             id: "nv",
-            name: "NVIDIA NVENC Encoder",
+            name: "config.tab_nvenc",
             options: {
               "nvenc_preset": 1,
               "nvenc_twopass": "quarter_res",
@@ -286,7 +286,7 @@
           },
           {
             id: "qsv",
-            name: "Intel QuickSync Encoder",
+            name: "config.tab_quicksync",
             options: {
               "qsv_preset": "medium",
               "qsv_coder": "auto",
@@ -295,7 +295,7 @@
           },
           {
             id: "amd",
-            name: "AMD AMF Encoder",
+            name: "config.tab_amf",
             options: {
               "amd_usage": "ultralowlatency",
               "amd_rc": "vbr_latency",
@@ -308,7 +308,7 @@
           },
           {
             id: "vt",
-            name: "VideoToolbox Encoder",
+            name: "config.tab_videotoolbox",
             options: {
               "vt_coder": "auto",
               "vt_software": "auto",
@@ -317,14 +317,14 @@
           },
           {
             id: "vaapi",
-            name: "VA-API Encoder",
+            name: "config.tab_vaapi",
             options: {
               "vaapi_strict_rc_buffer": "disabled",
             },
           },
           {
             id: "sw",
-            name: "Software Encoder",
+            name: "config.tab_software",
             options: {
               "sw_preset": "superfast",
               "sw_tune": "zerolatency",

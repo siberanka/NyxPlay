@@ -5,6 +5,7 @@
     "autodetect": "Autodetect (recommended)",
     "beta": "(beta)",
     "cancel": "Cancel",
+    "close": "Close",
     "cmd_name": "Command Name",
     "cmd_val": "Command Value",
     "default": "Default",
@@ -58,6 +59,7 @@
     "cmd_state_name": "Resume/Pause Commands",
     "covers_found": "Covers Found",
     "delete": "Delete",
+    "delete_confirm": "Are you sure to delete {name}?",
     "delete_failed": "App delete failed: ",
     "detached_cmds": "Detached Commands",
     "detached_cmds_add": "Add Detached Command",
@@ -491,7 +493,26 @@
     "rtsp_plaintext_1": "Local network only (default)",
     "rtsp_plaintext_2": "Allow from any network",
     "rtsp_plaintext_desc": "Older clients start the stream without an encrypted RTSP handshake. Such a launch is always tied to the address of the client that started it. This option decides whether it is accepted at all. Current clients encrypt the handshake and are not affected.",
-    "save_failed": "Could not save the configuration: {error}"
+    "save_failed": "Could not save the configuration: {error}",
+    "tab_general": "General",
+    "tab_input": "Input",
+    "tab_av": "Audio/Video",
+    "tab_network": "Network",
+    "tab_files": "Config Files",
+    "tab_advanced": "Advanced",
+    "tab_nvenc": "NVIDIA NVENC Encoder",
+    "tab_quicksync": "Intel QuickSync Encoder",
+    "tab_amf": "AMD AMF Encoder",
+    "tab_videotoolbox": "VideoToolbox Encoder",
+    "tab_vaapi": "VA-API Encoder",
+    "tab_software": "Software Encoder",
+    "sudovda_status": "SudoVDA Driver status: {status}",
+    "sudovda_status_unknown": "Unknown",
+    "sudovda_status_ready": "Ready",
+    "sudovda_status_uninitialized": "Uninitialized",
+    "sudovda_status_version_incompatible": "Version Incompatible",
+    "sudovda_status_watchdog_failed": "Watchdog Failed",
+    "sudovda_update_note": "Please ensure SudoVDA driver is installed to the latest version and enabled properly."
   },
   "login": {
     "save_password": "Remember Password",
@@ -510,6 +531,7 @@
     "startup_errors": "<b>Attention!</b> NyxPlay Host detected these errors during startup. We <b>STRONGLY RECOMMEND</b> fixing them before streaming.",
     "version_dirty": "Thank you for helping to make NyxPlay Host a better software!",
     "version_latest": "You are running the latest version of NyxPlay Host",
+    "view_logs": "View Logs",
     "welcome": "Hello, NyxPlay Host!"
   },
   "navbar": {
@@ -522,6 +544,7 @@
     "theme_auto": "Auto",
     "theme_dark": "Dark",
     "theme_light": "Light",
+    "toggle_navigation": "Toggle navigation",
     "toggle_theme": "Theme",
     "troubleshoot": "Troubleshooting"
   },
@@ -555,7 +578,10 @@
     "server_cmd": "Server Command",
     "list": "List Apps",
     "view": "View Streams",
-    "launch": "Launch Apps"
+    "launch": "Launch Apps",
+    "group_action": "Action",
+    "group_operation": "Operation",
+    "group_input": "Input"
   },
   "pin": {
     "allow_client_commands": "Allow client commands",

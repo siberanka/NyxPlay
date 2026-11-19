@@ -5,6 +5,7 @@
     "autodetect": "Otomatik Algıla (önerilir)",
     "beta": "(beta)",
     "cancel": "İptal",
+    "close": "Kapat",
     "cmd_name": "Komut Adı",
     "cmd_val": "Komut Değeri",
     "default": "Varsayılan",
@@ -58,6 +59,7 @@
     "cmd_state_name": "Devam/Duraklat Komutları",
     "covers_found": "Kapaklar Bulundu",
     "delete": "Sil",
+    "delete_confirm": "{name} uygulamasını silmek istediğinize emin misiniz?",
     "delete_failed": "Uygulama silinemedi: ",
     "detached_cmds": "Ayrık Komutlar",
     "detached_cmds_add": "Ayrık Komut Ekle",
@@ -82,7 +84,7 @@
     "env_qres_example": "Örnek - Çözünürlük Otomasyonu için QRes:",
     "env_qres_path": "qres yolu",
     "env_rtss_cli_example": "Örnek - FPS sınırlaması için rtss-cli:",
-    "env_sunshine_compatibility": "\"SUNSHINE_\" ve \"APOLLO_\" ile başlayan ortam değişkenleri Sunshine/Apollo araçlarıyla uyumluluk için korunur; yeni betiklerde \"NYXPLAY_\" değişkenlerini kullanın. Kesirli yenileme hızı desteği (özellikle Special-K) için SUNSHINE_CLIENT_FPS değişkeni ondalıklı sayıya (FLOAT) dönüştürülür; betiğiniz veya aracınız ondalıklı değer kabul etmiyorsa Advanced sekmesinden \"Ortam değişkeni uyumluluk modu\"nu etkinleştirin. NYXPLAY_CLIENT_FPS ve APOLLO_CLIENT_FPS her zaman FLOAT türündedir.",
+    "env_sunshine_compatibility": "\"SUNSHINE_\" ve \"APOLLO_\" ile başlayan ortam değişkenleri Sunshine/Apollo araçlarıyla uyumluluk için korunur; yeni betiklerde \"NYXPLAY_\" değişkenlerini kullanın. Kesirli yenileme hızı desteği (özellikle Special-K) için SUNSHINE_CLIENT_FPS değişkeni ondalıklı sayıya (FLOAT) dönüştürülür; betiğiniz veya aracınız ondalıklı değer kabul etmiyorsa Gelişmiş sekmesinden \"Ortam değişkeni uyumluluk modu\"nu etkinleştirin. NYXPLAY_CLIENT_FPS ve APOLLO_CLIENT_FPS her zaman FLOAT türündedir.",
     "env_var_name": "Değişken Adı",
     "env_vars_about": "Ortam Değişkenleri Hakkında",
     "env_vars_desc": "Tüm komutlar varsayılan olarak bu ortam değişkenlerini alır:",
@@ -508,7 +510,26 @@
     "min_fps_factor_desc": "NyxPlay Host, kareler arasındaki minimum süreyi hesaplamak için bu faktörü kullanacaktır. Bu değeri biraz artırmak, çoğunlukla statik içerik akışı yaparken yardımcı olabilir. Daha yüksek değerler daha fazla bant genişliği tüketecektir.",
     "res_fps_desc": "NyxPlay Host tarafından ilan edilen ekran modları. Moonlight-nx (Switch) gibi Moonlight'ın bazı sürümleri, istenen çözünürlüklerin ve fps'nin desteklendiğinden emin olmak için bu listelere güvenir. Bu ayar, ekran akışının Moonlight'a nasıl gönderildiğini değiştirmez.",
     "resolutions": "İlan Edilen Kararlar",
-    "save_failed": "Yapılandırma kaydedilemedi: {error}"
+    "save_failed": "Yapılandırma kaydedilemedi: {error}",
+    "tab_general": "Genel",
+    "tab_input": "Giriş",
+    "tab_av": "Ses/Görüntü",
+    "tab_network": "Ağ",
+    "tab_files": "Yapılandırma Dosyaları",
+    "tab_advanced": "Gelişmiş",
+    "tab_nvenc": "NVIDIA NVENC Kodlayıcı",
+    "tab_quicksync": "Intel QuickSync Kodlayıcı",
+    "tab_amf": "AMD AMF Kodlayıcı",
+    "tab_videotoolbox": "VideoToolbox Kodlayıcı",
+    "tab_vaapi": "VA-API Kodlayıcı",
+    "tab_software": "Yazılım Kodlayıcı",
+    "sudovda_status": "SudoVDA sürücü durumu: {status}",
+    "sudovda_status_unknown": "Bilinmiyor",
+    "sudovda_status_ready": "Hazır",
+    "sudovda_status_uninitialized": "Başlatılmadı",
+    "sudovda_status_version_incompatible": "Sürüm Uyumsuz",
+    "sudovda_status_watchdog_failed": "Gözetleyici Başarısız",
+    "sudovda_update_note": "SudoVDA sürücüsünün en son sürümünün yüklendiğinden ve doğru şekilde etkinleştirildiğinden emin olun."
   },
   "login": {
     "save_password": "Şifreyi Hatırla",
@@ -527,6 +548,7 @@
     "startup_errors": "<b>Dikkat!</b> NyxPlay Host başlatma sırasında şu hataları algıladı. Yayına başlamadan önce bunları düzeltmenizi <b>ŞİDDETLE ÖNERİRİZ</b>.",
     "version_dirty": "NyxPlay Host'u daha iyi bir yazılım haline getirmeye yardımcı olduğunuz için teşekkür ederiz!",
     "version_latest": "NyxPlay Host'un en son sürümünü çalıştırıyorsunuz",
+    "view_logs": "Günlükleri Görüntüle",
     "welcome": "Merhaba, NyxPlay Host!"
   },
   "navbar": {
@@ -539,6 +561,7 @@
     "theme_auto": "Otomatik",
     "theme_dark": "Karanlık",
     "theme_light": "Açık",
+    "toggle_navigation": "Gezinmeyi aç/kapat",
     "toggle_theme": "Tema",
     "troubleshoot": "Sorun Giderme"
   },
@@ -572,7 +595,10 @@
     "server_cmd": "Sunucu Komutu",
     "list": "Uygulamaları Listeleme",
     "view": "Yayınları Görüntüleme",
-    "launch": "Uygulama Başlatma"
+    "launch": "Uygulama Başlatma",
+    "group_action": "Eylem",
+    "group_operation": "İşlem",
+    "group_input": "Giriş"
   },
   "pin": {
     "allow_client_commands": "İstemci komutlarına izin ver",
@@ -719,7 +745,7 @@
     "unblock_title": "Bu adresin engeli kaldırılsın mı?",
     "unblock_confirm": "{address} yeniden bağlanabilecek.",
     "unblock_done": "{address} adresinin engeli kaldırıldı.",
-    "info": "Otomatik engelleme, asla engellenmeyecekler listesi ve olay günlüğü boyutu, yapılandırma sayfasındaki Network sekmesinden ayarlanır.",
+    "info": "Otomatik engelleme, asla engellenmeyecekler listesi ve olay günlüğü boyutu, yapılandırma sayfasındaki Ağ sekmesinden ayarlanır.",
     "info_link": "Engelleme ayarlarını aç",
     "confirm": "Onayla",
     "result": {

@@ -18,11 +18,11 @@ const props = defineProps([
 ])
 
 const sudovdaStatus = {
-  '1': 'Unknown',
-  '0': 'Ready',
-  '-1': 'Uninitialized',
-  '-2': 'Version Incompatible',
-  '-3': 'Watchdog Failed'
+  '1': 'config.sudovda_status_unknown',
+  '0': 'config.sudovda_status_ready',
+  '-1': 'config.sudovda_status_uninitialized',
+  '-2': 'config.sudovda_status_version_incompatible',
+  '-3': 'config.sudovda_status_watchdog_failed'
 }
 
 const currentDriverStatus = computed(() => sudovdaStatus[props.vdisplay])
@@ -181,9 +181,9 @@ const validateFallbackMode = (event) => {
 
     <!-- SudoVDA Driver Status -->
     <div class="alert" :class="[vdisplay ? 'alert-warning' : 'alert-success']" v-if="platform === 'windows'">
-      <i class="fa-solid fa-xl fa-circle-info"></i> SudoVDA Driver status: {{currentDriverStatus}}
+      <i class="fa-solid fa-xl fa-circle-info"></i> {{ $t('config.sudovda_status', { status: currentDriverStatus ? $t(currentDriverStatus) : '' }) }}
     </div>
-    <div class="form-text" v-if="platform === 'windows' && vdisplay">Please ensure SudoVDA driver is installed to the latest version and enabled properly.</div>
+    <div class="form-text" v-if="platform === 'windows' && vdisplay">{{ $t('config.sudovda_update_note') }}</div>
 
   </div>
 </template>
