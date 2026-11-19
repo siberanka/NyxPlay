@@ -13,6 +13,8 @@ import com.limelight.AppView;
 
 import androidx.test.core.app.ApplicationProvider;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
@@ -22,6 +24,7 @@ import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 import org.junit.BeforeClass;
 import com.limelight.TestLogSuppressor;
+import com.limelight.utils.NoUpdateCheck;
 
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.mock;
@@ -33,6 +36,16 @@ public class ProfilesNavigationTest {
     @BeforeClass
     public static void suppressInvalidIdLogs() {
         TestLogSuppressor.install();
+    }
+
+    @Before
+    public void disableUpdateCheck() {
+        NoUpdateCheck.install();
+    }
+
+    @After
+    public void restoreUpdateCheck() {
+        NoUpdateCheck.remove();
     }
 
     private void prepareEnvironment() {

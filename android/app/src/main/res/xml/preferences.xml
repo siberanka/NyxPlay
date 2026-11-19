@@ -1056,6 +1056,19 @@
             android:title="@string/title_about_licenses"
             app:iconSpaceReserved="false" />
 
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="checkbox_check_updates"
+            android:summary="@string/summary_check_updates_auto"
+            android:title="@string/title_check_updates_auto"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            android:key="option_check_updates_now"
+            android:summary="@string/summary_check_updates_now"
+            android:title="@string/title_check_updates_now"
+            app:iconSpaceReserved="false" />
+
         <com.limelight.preferences.WebLauncherPreference
             url="https://github.com/siberanka/NyxPlay/releases"
             android:key="option_software_release"

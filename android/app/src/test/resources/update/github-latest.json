@@ -1,0 +1,56 @@
+{
+  "url": "https://api.github.com/repos/siberanka/NyxPlay/releases/451169359",
+  "html_url": "https://github.com/siberanka/NyxPlay/releases/tag/v2026.11.19.1",
+  "id": 451169359,
+  "tag_name": "v2026.11.19.1",
+  "target_commitish": "main",
+  "name": "NyxPlay 2026.11.19.1",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-11-19T10:16:59Z",
+  "assets": [
+    {
+      "name": "NyxPlay-2026.11.19.1-arm64-v8a-release.apk",
+      "size": 40285462,
+      "content_type": "application/vnd.android.package-archive",
+      "browser_download_url": "https://github.com/siberanka/NyxPlay/releases/download/v2026.11.19.1/NyxPlay-2026.11.19.1-arm64-v8a-release.apk"
+    },
+    {
+      "name": "NyxPlay-2026.11.19.1-armeabi-v7a-release.apk",
+      "size": 38148971,
+      "content_type": "application/vnd.android.package-archive",
+      "browser_download_url": "https://github.com/siberanka/NyxPlay/releases/download/v2026.11.19.1/NyxPlay-2026.11.19.1-armeabi-v7a-release.apk"
+    },
+    {
+      "name": "NyxPlay-2026.11.19.1-x86-release.apk",
+      "size": 48619379,
+      "content_type": "application/vnd.android.package-archive",
+      "browser_download_url": "https://github.com/siberanka/NyxPlay/releases/download/v2026.11.19.1/NyxPlay-2026.11.19.1-x86-release.apk"
+    },
+    {
+      "name": "NyxPlay-2026.11.19.1-x86_64-release.apk",
+      "size": 55006223,
+      "content_type": "application/vnd.android.package-archive",
+      "browser_download_url": "https://github.com/siberanka/NyxPlay/releases/download/v2026.11.19.1/NyxPlay-2026.11.19.1-x86_64-release.apk"
+    },
+    {
+      "name": "NyxPlayHost-2026.11.19.1-windows-x64.exe",
+      "size": 19454095,
+      "content_type": "application/octet-stream",
+      "browser_download_url": "https://github.com/siberanka/NyxPlay/releases/download/v2026.11.19.1/NyxPlayHost-2026.11.19.1-windows-x64.exe"
+    },
+    {
+      "name": "NyxPlayPC-2026.11.19.1-windows-x64-portable.zip",
+      "size": 38016381,
+      "content_type": "application/zip",
+      "browser_download_url": "https://github.com/siberanka/NyxPlay/releases/download/v2026.11.19.1/NyxPlayPC-2026.11.19.1-windows-x64-portable.zip"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "size": 650,
+      "content_type": "text/plain; charset=utf-8",
+      "browser_download_url": "https://github.com/siberanka/NyxPlay/releases/download/v2026.11.19.1/SHA256SUMS.txt"
+    }
+  ],
+  "body": "## NyxPlay 2026.11.19.1\n\nSecurity and reliability update for NyxPlay Host, with reviewed Turkish translations for all three components. NyxPlay Host, NyxPlay for Android and NyxPlay for PC share the version number 2026.11.19.1. Updating is recommended for everyone on 2026.11.16.1, especially for hosts that can be reached from outside the local network.\n\n### Downloads\n\n| File | For |\n|---|---|\n| `NyxPlayHost-2026.11.19.1-windows-x64.exe` | Windows 10 or later (64-bit): host installer |\n| `NyxPlayPC-2026.11.19.1-windows-x64-portable.zip` | Windows 10 or later (64-bit): portable PC client, unzip anywhere and run `NyxPlay.exe` |\n| `NyxPlay-2026.11.19.1-<abi>-release.apk` | Android: `arm64-v8a` (most phones), `armeabi-v7a`, `x86`, `x86_64` |\n| `SHA256SUMS.txt` | Checksums of all files (`Get-FileHash` or `sha256sum -c SHA256SUMS.txt`) |\n\nThe Android release APKs are signed with the same NyxPlay release key as earlier releases and install as an update.\n\n### New: security log and automatic blocking (host)\n\n- The host records pairing attempts, Web UI logins, rejected certificates, app launches, resumes and cancels, stream start and end, app exits and admin actions. Each entry shows the client, the app and the source address.\n- The new **Security** page in the Web UI lists these events with filters, statistics and CSV export.\n- Addresses that keep failing pairing, Web UI login or RTSP checks are blocked automatically on every host port. A blocked connection is closed before any data is exchanged.\n- Blocks survive restarts. You can review, add and lift them on the Security page.\n- The host PC itself (loopback) can never be blocked. Addresses listed in `ban_whitelist` are never blocked either.\n- New settings, found under Network in the Web UI: `security_log`, `security_log_max_mb`, `ban_enabled`, `ban_threshold`, `ban_window_seconds`, `ban_duration_seconds`, `ban_whitelist`.\n- PINs, passwords, OTPs, session cookies, keys and certificates are never written to the security log.\n\n### Security (host)\n\n- **Control stream**\n  - For an established client, datagrams from any other address are ignored, so an outside sender can no longer end or take over a running stream.\n  - Control connections are accepted only for a stream that was actually launched, so a flood of fake connection requests no longer blocks real clients.\n  - Replayed encrypted control messages are rejected.\n- **Launch requests**\n  - The per-device \"allow client commands\" setting now applies to every launch, including the start of a new app.\n  - Launch options (scale factor, audio, HDR, gamepad and key fields) are validated, and invalid values are rejected.\n  - A launch without a valid app returns an error.\n  - A stream uses the client's current permissions, even if they were changed while the launch was pending.\n- **Pairing**\n  - OTP failures are counted per address, so one device can no longer use up the OTP for others.\n  - Device names are cleaned of control characters and invalid text before they are shown or stored.\n\n### Fixes\n\n- **Installer:** selecting \"Run at Startup\" during an upgrade now switches the service to automatic start. A start type you chose earlier is kept otherwise.\n- **Host service:** a host that keeps running without opening its ports is restarted automatically after a grace period.\n- **Host:** RTSP requests whose header arrives in two parts are handled correctly.\n\n### Translations\n\n- Turkish translations were reviewed for the host Web UI, the host installer, and the Android and PC clients.\n- The configuration tabs and the remaining fixed texts in the Web UI are now translated.\n\n### Known issues\n\n- **Older clients without control-stream encryption** lose the stream when their network address changes, for example when a phone switches between Wi-Fi and mobile data. Current clients encrypt the control stream and keep streaming.\n- **LAN addresses can be blocked:** they are not exempt from automatic blocking. Add trusted addresses to `ban_whitelist` if needed. A blocked address can be released on the Security page, or from the host PC itself.\n- **Cancelling an app** waits up to its exit timeout (5 seconds by default) for the app to close. Other requests to the host wait during that time.\n- **No code signing:** the host installer and the PC executable are not code-signed, so Windows SmartScreen shows a warning.\n- **Upstream services:** the PC client still uses upstream Moonlight services for the compatibility list, the game controller database, STUN and the connection test.\n- **Platforms:** Linux and macOS builds are not part of this release.\n\n### Upgrade notes\n\n- **Host:** the installer upgrades in place and keeps settings, paired devices and the service start type. The security log is on by default and automatic blocking is enabled with a threshold of 10. The weights per failure are: Web UI login 2, pairing 2, RTSP check 1.\n- **Android:** installs over 2026.11.16.1.\n- **PC:** unzip over the previous folder or into a new one.\n\n### Credits and licences\n\nNyxPlay is distributed under the GNU General Public License v3.0 and is based on Apollo, Sunshine, Artemis, Moonlight for Android and Moonlight PC. See `LICENSE` and `CREDITS.md`.\n\nThird-party notices and licence texts are included in:\n- the PC package (`THIRD-PARTY-NOTICES.txt`, `licenses/`)\n- the host installation (`licenses/`)\n\nSource: https://github.com/siberanka/NyxPlay\n"
+}

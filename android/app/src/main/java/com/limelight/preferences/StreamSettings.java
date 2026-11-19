@@ -56,6 +56,7 @@ import com.limelight.utils.Dialog;
 import com.limelight.utils.FileUriUtils;
 import com.limelight.utils.PerformanceDataTracker;
 import com.limelight.utils.UiHelper;
+import com.limelight.utils.UpdateNotifier;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -856,6 +857,17 @@ public class StreamSettings extends AppCompatActivity {
                         Intent intent=new Intent(requireActivity(), DebugInfoActivity.class);
                         requireActivity().startActivity(intent);
                         return false;
+                    }
+                });
+            }
+
+            _pref = findPreference("option_check_updates_now");
+            if (_pref != null) {
+                _pref.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(@NonNull Preference preference) {
+                        UpdateNotifier.checkNow((AppCompatActivity) requireActivity());
+                        return true;
                     }
                 });
             }

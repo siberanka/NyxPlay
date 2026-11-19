@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider;
 
 import com.limelight.profiles.ProfilesManager;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -20,6 +21,7 @@ import java.io.File;
 import static org.junit.Assert.*;
 
 import com.limelight.TestLogSuppressor;
+import com.limelight.utils.NoUpdateCheck;
 
 @Config(sdk = {33}, shadows = {com.limelight.shadows.ShadowMoonBridge.class, com.limelight.shadows.ShadowGameManager.class})
 @RunWith(RobolectricTestRunner.class)
@@ -31,8 +33,14 @@ public class StartupTest {
         TestLogSuppressor.install();
     }
 
+    @After
+    public void restoreUpdateCheck() {
+        NoUpdateCheck.remove();
+    }
+
     @Before
     public void setUp() {
+        NoUpdateCheck.install();
         // Reset ProfilesManager instance using reflection since it's package-private
         try {
             java.lang.reflect.Field instanceField = ProfilesManager.class.getDeclaredField("instance");

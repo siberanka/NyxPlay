@@ -36,6 +36,7 @@ import com.limelight.utils.HelpLauncher;
 import com.limelight.utils.LaunchToken;
 import com.limelight.utils.ServerHelper;
 import com.limelight.utils.ShortcutHelper;
+import com.limelight.utils.UpdateNotifier;
 import com.limelight.utils.UiHelper;
 
 import android.app.ActivityManager;
@@ -434,6 +435,9 @@ public class PcView extends AppCompatActivity implements AdapterFragmentCallback
 
         inForeground = true;
         startComputerUpdates();
+
+        // At most one automatic update check per day; never reached from the stream screens
+        UpdateNotifier.onMainScreenVisible(this);
     }
 
     @Override
