@@ -81,3 +81,9 @@
 [submodule "pc/qmdnsengine/qmdnsengine"]
 	path = pc/qmdnsengine/qmdnsengine
 	url = https://github.com/cgutman/qmdnsengine.git
+[submodule "common/moonlight-common-c/enet"]
+	path = common/moonlight-common-c/enet
+	url = https://github.com/cgutman/enet.git
+[submodule "common/moonlight-common-c/nanors"]
+	path = common/moonlight-common-c/nanors
+	url = https://github.com/sleepybishop/nanors.git
