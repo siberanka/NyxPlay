@@ -15,6 +15,13 @@ CONFIG(release, debug|release) {
     QMAKE_CXXFLAGS += -guard:cf -guard:ehcont
     QMAKE_LFLAGS += -guard:cf -guard:ehcont
 
+    # Keep the local checkout path out of __FILE__ (SDL_assert, logging) and
+    # other embedded strings; paths are recorded relative to the repository
+    # root, which also covers sources shared from sibling directories.
+    NYX_SRC_ROOT = $$shell_path($$clean_path($$PWD/..))
+    QMAKE_CFLAGS += "/d1trimfile:$${NYX_SRC_ROOT}\\"
+    QMAKE_CXXFLAGS += "/d1trimfile:$${NYX_SRC_ROOT}\\"
+
     contains(QT_ARCH, x86_64) {
         QMAKE_LFLAGS += -cetcompat
     }
