@@ -2,3 +2,6 @@
 host/tests/fixtures/release/** -text
 pc/tests/fixtures/release/** -text
 android/app/src/test/resources/release/** -text
+
+# Shell scripts must keep LF line endings on every checkout
+*.sh text eol=lf
