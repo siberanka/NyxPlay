@@ -19,6 +19,7 @@
 #include "logging.h"
 #include "system_tray.h"
 #include "update_check.h"
+#include "update_install.h"
 
 using namespace std::literals;
 
@@ -456,6 +457,9 @@ namespace update_check {
           break;
         case status_t::update_available:
           {
+            // The installation always acts on the release found here, never on anything a client sends
+            update_install::set_candidate(result.release);
+
             const auto now = std::chrono::system_clock::now();
             if (!should_announce(announced_tag, announced_at, result.release.tag, now)) {
               break;

@@ -10,10 +10,12 @@
 #include <algorithm>
 #include <charconv>
 #include <cctype>
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <map>
+#include <mutex>
 #include <numeric>
 #include <regex>
 #include <optional>
@@ -45,6 +47,7 @@
 #include "platform/common.h"
 #include "process.h"
 #include "security_log.h"
+#include "update_install.h"
 #include "utility.h"
 #include "uuid.h"
 
@@ -2324,6 +2327,109 @@ namespace confighttp {
   }
 
   /**
+   * @brief The state of the one-click update as JSON.
+   */
+  nlohmann::json update_status_json() {
+    const auto status = update_install::status();
+    nlohmann::json tree;
+    tree["state"] = update_install::to_string(status.state);
+    tree["error"] = update_install::to_string(status.error);
+    tree["version"] = status.version;
+    tree["release_url"] = status.release_url;
+    tree["percent"] = status.percent;
+    tree["stream_active"] = status.stream_active;
+    tree["can_install"] = status.can_install;
+    return tree;
+  }
+
+  /**
+   * @brief Report the state of the one-click update.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/update/status| GET| null}
+   */
+  void getUpdateStatus(resp_https_t response, req_https_t request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    // The dashboard polls this while an update runs: one security log entry per quiet period is enough
+    static std::mutex logged_mutex;
+    static std::chrono::steady_clock::time_point last_logged {};
+    {
+      std::lock_guard lg {logged_mutex};
+      const auto now = std::chrono::steady_clock::now();
+      if (last_logged == std::chrono::steady_clock::time_point {} || now - last_logged > 5min) {
+        last_logged = now;
+        log_admin(request, "update status requested"sv);
+      }
+    }
+
+    send_response(response, update_status_json());
+  }
+
+  /**
+   * @brief Install the update that the host found itself.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * The body is empty or `{"now": true|false}`. It never names a file or an address: the host installs only the
+   * release it found and verified itself. `now` installs without waiting for a running stream to end.
+   *
+   * @api_examples{/api/update/install| POST| {"now":false}}
+   */
+  void installUpdate(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    const auto now = update_install::parse_request(request->content.string());
+    if (!now) {
+      bad_request(response, request, "The request may only contain a boolean \"now\"");
+      return;
+    }
+    log_admin(request, *now ? "update install requested (now)"sv : "update install requested"sv);
+
+    switch (update_install::request_install(*now)) {
+      case update_install::request_e::started:
+      case update_install::request_e::already_running:
+        send_response(response, update_status_json());
+        break;
+      case update_install::request_e::no_update:
+        send_error(response, SimpleWeb::StatusCode::client_error_conflict, "No update is available");
+        break;
+      case update_install::request_e::busy_installing:
+        send_error(response, SimpleWeb::StatusCode::client_error_conflict, "The update is being installed");
+        break;
+    }
+  }
+
+  /**
+   * @brief Cancel a running update download.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/update/cancel| POST| null}
+   */
+  void cancelUpdate(resp_https_t response, req_https_t request) {
+    if (!validateContentType(response, request, "application/json") || !authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+    log_admin(request, "update cancelled"sv);
+
+    if (!update_install::cancel()) {
+      send_error(response, SimpleWeb::StatusCode::client_error_conflict, "There is nothing to cancel");
+      return;
+    }
+    send_response(response, update_status_json());
+  }
+
+  /**
    * @brief Restart NyxPlay Host.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2932,6 +3038,9 @@ namespace confighttp {
     server.resource["^/api/config$"]["POST"] = saveConfig;
     server.resource["^/api/configLocale$"]["GET"] = getLocale;
     server.resource["^/api/restart$"]["POST"] = restart;
+    server.resource["^/api/update/status$"]["GET"] = getUpdateStatus;
+    server.resource["^/api/update/install$"]["POST"] = installUpdate;
+    server.resource["^/api/update/cancel$"]["POST"] = cancelUpdate;
     server.resource["^/api/import$"]["GET"] = getImportSources;
     server.resource["^/api/import$"]["POST"] = importConfig;
     server.resource["^/api/quit$"]["POST"] = quit;

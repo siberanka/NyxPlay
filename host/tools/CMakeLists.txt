@@ -26,6 +26,7 @@ set_target_properties(sunshinesvc PROPERTIES CXX_STANDARD 23 OUTPUT_NAME "nyxpla
 target_link_libraries(sunshinesvc
         ${CMAKE_THREAD_LIBS_INIT}
         wtsapi32
+        bcrypt
         iphlpapi
         ws2_32
         ${PLATFORM_LIBRARIES})

@@ -96,6 +96,35 @@ namespace system_tray {
   void update_tray_update_available(std::string version);
 
   /**
+   * @brief The state of the one-click update, as far as the tray shows it.
+   */
+  enum class update_ui_e {
+    none,
+    available,
+    downloading,
+    verifying,
+    waiting,  ///< Verified, waits for the running stream to end.
+    installing,
+    failed,
+    updated,  ///< The host was just updated; shown once.
+  };
+
+  struct update_ui_t {
+    update_ui_e state = update_ui_e::none;
+    std::string version;  ///< Plain version text, e.g. `2026.11.20.1`.
+    int percent = 0;
+    std::string reason;  ///< Error code of the failed state.
+    std::string url;  ///< Release page.
+    bool notify = false;  ///< Also show a notification.
+  };
+
+  /**
+   * @brief Show the update state: menu entries, tooltip and, when requested, one notification.
+   *        The latest state wins; it is applied by the tray thread (also when the tray is created later).
+   */
+  void update_tray_update_state(update_ui_t ui);
+
+  /**
    * @brief Initializes and runs the system tray in a separate thread.
    * @return 0 if initialization was successful, non-zero otherwise.
    */

@@ -11,6 +11,7 @@
 #include <vector>
 #include <winsock2.h>
 #include <Windows.h>
+#include <bcrypt.h>
 #include <iphlpapi.h>
 #include <sddl.h>
 #include <WtsApi32.h>
@@ -26,6 +27,10 @@ SRWLOCK service_status_lock = SRWLOCK_INIT;
 HANDLE stop_event;
 HANDLE session_change_event;
 HANDLE event_source;
+// Auto-reset event (SYSTEM only) with which the host asks for a verified update installer to be run, and the
+// installer process while it runs. The installer must outlive this service, so it is not part of the host's job.
+HANDLE update_event = nullptr;
+HANDLE update_process = nullptr;
 
 #define SERVICE_NAME "NyxPlayHostService"
 
@@ -357,6 +362,157 @@ static bool HostIsListening(DWORD pid) {
   return false;
 }
 
+static std::wstring Widen(const char *text) {
+  return std::wstring(text, text + strlen(text));
+}
+
+/**
+ * @brief Read a small file completely; returns false if it is larger than @p max_bytes or cannot be read.
+ */
+static bool ReadSmallFile(const std::wstring &path, DWORD max_bytes, std::string &out) {
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  out.assign(max_bytes + 1, '\0');
+  DWORD got = 0;
+  const bool ok = ReadFile(file, out.data(), max_bytes + 1, &got, nullptr) && got <= max_bytes;
+  CloseHandle(file);
+  out.resize(ok ? got : 0);
+  return ok;
+}
+
+/**
+ * @brief Lowercase hex SHA-256 of an open file, read from its current position to the end.
+ */
+static bool Sha256Hex(HANDLE file, std::string &hex) {
+  BCRYPT_ALG_HANDLE algorithm = nullptr;
+  BCRYPT_HASH_HANDLE hash = nullptr;
+  bool ok = false;
+  if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) >= 0 && BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0) >= 0) {
+    std::vector<BYTE> buffer(64 * 1024);
+    DWORD got = 0;
+    ok = true;
+    while (ReadFile(file, buffer.data(), (DWORD) buffer.size(), &got, nullptr) && got > 0) {
+      if (BCryptHashData(hash, buffer.data(), got, 0) < 0) {
+        ok = false;
+        break;
+      }
+    }
+    BYTE digest[32] = {};
+    ok = ok && got == 0 && BCryptFinishHash(hash, digest, sizeof(digest), 0) >= 0;
+    if (ok) {
+      static const char digits[] = "0123456789abcdef";
+      hex.clear();
+      for (BYTE b : digest) {
+        hex += digits[b >> 4];
+        hex += digits[b & 15];
+      }
+    }
+  }
+  if (hash) {
+    BCryptDestroyHash(hash);
+  }
+  if (algorithm) {
+    BCryptCloseAlgorithmProvider(algorithm, 0);
+  }
+  return ok;
+}
+
+static void WriteUpdateResult(const std::wstring &dir, DWORD code) {
+  auto text = std::format("{}\n", code);
+  HANDLE file = CreateFileW((dir + L"\\" + Widen(svc::update_result_file)).c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file != INVALID_HANDLE_VALUE) {
+    DWORD written;
+    WriteFile(file, text.data(), (DWORD) text.size(), &written, nullptr);
+    CloseHandle(file);
+  }
+}
+
+/**
+ * @brief Run the update installer that the host asked for.
+ *
+ * The request is only a file name and a hash. The file must be a plain file in the updates folder of this
+ * installation (SYSTEM and Administrators only), is opened so that nobody can change it meanwhile, and must
+ * hash to the value the host verified against the signed release list. The installer is started as a
+ * process of its own, outside of the host's job, so that stopping this service does not end it.
+ */
+static void HandleUpdateRequest(HANDLE log_file) {
+  if (update_process != nullptr) {
+    LogLine(log_file, "update request ignored: an installer is already running");
+    return;
+  }
+
+  auto install_dir = svc::strip_components(GetModulePath(), 2);
+  if (install_dir.empty()) {
+    return;
+  }
+  const std::wstring dir = install_dir + L"\\config\\updates";
+
+  std::string text;
+  svc::update_request_t request;
+  if (!ReadSmallFile(dir + L"\\" + Widen(svc::update_request_file), 512, text) || !svc::parse_update_request(text, request)) {
+    LogLine(log_file, "update request rejected: the request file is missing or malformed");
+    WriteUpdateResult(dir, 3);
+    return;
+  }
+
+  const std::wstring path = dir + L"\\" + std::wstring(request.name.begin(), request.name.end());
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    LogLine(log_file, std::format("update request rejected: the installer cannot be opened (error {})", GetLastError()));
+    WriteUpdateResult(dir, 3);
+    return;
+  }
+
+  BY_HANDLE_FILE_INFORMATION info = {};
+  std::string actual;
+  const bool plain = GetFileInformationByHandle(file, &info) && !(info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) && info.nNumberOfLinks == 1 &&
+                     ((((unsigned long long) info.nFileSizeHigh) << 32) | info.nFileSizeLow) <= svc::update_max_installer_bytes;
+  if (!plain || !Sha256Hex(file, actual) || actual != request.sha256) {
+    LogLine(log_file, "update request rejected: the installer is not the verified file");
+    CloseHandle(file);
+    WriteUpdateResult(dir, 3);
+    return;
+  }
+
+  // The result file of an earlier run must not be mistaken for this one
+  DeleteFileW((dir + L"\\" + Widen(svc::update_result_file)).c_str());
+
+  std::wstring command = L"\"" + path + L"\" /S /UPDATE";
+  STARTUPINFOW startup_info = {};
+  startup_info.cb = sizeof(startup_info);
+  PROCESS_INFORMATION process_info = {};
+  // The file stays open (no write, no delete by others) until the process exists
+  const BOOL started = CreateProcessW(path.c_str(), command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, nullptr, dir.c_str(), &startup_info, &process_info);
+  const DWORD error = started ? NO_ERROR : GetLastError();
+  CloseHandle(file);
+  if (!started) {
+    LogLine(log_file, std::format("update installer could not be started (error {})", error));
+    WriteUpdateResult(dir, 4);
+    return;
+  }
+
+  LogLine(log_file, std::format("update installer started (process {})", process_info.dwProcessId));
+  CloseHandle(process_info.hThread);
+  update_process = process_info.hProcess;
+}
+
+/**
+ * @brief The update installer ended while this service is still running, so it did not replace the host.
+ */
+static void HandleInstallerExit(HANDLE log_file) {
+  DWORD exit_code = 1;
+  GetExitCodeProcess(update_process, &exit_code);
+  CloseHandle(update_process);
+  update_process = nullptr;
+  LogLine(log_file, std::format("update installer ended with exit code {}", exit_code));
+  auto install_dir = svc::strip_components(GetModulePath(), 2);
+  if (!install_dir.empty()) {
+    WriteUpdateResult(install_dir + L"\\config\\updates", exit_code);
+  }
+}
+
 /**
  * @brief Tell SCM that the service failed to start and stopped.
  */
@@ -389,6 +545,19 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
   if (session_change_event == nullptr) {
     FailStartup(GetLastError());
     return;
+  }
+
+  // Only SYSTEM (the host runs as SYSTEM) may ask for an update. Without the event updates are simply not offered.
+  {
+    SECURITY_ATTRIBUTES update_security = {sizeof(update_security), nullptr, FALSE};
+    if (ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;;GA;;;SY)", SDDL_REVISION_1, &update_security.lpSecurityDescriptor, nullptr)) {
+      update_event = CreateEventA(&update_security, FALSE, FALSE, svc::update_event_name);
+      if (update_event != nullptr && GetLastError() == ERROR_ALREADY_EXISTS) {
+        CloseHandle(update_event);
+        update_event = nullptr;
+      }
+      LocalFree(update_security.lpSecurityDescriptor);
+    }
   }
 
   event_source = RegisterEventSourceW(nullptr, L"" SERVICE_NAME);
@@ -511,8 +680,28 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
     do {
       // Wait for the stop event to be set, Sunshine.exe to terminate, or the console session to change.
       // Until the host listens on a port the wait is bounded so the startup watchdog can check on it.
-      const HANDLE wait_objects[] = {stop_event, process_info.hProcess, session_change_event};
-      switch (WaitForMultipleObjects(_countof(wait_objects), wait_objects, FALSE, host_ready ? INFINITE : HOST_READY_POLL_MS)) {
+      HANDLE wait_objects[5] = {stop_event, process_info.hProcess, session_change_event};
+      DWORD wait_count = 3;
+      const DWORD update_request_index = update_event != nullptr ? wait_count++ : MAXDWORD;
+      if (update_event != nullptr) {
+        wait_objects[update_request_index] = update_event;
+      }
+      const DWORD update_exit_index = update_process != nullptr ? wait_count++ : MAXDWORD;
+      if (update_process != nullptr) {
+        wait_objects[update_exit_index] = update_process;
+      }
+      const DWORD wait_result = WaitForMultipleObjects(wait_count, wait_objects, FALSE, host_ready ? INFINITE : HOST_READY_POLL_MS);
+      if (update_request_index != MAXDWORD && wait_result == WAIT_OBJECT_0 + update_request_index) {
+        HandleUpdateRequest(log_file_handle);
+        still_running = true;
+        continue;
+      }
+      if (update_exit_index != MAXDWORD && wait_result == WAIT_OBJECT_0 + update_exit_index) {
+        HandleInstallerExit(log_file_handle);
+        still_running = true;
+        continue;
+      }
+      switch (wait_result) {
         case WAIT_TIMEOUT:
           {
             auto ran_ms = GetTickCount64() - start_tick;
@@ -601,6 +790,9 @@ VOID WINAPI ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv) {
     DeregisterEventSource(event_source);
   }
   CloseHandle(session_change_event);
+  if (update_event != nullptr) {
+    CloseHandle(update_event);
+  }
   CloseHandle(stop_event);
 
   // Let SCM know we've stopped

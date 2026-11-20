@@ -52,7 +52,29 @@
             <pre>{{preReleaseVersion.release.body}}</pre>
           </div>
         </div>
-        <div v-if="stableBuildAvailable">
+        <!-- One-click update: the host downloads, verifies and installs the release it found itself -->
+        <div v-if="hostUpdateActive" class="alert alert-warning">
+          <div class="d-flex justify-content-between flex-wrap">
+            <div class="my-2">
+              <p class="mb-1" v-if="hostUpdate.state === 'available'">{{ $t('index.update_available', { version: hostUpdate.version }) }}</p>
+              <p class="mb-1" v-else-if="hostUpdate.state === 'failed'">{{ $t('index.update_failed', { reason: updateErrorText }) }}</p>
+              <p class="mb-1" v-else-if="hostUpdate.state === 'downloading'">{{ $t('index.update_downloading', { percent: hostUpdate.percent }) }}</p>
+              <p class="mb-1" v-else-if="hostUpdate.state === 'verifying'">{{ $t('index.update_verifying') }}</p>
+              <p class="mb-1" v-else-if="hostUpdate.state === 'waiting_for_stream'">{{ $t('index.update_waiting') }}</p>
+              <p class="mb-1" v-else-if="hostUpdate.state === 'installing'">{{ $t('index.update_installing') }}</p>
+              <div class="progress mt-2" v-if="hostUpdate.state === 'downloading'" style="height: 6px; min-width: 16em;">
+                <div class="progress-bar" role="progressbar" :style="{ width: hostUpdate.percent + '%' }"></div>
+              </div>
+            </div>
+            <div class="my-1">
+              <button class="btn btn-success m-1" v-if="(hostUpdate.state === 'available' || hostUpdate.state === 'failed') && hostUpdate.can_install" :disabled="updateBusy" @click="installUpdate(false)">{{ $t('index.update_install') }}</button>
+              <button class="btn btn-danger m-1" v-if="hostUpdate.state === 'waiting_for_stream'" :disabled="updateBusy" @click="installUpdate(true)">{{ $t('index.update_install_now') }}</button>
+              <button class="btn btn-secondary m-1" v-if="['downloading', 'verifying', 'waiting_for_stream'].includes(hostUpdate.state)" :disabled="updateBusy" @click="cancelUpdate">{{ $t('index.update_cancel') }}</button>
+              <a class="btn btn-outline-secondary m-1" v-if="hostUpdate.state === 'failed' || !hostUpdate.can_install" :href="hostUpdate.release_url" target="_blank" rel="noopener noreferrer">{{ $t('index.update_release_page') }}</a>
+            </div>
+          </div>
+        </div>
+        <div v-if="stableBuildAvailable && !hostUpdateActive">
           <div class="alert alert-warning">
             <div class="d-flex justify-content-between">
               <div class="my-2">
@@ -98,7 +120,14 @@
         preReleaseVersion: null,
         loading: true,
         logs: null,
+        hostUpdate: null,
+        updateBusy: false,
+        updateTimer: null,
+        updateWasInstalling: false,
       }
+    },
+    beforeUnmount() {
+      clearTimeout(this.updateTimer);
     },
     async created() {
       try {
@@ -128,8 +157,65 @@
         console.error(e);
       }
       this.loading = false;
+      this.refreshUpdate();
+    },
+    methods: {
+      async refreshUpdate() {
+        clearTimeout(this.updateTimer);
+        try {
+          const r = await fetch("./api/update/status", { credentials: 'include' });
+          if (r.ok) {
+            const status = await r.json();
+            // The host came back after the installer replaced it: load the new version of this page
+            if (this.updateWasInstalling && status.state !== 'installing') {
+              location.reload();
+              return;
+            }
+            this.updateWasInstalling = status.state === 'installing';
+            this.hostUpdate = status;
+          }
+        } catch (e) {
+          // Expected while the host is being replaced
+        }
+        const active = this.hostUpdate && ['downloading', 'verifying', 'waiting_for_stream', 'installing'].includes(this.hostUpdate.state);
+        this.updateTimer = setTimeout(() => this.refreshUpdate(), active || this.updateWasInstalling ? 1500 : 60000);
+      },
+      async sendUpdateRequest(path, body) {
+        this.updateBusy = true;
+        try {
+          const r = await fetch(path, {
+            method: "POST",
+            credentials: 'include',
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (r.ok) {
+            this.hostUpdate = await r.json();
+          }
+        } catch (e) {
+          console.error(e);
+        }
+        this.updateBusy = false;
+        this.refreshUpdate();
+      },
+      installUpdate(now) {
+        // No address or path is ever sent: the host installs the release it verified itself
+        const message = now ? this.$t('index.update_confirm_stream') : this.$t('index.update_confirm', { version: this.hostUpdate.version });
+        if (confirm(message)) {
+          this.sendUpdateRequest("./api/update/install", { now: now });
+        }
+      },
+      cancelUpdate() {
+        this.sendUpdateRequest("./api/update/cancel", {});
+      },
     },
     computed: {
+      hostUpdateActive() {
+        return !!this.hostUpdate && this.hostUpdate.state !== 'idle';
+      },
+      updateErrorText() {
+        return this.hostUpdate ? this.$t('index.update_error_' + this.hostUpdate.error) : '';
+      },
       installedVersionNotStable() {
         if (!this.githubVersion || !this.version) {
           return false;

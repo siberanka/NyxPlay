@@ -21,6 +21,7 @@
 #include "security_log.h"
 #include "system_tray.h"
 #include "update_check.h"
+#include "update_install.h"
 #include "upnp.h"
 #include "uuid.h"
 #include "video.h"
@@ -457,7 +458,9 @@ int main(int argc, char *argv[]) {
 #endif
   }
 
-  // Looks for new releases in the background (about two minutes after start, then daily)
+  // Announces a finished update and removes leftovers of an earlier one, then looks for new releases in
+  // the background (about two minutes after start, then daily)
+  update_install::init();
   update_check::start();
 
   mainThreadLoop(shutdown_event);
@@ -466,6 +469,7 @@ int main(int argc, char *argv[]) {
   shutdown_event->view();
 
   update_check::stop();
+  update_install::shutdown();
 
   httpThread.join();
   configThread.join();

@@ -205,4 +205,66 @@ namespace svc {
     return path;
   }
 
+  /// Named event (SYSTEM only) with which the host asks this service to run a verified installer.
+  constexpr const char *update_event_name = "Global\\NyxPlayHostUpdateRequest";
+  /// Files in <install dir>\config\updates: the request written by the host and the result written by the service.
+  constexpr const char *update_request_file = "install-request.txt";
+  constexpr const char *update_result_file = "install-result.txt";
+  constexpr std::uint64_t update_max_installer_bytes = 200ull * 1024 * 1024;
+
+  /**
+   * @brief Whether @p name is a release installer file name: `NyxPlayHost-<version>-windows-x64.exe`.
+   *
+   * Only a plain file name is accepted (no folders, no stream or device syntax), so the file can only be
+   * looked up inside the updates folder.
+   */
+  inline bool is_installer_name(const std::string &name) {
+    const std::string prefix = "NyxPlayHost-";
+    const std::string suffix = "-windows-x64.exe";
+    if (name.size() <= prefix.size() + suffix.size() || name.size() > 96 || name.compare(0, prefix.size(), prefix) != 0 ||
+        name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
+      return false;
+    }
+    for (std::size_t i = prefix.size(); i < name.size() - suffix.size(); i++) {
+      const char c = name[i];
+      const bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '.' || c == '-';
+      if (!ok) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// A request of the host: the installer file and the SHA-256 it was verified with.
+  struct update_request_t {
+    std::string name;
+    std::string sha256;  ///< 64 lowercase hex characters
+  };
+
+  /**
+   * @brief Parse the request file: `<installer name>LF<sha256>LF`, nothing else.
+   * @return false if the text is not exactly that.
+   */
+  inline bool parse_update_request(const std::string &text, update_request_t &out) {
+    const auto first = text.find('\n');
+    if (first == std::string::npos || text.size() > 512) {
+      return false;
+    }
+    const auto second = text.find('\n', first + 1);
+    if (second == std::string::npos || second + 1 != text.size() || text.find('\r') != std::string::npos) {
+      return false;
+    }
+    update_request_t request {text.substr(0, first), text.substr(first + 1, second - first - 1)};
+    if (!is_installer_name(request.name) || request.sha256.size() != 64) {
+      return false;
+    }
+    for (const char c : request.sha256) {
+      if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+        return false;
+      }
+    }
+    out = std::move(request);
+    return true;
+  }
+
 }  // namespace svc

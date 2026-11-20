@@ -58,6 +58,7 @@
   #include "platform/common.h"
   #include "process.h"
   #include "system_tray.h"
+  #include "update_install.h"
   #include "network.h"
   #include "src/entry_handler.h"
 
@@ -149,7 +150,7 @@ namespace system_tray {
     .icon = TRAY_ICON,
     .tooltip = PROJECT_NAME,
     .menu =
-      (struct tray_menu[]) {
+      (struct tray_menu[16]) {  // spare room: update entries are inserted before "Restart"
         // todo - use boost/locale to translate menu strings
         { .text = "Open NyxPlay Host", .cb = tray_open_ui_cb },
         { .text = "-" },
@@ -175,6 +176,276 @@ namespace system_tray {
     .iconPathCount = 4,
     .allIconPaths = {TRAY_ICON, TRAY_ICON_LOCKED, TRAY_ICON_PLAYING, TRAY_ICON_PAUSING},
   };
+
+  // ---- One-click update: menu entries, tooltip and notifications ---------------------------------------------
+
+  namespace {
+    std::mutex ui_mutex;
+    update_ui_t latest_ui;  // drives the menu
+    update_ui_t notice_ui;  // the newest state that asked for a notification
+    bool latest_dirty = false;
+    bool notice_dirty = false;
+    std::string menu_release_url;
+    std::size_t restart_index = 0;
+    struct tray_menu restart_item {};
+    struct tray_menu quit_item {};
+    bool menu_captured = false;
+
+    bool turkish_ui() {
+      return config::sunshine.locale == "tr";
+    }
+
+    std::string plain_version(std::string version) {
+      if (version.starts_with("host-")) {
+        version.erase(0, 5);
+      }
+      version.erase(std::remove_if(version.begin(), version.end(), [](unsigned char c) {
+        return !(std::isalnum(c) || c == '.' || c == '-');
+      }), version.end());
+      if (version.size() > 40) {
+        version.resize(40);
+      }
+      return version;
+    }
+
+    /// Short, actionable text for an error code of the installation (UTF-8).
+    std::string reason_text(const std::string &code, bool tr) {
+      if (code == "no_connection") {
+        return tr ? "Ba\xC4\x9Flant\xC4\xB1 yok" : "No connection";
+      }
+      if (code == "verify_failed") {
+        return tr ? "\xC4\xB0ndirme do\xC4\x9Frulanamad\xC4\xB1 ve silindi" : "The download could not be verified and was deleted";
+      }
+      if (code == "no_space") {
+        return tr ? "Yeterli disk alan\xC4\xB1 yok" : "Not enough disk space";
+      }
+      if (code == "not_supported") {
+        return tr ? "G\xC3\xBCncelleme buradan y\xC3\xBCklenemiyor" : "The update cannot be installed from here";
+      }
+      if (code == "launch_failed") {
+        return tr ? "Y\xC3\xBCkleyici ba\xC5\x9Flat\xC4\xB1lamad\xC4\xB1" : "The installer could not be started";
+      }
+      if (code == "installer_failed") {
+        return tr ? "Y\xC3\xBCkleyici ba\xC5\x9F" "ar\xC4\xB1s\xC4\xB1z oldu" : "The installer failed";
+      }
+      return tr ? "Beklenmeyen hata" : "Unexpected error";
+    }
+
+    // The tray keeps the pointers of menu texts and notifications: they live in static buffers
+    char menu_text[3][224];
+    char note_title[128];
+    char note_text[320];
+    char note_tooltip[96];
+
+    std::string to_native(const std::string &text) {
+  #ifdef _WIN32
+      return utf8ToAcp(text);
+  #else
+      return text;
+  #endif
+    }
+
+    void copy_to(char *target, std::size_t size, const std::string &text) {
+      snprintf(target, size, "%s", to_native(text).c_str());
+    }
+
+    void update_install_cb([[maybe_unused]] struct tray_menu *item) {
+      BOOST_LOG(info) << "Installing the update from the system tray"sv;
+      update_install::request_install(false);
+    }
+
+    void update_install_now_cb([[maybe_unused]] struct tray_menu *item) {
+      BOOST_LOG(info) << "Installing the update now (ends the stream) from the system tray"sv;
+      update_install::request_install(true);
+    }
+
+    void update_cancel_cb([[maybe_unused]] struct tray_menu *item) {
+      BOOST_LOG(info) << "Cancelling the update from the system tray"sv;
+      update_install::cancel();
+    }
+
+    void update_page_cb([[maybe_unused]] struct tray_menu *item) {
+      std::string url;
+      {
+        std::lock_guard lg {ui_mutex};
+        url = menu_release_url;
+      }
+      if (!url.empty()) {
+        platf::open_url(url);
+      }
+    }
+
+    void capture_menu() {
+      if (menu_captured) {
+        return;
+      }
+      menu_captured = true;
+      for (std::size_t i = 0; tray.menu[i].text != nullptr; ++i) {
+        if (tray.menu[i].cb == tray_restart_cb) {
+          restart_index = i;
+          restart_item = tray.menu[i];
+          quit_item = tray.menu[i + 1];
+          return;
+        }
+      }
+    }
+
+    /// Rebuild the entries between the standard ones and "Restart" for the given state. Runs on the tray thread.
+    void apply_menu(const update_ui_t &ui) {
+      capture_menu();
+      if (restart_index == 0) {
+        return;
+      }
+      const bool tr = turkish_ui();
+      const auto version = plain_version(ui.version);
+      const std::string install_text = tr ? "G\xC3\xBCncellemeyi y\xC3\xBCkle: " + version + "\xE2\x80\xA6" : "Install update " + version + "\xE2\x80\xA6";
+      std::size_t count = 0;
+      struct tray_menu extra[3] {};
+
+      switch (ui.state) {
+        case update_ui_e::available:
+          copy_to(menu_text[0], sizeof(menu_text[0]), install_text);
+          extra[count++] = {.text = menu_text[0], .cb = update_install_cb};
+          break;
+        case update_ui_e::downloading:
+        case update_ui_e::verifying:
+          copy_to(menu_text[0], sizeof(menu_text[0]), tr ? "G\xC3\xBCncelleniyor\xE2\x80\xA6 %" + std::to_string(ui.percent) + " - \xC4\xB0ptal et" : "Updating\xE2\x80\xA6 " + std::to_string(ui.percent) + " % - Cancel");
+          extra[count++] = {.text = menu_text[0], .cb = update_cancel_cb};
+          break;
+        case update_ui_e::waiting:
+          copy_to(menu_text[0], sizeof(menu_text[0]), tr ? "\xC5\x9Eimdi y\xC3\xBCkle (yay\xC4\xB1n\xC4\xB1 sonland\xC4\xB1r\xC4\xB1r)" : "Install now (ends the stream)");
+          extra[count++] = {.text = menu_text[0], .cb = update_install_now_cb};
+          copy_to(menu_text[1], sizeof(menu_text[1]), tr ? "G\xC3\xBCncellemeyi iptal et" : "Cancel update");
+          extra[count++] = {.text = menu_text[1], .cb = update_cancel_cb};
+          break;
+        case update_ui_e::installing:
+          copy_to(menu_text[0], sizeof(menu_text[0]), tr ? "G\xC3\xBCncelleme y\xC3\xBCkleniyor\xE2\x80\xA6" : "Installing update\xE2\x80\xA6");
+          extra[count++] = {.text = menu_text[0], .disabled = 1};
+          break;
+        case update_ui_e::failed:
+          copy_to(menu_text[0], sizeof(menu_text[0]), (tr ? "G\xC3\xBCncelleme ba\xC5\x9F" "ar\xC4\xB1s\xC4\xB1z: " : "Update failed: ") + reason_text(ui.reason, tr) + (tr ? " - s\xC3\xBCr\xC3\xBCm sayfas\xC4\xB1n\xC4\xB1 a\xC3\xA7" : " - open release page"));
+          extra[count++] = {.text = menu_text[0], .cb = update_page_cb};
+          copy_to(menu_text[1], sizeof(menu_text[1]), install_text);
+          extra[count++] = {.text = menu_text[1], .cb = update_install_cb};
+          break;
+        default:
+          break;
+      }
+
+      std::size_t pos = restart_index;
+      for (std::size_t i = 0; i < count; ++i) {
+        tray.menu[pos++] = extra[i];
+      }
+      tray.menu[pos++] = restart_item;
+      tray.menu[pos++] = quit_item;
+      tray.menu[pos] = {};
+    }
+
+    void open_release_page_cb() {
+      update_page_cb(nullptr);
+    }
+
+    void open_ui_cb() {
+      launch_ui();
+    }
+
+    void show_notice(const update_ui_t &ui) {
+      const bool tr = turkish_ui();
+      const auto version = plain_version(ui.version);
+      std::string title = tr ? "NyxPlay Host g\xC3\xBCncellemesi" : "NyxPlay Host update";
+      std::string text;
+      bool open_page = false;
+      switch (ui.state) {
+        case update_ui_e::downloading:
+          text = (tr ? "G\xC3\xBCncelleme indiriliyor: " : "Downloading the update: ") + version + " (" + std::to_string(ui.percent) + " %)";
+          break;
+        case update_ui_e::verifying:
+          text = tr ? "G\xC3\xBCncelleme do\xC4\x9Frulan\xC4\xB1yor\xE2\x80\xA6" : "Verifying the update\xE2\x80\xA6";
+          break;
+        case update_ui_e::waiting:
+          text = tr ? "G\xC3\xBCncelleme yay\xC4\xB1n bitti\xC4\x9Finde y\xC3\xBCklenecek." : "The update will be installed when the stream ends.";
+          break;
+        case update_ui_e::installing:
+          text = (tr ? "NyxPlay Host y\xC3\xBCkleniyor: " : "Installing NyxPlay Host ") + version + "\xE2\x80\xA6";
+          break;
+        case update_ui_e::failed:
+          title = tr ? "G\xC3\xBCncelleme ba\xC5\x9F" "ar\xC4\xB1s\xC4\xB1z" : "Update failed";
+          text = reason_text(ui.reason, tr) + (tr ? " - s\xC3\xBCr\xC3\xBCm sayfas\xC4\xB1n\xC4\xB1 a\xC3\xA7" : " - open release page");
+          open_page = true;
+          break;
+        case update_ui_e::updated:
+          title = tr ? "NyxPlay Host g\xC3\xBCncellendi" : "NyxPlay Host updated";
+          text = tr ? "NyxPlay Host " + version + " s\xC3\xBCr\xC3\xBCm\xC3\xBCne g\xC3\xBCncellendi" : "NyxPlay Host updated to " + version;
+          break;
+        default:
+          return;
+      }
+      copy_to(note_title, sizeof(note_title), title);
+      copy_to(note_text, sizeof(note_text), text);
+
+      tray.notification_title = nullptr;
+      tray.notification_text = nullptr;
+      tray.notification_cb = nullptr;
+      tray.notification_icon = nullptr;
+      tray_update(&tray);
+      tray.notification_icon = TRAY_ICON;
+      tray.notification_title = note_title;
+      tray.notification_text = note_text;
+      tray.notification_cb = open_page ? open_release_page_cb : open_ui_cb;
+    }
+
+    /// Runs on the tray thread: applies what update_tray_update_state() queued.
+    void apply_update_ui() {
+      update_ui_t menu_ui;
+      update_ui_t notice;
+      bool do_menu = false;
+      bool do_notice = false;
+      {
+        std::lock_guard lg {ui_mutex};
+        if (!latest_dirty && !notice_dirty) {
+          return;
+        }
+        do_menu = latest_dirty;
+        do_notice = notice_dirty;
+        menu_ui = latest_ui;
+        notice = notice_ui;
+        latest_dirty = notice_dirty = false;
+        if (!menu_ui.url.empty()) {
+          menu_release_url = menu_ui.url;
+        }
+      }
+
+      if (do_menu) {
+        apply_menu(menu_ui);
+        const bool busy = menu_ui.state == update_ui_e::downloading || menu_ui.state == update_ui_e::verifying;
+        if (busy) {
+          const bool tr = turkish_ui();
+          const auto text = (tr ? "G\xC3\xBCncelleme indiriliyor (%" : "Downloading update (") + std::to_string(menu_ui.percent) + (tr ? ")" : " %)");
+          copy_to(note_tooltip, sizeof(note_tooltip), std::string {PROJECT_NAME} + " - " + text);
+          tray.tooltip = note_tooltip;
+        } else {
+          tray.tooltip = PROJECT_NAME;
+        }
+      }
+      if (do_notice) {
+        show_notice(notice);
+      }
+      tray_update(&tray);
+    }
+  }  // namespace
+
+  void update_tray_update_state(update_ui_t ui) {
+    std::lock_guard lg {ui_mutex};
+    if (ui.notify) {
+      notice_ui = ui;
+      notice_dirty = true;
+    }
+    if (ui.state != update_ui_e::updated) {
+      latest_ui = std::move(ui);
+      latest_dirty = true;
+    }
+  }
+
 
   int init_tray() {
   #ifdef _WIN32
@@ -277,6 +548,8 @@ namespace system_tray {
     if (!tray_initialized) {
       return 1;
     }
+
+    apply_update_ui();
 
     // Process one iteration of the tray loop with non-blocking mode (0)
     if (const int result = tray_loop(0); result != 0) {

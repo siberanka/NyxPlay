@@ -416,6 +416,21 @@ namespace nvhttp {
   bool find_and_udpate_session_info(const std::string& uuid, const std::string& name, const crypto::PERM newPerm);
 
   /**
+   * @brief Read a text value that is kept next to the client list in the state file.
+   * @param key The top-level key.
+   * @return The value, or an empty string when it is missing.
+   */
+  std::string load_state_text(std::string_view key);
+
+  /**
+   * @brief Store a text value next to the client list in the state file (the other keys are kept).
+   * @param key The top-level key.
+   * @param value The value; an empty value removes the key.
+   * @return true when the file holds the requested state.
+   */
+  bool store_state_text(std::string_view key, std::string_view value);
+
+  /**
    * @brief      Update device info
    *
    * @param[in]  uuid       The uuid string

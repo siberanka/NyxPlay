@@ -460,6 +460,75 @@ namespace nvhttp {
     http::unique_id = http::uuid.string();
   }
 
+  std::string load_state_text(std::string_view key) {
+    std::lock_guard client_lock(client_auth_mutex);
+    try {
+      if (!fs::exists(config::nvhttp.file_state)) {
+        return {};
+      }
+      nlohmann::json root;
+      std::ifstream in(config::nvhttp.file_state);
+      in >> root;
+      if (root.is_object()) {
+        const auto it = root.find(std::string {key});
+        if (it != root.end() && it->is_string()) {
+          return it->get<std::string>();
+        }
+      }
+    } catch (const std::exception &) {
+    }
+    return {};
+  }
+
+  bool store_state_text(std::string_view key, std::string_view value) {
+    std::lock_guard client_lock(client_auth_mutex);
+    nlohmann::json root = nlohmann::json::object();
+    try {
+      if (fs::exists(config::nvhttp.file_state)) {
+        std::ifstream in(config::nvhttp.file_state);
+        in >> root;
+        if (!root.is_object()) {
+          return false;
+        }
+      }
+    } catch (const std::exception &) {
+      // A damaged file is handled (and quarantined) by load_state(); never overwrite it from here
+      return false;
+    }
+
+    if (value.empty()) {
+      if (!root.contains(std::string {key})) {
+        return true;
+      }
+      root.erase(std::string {key});
+    } else {
+      root[std::string {key}] = std::string {value};
+    }
+
+    const std::string temp_path = config::nvhttp.file_state + ".tmp";
+    try {
+      {
+        std::ofstream out(temp_path, std::ios::binary | std::ios::trunc);
+        out << root.dump(4, ' ', false, nlohmann::json::error_handler_t::replace);
+        out.flush();
+        if (!out.good()) {
+          throw std::runtime_error("write failed");
+        }
+      }
+      std::error_code ec;
+      fs::rename(temp_path, config::nvhttp.file_state, ec);
+      if (ec) {
+        throw std::runtime_error(ec.message());
+      }
+    } catch (const std::exception &e) {
+      BOOST_LOG(error) << "Couldn't write "sv << config::nvhttp.file_state << ": "sv << e.what();
+      std::error_code ec;
+      fs::remove(temp_path, ec);
+      return false;
+    }
+    return true;
+  }
+
   void load_state() {
     std::lock_guard client_lock(client_auth_mutex);
     if (!fs::exists(config::nvhttp.file_state)) {

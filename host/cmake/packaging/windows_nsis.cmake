@@ -23,6 +23,12 @@ if(NYX_MAKENSIS)
     set(CPACK_NSIS_EXECUTABLE "${NYX_MAKENSIS_WRAPPER}")
 endif()
 
+# The release version without a local build suffix, for the comparison with an installed version
+string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+" NYX_VER_NUM "${PROJECT_VERSION}")
+if(NOT NYX_VER_NUM)
+    set(NYX_VER_NUM "${PROJECT_VERSION}")
+endif()
+
 # Localised messages (English and Turkish), one copy for the installer and one for the uninstaller
 set(NYX_STRINGS_TEMPLATE "
         Function NYX_FN_NAME
@@ -33,6 +39,9 @@ set(NYX_STRINGS_TEMPLATE "
           StrCpy $NYX_MSG_GAMEPAD 'Sanal Oyun Kumandası (ViGEmBus) kaldırılsın mı?'
           StrCpy $NYX_MSG_SUDOVDA 'SudoVDA Sanal Ekran Sürücüsü kaldırılsın mı? Apollo veya başka bir host hâlâ kullanıyorsa kaldırmayın.'
           StrCpy $NYX_MSG_DELETE '$INSTDIR${NYX_BS}config içindeki yapılandırma, kimlik bilgileri ve kapak görselleri kaldırılsın mı?'
+          StrCpy $NYX_MSG_WELCOME_UPDATE '${PROJECT_DISPLAY_NAME} $NYX_OLD_VER kurulu. Kurulum, ayarlarınızı ve eşleştirilmiş istemcileri koruyarak onu ${NYX_VER_NUM} sürümüne güncelleyecek.${NYX_NL}${NYX_NL}Devam etmek için İleri düğmesine tıklayın.'
+          StrCpy $NYX_MSG_WELCOME_REPAIR '${PROJECT_DISPLAY_NAME} $NYX_OLD_VER zaten kurulu. Kurulum, ayarlarınızı ve eşleştirilmiş istemcileri koruyarak onu onaracak veya yeniden kuracak.${NYX_NL}${NYX_NL}Devam etmek için İleri düğmesine tıklayın.'
+          StrCpy $NYX_MSG_WELCOME_DOWNGRADE '${PROJECT_DISPLAY_NAME} için daha yeni bir sürüm ($NYX_OLD_VER) kurulu. Kurulum, onu daha eski olan ${NYX_VER_NUM} sürümüyle değiştirecek. Ayarlarınız ve eşleştirilmiş istemciler korunur, ancak yeni sürümün kaydettiği ayarlar çalışmayabilir.${NYX_NL}${NYX_NL}Yeni sürümü korumak için İptal düğmesine tıklayın.'
           Return
         english:
           StrCpy $NYX_MSG_IMPORT 'An Apollo or Sunshine installation was found. Import its settings, applications and paired devices into ${PROJECT_DISPLAY_NAME}?${NYX_NL}${NYX_NL}Both hosts cannot use the same ports: stop or uninstall the other host afterwards, or change the port in the settings.'
@@ -41,10 +50,20 @@ set(NYX_STRINGS_TEMPLATE "
           StrCpy $NYX_MSG_GAMEPAD 'Do you want to remove Virtual Gamepad?'
           StrCpy $NYX_MSG_SUDOVDA 'Do you want to remove the SudoVDA Virtual Display Driver? Keep it if Apollo or another host still uses it.'
           StrCpy $NYX_MSG_DELETE 'Do you want to remove the configuration, credentials and cover images in $INSTDIR${NYX_BS}config?'
+          StrCpy $NYX_MSG_WELCOME_UPDATE '${PROJECT_DISPLAY_NAME} $NYX_OLD_VER is installed. Setup will update it to ${NYX_VER_NUM} and keep your settings and paired devices.${NYX_NL}${NYX_NL}Click Next to continue.'
+          StrCpy $NYX_MSG_WELCOME_REPAIR '${PROJECT_DISPLAY_NAME} $NYX_OLD_VER is already installed. Setup will repair or reinstall it and keep your settings and paired devices.${NYX_NL}${NYX_NL}Click Next to continue.'
+          StrCpy $NYX_MSG_WELCOME_DOWNGRADE 'A newer version of ${PROJECT_DISPLAY_NAME} ($NYX_OLD_VER) is installed. Setup will replace it with the older ${NYX_VER_NUM}. Your settings and paired devices are kept, but settings saved by the newer version may not work.${NYX_NL}${NYX_NL}Click Cancel to keep the newer version.'
         FunctionEnd
         ")
 string(REPLACE "NYX_FN_NAME" "NyxInitStrings" NYX_STRINGS_INSTALL "${NYX_STRINGS_TEMPLATE}")
 string(REPLACE "NYX_FN_NAME" "un.NyxInitStrings" NYX_STRINGS_UNINSTALL "${NYX_STRINGS_TEMPLATE}")
+
+# The welcome page shows what the setup will do when a version is already installed, and the folder page is
+# skipped then (the existing folder is used). Both hooks have to be defined right before their page macro.
+string(REPLACE "/" "${NYX_BS}" NYX_LICENSE_NATIVE "${CPACK_RESOURCE_FILE_LICENSE}")
+set(CPACK_NSIS_INSTALLER_WELCOME_TITLE_CODE "!define MUI_PAGE_CUSTOMFUNCTION_SHOW NyxWelcomeShow")
+set(CPACK_NSIS_LICENSE_PAGE "!insertmacro MUI_PAGE_LICENSE ${NYX_Q}${NYX_LICENSE_NATIVE}${NYX_Q}
+        !define MUI_PAGE_CUSTOMFUNCTION_PRE NyxDirPre")
 
 # Global definitions (inserted at the top level of the script through the components page hook,
 # the generator does not pass CPACK_NSIS_DEFINES through): install folder validation, the helpers
@@ -61,15 +80,139 @@ set(CPACK_NSIS_PAGE_COMPONENTS
         Var NYX_MSG_GAMEPAD
         Var NYX_MSG_SUDOVDA
         Var NYX_MSG_DELETE
+        Var NYX_MSG_WELCOME_UPDATE
+        Var NYX_MSG_WELCOME_REPAIR
+        Var NYX_MSG_WELCOME_DOWNGRADE
+        Var NYX_WELCOME_TEXT
+        Var NYX_OLD_VER
+        Var NYX_OLD_DIR
+        Var NYX_VERCMP
+        Var NYX_UPDATE
+        Var NYX_MODE_READY
 
         # Messages in English and Turkish (the language is chosen from the system language)
         ${NYX_STRINGS_INSTALL}
         ${NYX_STRINGS_UNINSTALL}
 
+        # Appends the line on the stack to <config>/updates/install.log (only when the configuration folder exists,
+        # so nothing is created before the folder permissions are set). The text never holds secrets.
+        Function NyxLog
+          Exch $R0
+          Push $R1
+          IfFileExists '$INSTDIR${NYX_BS}config${NYX_BS}*.*' 0 nyx_log_done
+          CreateDirectory '$INSTDIR${NYX_BS}config${NYX_BS}updates'
+          ClearErrors
+          FileOpen $R1 '$INSTDIR${NYX_BS}config${NYX_BS}updates${NYX_BS}install.log' a
+          IfErrors nyx_log_done
+          FileSeek $R1 0 END
+          FileWrite $R1 '$R0${NYX_NL}'
+          FileClose $R1
+        nyx_log_done:
+          Pop $R1
+          Pop $R0
+        FunctionEnd
+
+        # Finds an installed version through its uninstall entry: $NYX_OLD_DIR and $NYX_OLD_VER stay empty when there
+        # is none. $NYX_VERCMP: 0 = same version, 1 = this setup is newer, 2 = this setup is older.
+        Function NyxDetectInstalled
+          StrCpy $NYX_OLD_VER ${NYX_Q}${NYX_Q}
+          StrCpy $NYX_OLD_DIR ${NYX_Q}${NYX_Q}
+          StrCpy $NYX_VERCMP '1'
+          ReadRegStr $R0 HKLM 'Software${NYX_BS}Microsoft${NYX_BS}Windows${NYX_BS}CurrentVersion${NYX_BS}Uninstall${NYX_BS}${PROJECT_DISPLAY_NAME}' 'UninstallString'
+          StrCmp $R0 '' nyx_det_done
+          StrCpy $R1 $R0 1 0
+          StrCmp $R1 '${NYX_Q}' 0 +2
+          StrCpy $R0 $R0 '' 1
+          StrCpy $R1 $R0 1 -1
+          StrCmp $R1 '${NYX_Q}' 0 +2
+          StrCpy $R0 $R0 -1
+          StrLen $R1 '${NYX_BS}Uninstall.exe'
+          StrCpy $R0 $R0 -$R1
+          IfFileExists '$R0${NYX_BS}nyxplay-host.exe' 0 nyx_det_done
+          StrCpy $NYX_OLD_DIR $R0
+          ReadRegStr $NYX_OLD_VER HKLM 'Software${NYX_BS}Microsoft${NYX_BS}Windows${NYX_BS}CurrentVersion${NYX_BS}Uninstall${NYX_BS}${PROJECT_DISPLAY_NAME}' 'DisplayVersion'
+          StrCmp $NYX_OLD_VER '' nyx_det_done
+          # Natural order comparison: 2026.11.19.10 is newer than 2026.11.19.9
+          StrCpy $R0 '${NYX_VER_NUM}'
+          StrCpy $R1 $NYX_OLD_VER
+          System::Call 'shlwapi::StrCmpLogicalW(w r10, w r11) i .r12'
+          IntCmp $R2 0 nyx_det_same nyx_det_older nyx_det_newer
+        nyx_det_same:
+          StrCpy $NYX_VERCMP '0'
+          Goto nyx_det_done
+        nyx_det_older:
+          StrCpy $NYX_VERCMP '2'
+          Goto nyx_det_done
+        nyx_det_newer:
+          StrCpy $NYX_VERCMP '1'
+        nyx_det_done:
+        FunctionEnd
+
+        # Reads the mode of this run once: an installed version and the /UPDATE switch
+        Function NyxInitMode
+          StrCmp $NYX_MODE_READY '1' nyx_mode_done
+          StrCpy $NYX_MODE_READY '1'
+          Call NyxDetectInstalled
+          StrCpy $NYX_UPDATE '0'
+          Push $CMDLINE
+          Push '/UPDATE'
+          Call StrStr
+          Pop $R0
+          StrCmp $R0 '' nyx_mode_done
+          StrCpy $NYX_UPDATE '1'
+        nyx_mode_done:
+        FunctionEnd
+
+        # Welcome page: says what happens when a version is already installed. The text control is found by its
+        # content size (the welcome text is the longest static control of the page).
+        Function NyxWelcomeShow
+          Call NyxInitMode
+          StrCmp $NYX_OLD_VER '' nyx_welcome_done
+          Call NyxInitStrings
+          StrCmp $NYX_VERCMP '0' nyx_welcome_same
+          StrCmp $NYX_VERCMP '2' nyx_welcome_down
+          StrCpy $NYX_WELCOME_TEXT $NYX_MSG_WELCOME_UPDATE
+          Goto nyx_welcome_set
+        nyx_welcome_same:
+          StrCpy $NYX_WELCOME_TEXT $NYX_MSG_WELCOME_REPAIR
+          Goto nyx_welcome_set
+        nyx_welcome_down:
+          StrCpy $NYX_WELCOME_TEXT $NYX_MSG_WELCOME_DOWNGRADE
+        nyx_welcome_set:
+          FindWindow $R0 '#32770' '' $HWNDPARENT
+          StrCpy $R1 0
+          StrCpy $R2 0
+          StrCpy $R3 0
+        nyx_welcome_scan:
+          FindWindow $R1 'Static' '' $R0 $R1
+          IntCmp $R1 0 nyx_welcome_found
+          System::Call 'user32::GetWindowTextLengthW(i r11) i .r14'
+          IntCmp $R4 $R3 nyx_welcome_scan nyx_welcome_scan nyx_welcome_better
+        nyx_welcome_better:
+          StrCpy $R3 $R4
+          StrCpy $R2 $R1
+          Goto nyx_welcome_scan
+        nyx_welcome_found:
+          IntCmp $R2 0 nyx_welcome_done
+          SendMessage $R2 12 0 'STR:$NYX_WELCOME_TEXT'
+        nyx_welcome_done:
+        FunctionEnd
+
+        # Folder page: an installed version is updated in its own folder, so the page is skipped
+        Function NyxDirPre
+          Call NyxInitMode
+          StrCmp $NYX_OLD_DIR '' nyx_dirpre_done
+          StrCpy $INSTDIR $NYX_OLD_DIR
+          Abort
+        nyx_dirpre_done:
+        FunctionEnd
+
         # Critical step: a failure is logged, shown and makes the installer return a non-zero exit code
         Function NyxCritical
           StrCmp $0 '0' nyx_critical_ok
           DetailPrint 'FAILED: $1 (exit code $0)'
+          Push 'FAILED: $1 (exit code $0)'
+          Call NyxLog
           SetErrorLevel 2
           StrCpy $NYX_FAILED '$NYX_FAILED${NYX_NL}  - $1 ($0)'
         nyx_critical_ok:
@@ -79,6 +222,8 @@ set(CPACK_NSIS_PAGE_COMPONENTS
         Function NyxOptional
           StrCmp $0 '0' nyx_optional_ok
           DetailPrint 'WARNING: $1 did not complete (exit code $0)'
+          Push 'WARNING: $1 did not complete (exit code $0)'
+          Call NyxLog
         nyx_optional_ok:
         FunctionEnd
 
@@ -205,6 +350,19 @@ set(CPACK_NSIS_PAGE_COMPONENTS
         # removes that version
         Section '-Previous version'
         Call NyxInitStrings
+        Call NyxInitMode
+        # /UPDATE: the installed folder is used and nothing is asked; an older setup never replaces a newer version
+        StrCmp $NYX_UPDATE '1' 0 nyx_mode_ready
+        StrCmp $NYX_OLD_DIR '' nyx_mode_ready
+        StrCpy $INSTDIR $NYX_OLD_DIR
+        StrCmp $NYX_VERCMP '2' 0 nyx_mode_ready
+        Push 'Refused: version $NYX_OLD_VER is installed and this setup is ${NYX_VER_NUM}'
+        Call NyxLog
+        SetErrorLevel 5
+        Abort
+        nyx_mode_ready:
+        Push 'Setup ${NYX_VER_NUM}: installed version [$NYX_OLD_VER], update mode $NYX_UPDATE'
+        Call NyxLog
         SetRegView 64
         DeleteRegValue HKLM 'Software${NYX_BS}NyxPlay Host' 'ServiceStartType'
         ClearErrors
@@ -235,6 +393,12 @@ set(CPACK_NSIS_PAGE_COMPONENTS
         IfFileExists '$0' 0 nyx_old_done
         StrLen $2 '${NYX_BS}Uninstall.exe'
         StrCpy $3 $0 -$2
+        # An update or a repair is what the welcome page announced: no question. Only an unknown or a newer
+        # installed version is asked about.
+        StrCmp $NYX_OLD_VER '' nyx_old_ask
+        StrCmp $NYX_VERCMP '2' nyx_old_ask
+        Goto nyx_old_run
+        nyx_old_ask:
         MessageBox MB_YESNOCANCEL|MB_ICONEXCLAMATION '$NYX_MSG_OLD' /SD IDYES IDYES nyx_old_run IDNO nyx_old_done
         Abort
         nyx_old_run:
@@ -338,6 +502,14 @@ SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
         IfSilent nyx_install_ok 0
         MessageBox MB_OK|MB_ICONEXCLAMATION '$NYX_MSG_FAILED$NYX_FAILED'
         nyx_install_ok:
+        StrCmp $NYX_FAILED '' 0 nyx_result_failed
+        Push 'Setup completed: ${NYX_VER_NUM}'
+        Call NyxLog
+        Goto nyx_result_done
+        nyx_result_failed:
+        Push 'Setup finished with errors:$NYX_FAILED'
+        Call NyxLog
+        nyx_result_done:
         ")
 
 # Extra uninstall commands

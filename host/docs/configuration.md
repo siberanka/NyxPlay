@@ -273,6 +273,18 @@ editing the `conf` file in a text editor. Use the examples as reference.
             Whether the host checks for new NyxPlay Host releases in the background (shortly after start and then once a
             day) and shows a system tray notification when one is available. The check only reads the public release list
             over HTTPS (GitHub, with the GitLab mirror as fallback); nothing about this PC is sent.
+            <br><br>
+            When a new release is known, the tray menu ("Install update ...") and the Web UI dashboard ("Install update")
+            can install it in one step. Nothing is downloaded before you ask for it. The host then downloads the
+            installer and the signed checksum list of that release, checks the Ed25519 signature and the SHA-256 hash,
+            and only then hands the installer to the host service, which runs it silently in upgrade mode (settings,
+            paired devices and the chosen components are kept). A running stream is never interrupted without asking:
+            the update waits until the stream ends unless "Install now" is chosen. Installing needs the host to run as
+            the service; otherwise the release page is offered. The update files and the installer log are kept in the
+            `updates` folder inside the configuration folder (readable by Administrators and SYSTEM only).
+            <br><br>
+            The installer can also be run by hand in the same mode: `NyxPlayHost-&lt;version&gt;-windows-x64.exe /S /UPDATE`
+            (exit code 0 on success, 2 when a step failed, 5 when the installed version is newer).
         </td>
     </tr>
     <tr>
