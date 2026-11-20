@@ -10,7 +10,7 @@ TARGET = backend_tests
 
 DEFINES += RELEASE_FIXTURE_DIR=\\\"$$PWD/fixtures/release\\\"
 
-INCLUDEPATH += $$PWD/../app $$PWD/../app/backend $$PWD/../moonlight-common-c/moonlight-common-c/src
+INCLUDEPATH += $$PWD/../app $$PWD/../app/backend $$PWD/../../common/moonlight-common-c/src
 
 win32 {
     contains(QT_ARCH, x86_64) {

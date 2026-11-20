@@ -38,7 +38,8 @@ unix:!macx {
     DEFINES += HAVE_CLOCK_GETTIME=1
 }
 
-COMMON_C_DIR = $$PWD/moonlight-common-c
+# The one copy of the library shared with the host and the Android client
+COMMON_C_DIR = $$PWD/../../common/moonlight-common-c
 ENET_DIR = $$COMMON_C_DIR/enet
 SOURCES += \
     $$ENET_DIR/callbacks.c \
@@ -88,9 +89,12 @@ CONFIG(debug, debug|release) {
     DEFINES += LC_DEBUG
 }
 
-# Older GCC versions defaulted to GNU89
+# The library uses C11 atomics. Older GCC versions defaulted to GNU89.
 *-g++ {
-    QMAKE_CFLAGS += -std=gnu99
+    QMAKE_CFLAGS += -std=gnu11
+}
+win32-msvc {
+    QMAKE_CFLAGS += /std:c11 /experimental:c11atomics
 }
 
 # Disable unused parameter warnings on GCC and Clang
