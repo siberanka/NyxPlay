@@ -131,6 +131,8 @@ android {
         debug {
             applicationIdSuffix ".debug"
             versionNameSuffix "-debug"
+            // Local update-test server (e.g. -PupdateTestBase=http://10.0.2.2:8765); never set for release builds
+            buildConfigField "String", "UPDATE_TEST_BASE", "\"${project.findProperty('updateTestBase') ?: ''}\""
             resValue "string", "app_label", "NyxPlay Debug"
             resValue "string", "app_label_root", "NyxPlay Debug (Root)"
             resValue "string", "app_label_game", "NyxPlay Debug"
@@ -141,6 +143,7 @@ android {
         release {
             // NyxPlay uses its own application ID (com.siberanka.nyxplay), so it can be installed
             // side by side with Moonlight and Artemis.
+            buildConfigField "String", "UPDATE_TEST_BASE", "\"\""
             resValue "string", "app_label", "NyxPlay"
             resValue "string", "app_label_root", "NyxPlay (Root)"
             resValue "string", "app_label_game", "NyxPlay"
@@ -170,6 +173,10 @@ android {
 
     testOptions {
         unitTests.includeAndroidResources = true
+        unitTests.all {
+            // Robolectric decodes large drawables into AWT images; the default worker heap runs out late in the suite
+            maxHeapSize = '2g'
+        }
     }
 }
 

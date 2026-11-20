@@ -2,6 +2,8 @@ package com.limelight.utils;
 
 import android.util.Log;
 
+import com.limelight.BuildConfig;
+
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -34,6 +36,12 @@ public class UpdateChecker {
     public static final String GITLAB_LATEST_URL = "https://gitlab.com/api/v4/projects/siberanka%2FNyxPlay/releases/permalink/latest";
     public static final String RELEASES_PAGE_URL = "https://github.com/siberanka/NyxPlay/releases";
 
+    public static final String SUMS_NAME = "SHA256SUMS.txt";
+    public static final String SIG_NAME = "SHA256SUMS.txt.sig";
+
+    // Debug builds can point the release lookup at a local test server; empty (and ignored) in release builds
+    private static final String TEST_BASE = BuildConfig.DEBUG ? BuildConfig.UPDATE_TEST_BASE : "";
+
     static final int MAX_BODY_BYTES = 1024 * 1024;
     static final int MAX_NOTES_CHARS = 600;
     static final int TIMEOUT_SECONDS = 10;
@@ -59,26 +67,86 @@ public class UpdateChecker {
         public final String downloadUrl;
         public final String pageUrl;
         public final Failure failure;
+        /** File name of the matching APK asset, or null when only a page is known. */
+        public final String apkName;
+        /** Locations of the signed checksum list and its signature; null when the release has none. */
+        public final String sumsUrl;
+        public final String sigUrl;
 
-        private Result(Status status, String version, String notes, String downloadUrl, String pageUrl, Failure failure) {
+        private Result(Status status, String version, String notes, String downloadUrl, String pageUrl, Failure failure,
+                       String apkName, String sumsUrl, String sigUrl) {
             this.status = status;
             this.version = version;
             this.notes = notes;
             this.downloadUrl = downloadUrl;
             this.pageUrl = pageUrl;
             this.failure = failure;
+            this.apkName = apkName;
+            this.sumsUrl = sumsUrl;
+            this.sigUrl = sigUrl;
         }
 
         public static Result update(String version, String notes, String downloadUrl, String pageUrl) {
-            return new Result(Status.UPDATE_AVAILABLE, version, notes, downloadUrl, pageUrl, null);
+            return new Result(Status.UPDATE_AVAILABLE, version, notes, downloadUrl, pageUrl, null, null, null, null);
+        }
+
+        public static Result update(String version, String notes, String downloadUrl, String pageUrl,
+                                    String apkName, String sumsUrl, String sigUrl) {
+            return new Result(Status.UPDATE_AVAILABLE, version, notes, downloadUrl, pageUrl, null, apkName, sumsUrl, sigUrl);
         }
 
         public static Result upToDate(String version) {
-            return new Result(Status.UP_TO_DATE, version, "", null, null, null);
+            return new Result(Status.UP_TO_DATE, version, "", null, null, null, null, null, null);
         }
 
         public static Result failed(Failure failure) {
-            return new Result(Status.FAILED, null, "", null, null, failure);
+            return new Result(Status.FAILED, null, "", null, null, failure, null, null, null);
+        }
+
+        /** True when the APK, the signed checksum list and its signature are all known and allowed. */
+        public boolean canInstallInApp() {
+            return status == Status.UPDATE_AVAILABLE && version != null && apkName != null && sumsUrl != null && sigUrl != null
+                    && isAllowedUrl(downloadUrl) && isAllowedUrl(sumsUrl) && isAllowedUrl(sigUrl)
+                    && isSafeAssetName(apkName) && apkName.contains(version);
+        }
+
+        /** Compact form for the private update state file. */
+        public String toJson() {
+            try {
+                JSONObject o = new JSONObject();
+                o.put("version", version);
+                o.put("notes", notes == null ? "" : notes);
+                o.put("download", downloadUrl);
+                o.put("page", pageUrl);
+                o.put("apk", apkName == null ? JSONObject.NULL : apkName);
+                o.put("sums", sumsUrl == null ? JSONObject.NULL : sumsUrl);
+                o.put("sig", sigUrl == null ? JSONObject.NULL : sigUrl);
+                return o.toString();
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        /** Rebuilds an offer from toJson(); every field is validated again. Null when unusable. */
+        public static Result fromJson(String json) {
+            try {
+                JSONObject o = new JSONObject(json);
+                String version = o.optString("version", "");
+                if (parseInstalledVersion(version) == null || version.contains("-")) {
+                    return null;
+                }
+                String download = o.optString("download", "");
+                String page = o.optString("page", "");
+                if (!isAllowedUrl(download) || !isAllowedUrl(page)) {
+                    return null;
+                }
+                String apk = o.isNull("apk") ? null : o.optString("apk", null);
+                String sums = o.isNull("sums") ? null : o.optString("sums", null);
+                String sig = o.isNull("sig") ? null : o.optString("sig", null);
+                return new Result(Status.UPDATE_AVAILABLE, version, o.optString("notes", ""), download, page, null, apk, sums, sig);
+            } catch (Exception e) {
+                return null;
+            }
         }
     }
 
@@ -113,7 +181,8 @@ public class UpdateChecker {
     private final String userAgent;
 
     public UpdateChecker(String installedVersion, List<String> abis) {
-        this(newClient(), GITHUB_LATEST_URL, GITLAB_LATEST_URL, installedVersion, abis);
+        this(newClient(), TEST_BASE.isEmpty() ? GITHUB_LATEST_URL : TEST_BASE + "/latest.json",
+                TEST_BASE.isEmpty() ? GITLAB_LATEST_URL : TEST_BASE + "/latest.json", installedVersion, abis);
     }
 
     UpdateChecker(OkHttpClient client, String githubUrl, String gitlabUrl, String installedVersion, List<String> abis) {
@@ -174,9 +243,12 @@ public class UpdateChecker {
             }
 
             String pageUrl = isAllowedUrl(release.pageUrl) ? release.pageUrl : RELEASES_PAGE_URL;
-            String download = selectApkUrl(release.assets, abis);
+            String[] apk = selectApkAsset(release.assets, abis);
+            String sums = findAssetUrl(release.assets, SUMS_NAME);
+            String sig = findAssetUrl(release.assets, SIG_NAME);
             return Result.update(displayVersion(release.version), releaseNotesExcerpt(release.notes, MAX_NOTES_CHARS),
-                    download != null ? download : pageUrl, pageUrl);
+                    apk != null ? apk[1] : pageUrl, pageUrl,
+                    apk != null ? apk[0] : null, apk != null ? sums : null, apk != null ? sig : null);
         } catch (Throwable t) {
             Log.d(TAG, "Check failed unexpectedly: " + t.getClass().getSimpleName());
             return Result.failed(Failure.BAD_RESPONSE);
@@ -340,6 +412,12 @@ public class UpdateChecker {
      * Only assets with an allowed download URL are considered.
      */
     public static String selectApkUrl(List<String[]> assets, List<String> abis) {
+        String[] asset = selectApkAsset(assets, abis);
+        return asset == null ? null : asset[1];
+    }
+
+    /** Like selectApkUrl but returns {name, url}. */
+    public static String[] selectApkAsset(List<String[]> assets, List<String> abis) {
         if (assets == null || abis == null) {
             return null;
         }
@@ -350,18 +428,41 @@ public class UpdateChecker {
             String needle = "-" + abi.toLowerCase(Locale.ROOT) + "-";
             for (String[] asset : assets) {
                 String name = asset[0].toLowerCase(Locale.ROOT);
-                if (name.endsWith(".apk") && name.contains(needle) && isAllowedUrl(asset[1])) {
-                    return asset[1];
+                if (name.endsWith(".apk") && name.contains(needle) && isAllowedUrl(asset[1]) && isSafeAssetName(asset[0])) {
+                    return asset;
                 }
             }
         }
         return null;
     }
 
+    /** URL of the asset with exactly this name, if it is an allowed address. */
+    static String findAssetUrl(List<String[]> assets, String name) {
+        for (String[] asset : assets) {
+            if (asset[0].equals(name) && isAllowedUrl(asset[1])) {
+                return asset[1];
+            }
+        }
+        return null;
+    }
+
+    /** A plain file name: no separators or control characters, so it cannot name another path. */
+    static boolean isSafeAssetName(String name) {
+        return name != null && name.length() > 0 && name.length() <= 128 && name.matches("[A-Za-z0-9._+-]+")
+                && !name.contains("..");
+    }
+
+    private static boolean isTestUrl(String url) {
+        return !TEST_BASE.isEmpty() && url.startsWith(TEST_BASE + "/") && !url.contains("..");
+    }
+
     /** Only the project's own pages and GitHub's release asset hosts may be opened. */
     public static boolean isAllowedUrl(String url) {
         if (url == null || url.isEmpty() || url.length() > 2048) {
             return false;
+        }
+        if (isTestUrl(url)) {
+            return true;
         }
         try {
             URI uri = new URI(url).normalize();

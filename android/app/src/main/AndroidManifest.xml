@@ -4,6 +4,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- In-app update install: system package installer session, download kept alive in a data sync service -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.REORDER_TASKS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -42,6 +46,16 @@
     <uses-feature
         android:name="android.hardware.type.pc"
         android:required="false"/>
+
+    <queries>
+        <!-- Lets the update flow check that the "Install unknown apps" screen exists (not on every TV) -->
+        <intent>
+            <action android:name="android.settings.MANAGE_UNKNOWN_APP_SOURCES" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.SECURITY_SETTINGS" />
+        </intent>
+    </queries>
 
     <application
         android:name=".ArtemisApplication"
@@ -213,6 +227,23 @@
                 android:name="com.nvidia.rawCursorInput"
                 android:value="true" />
         </activity>
+
+        <!-- Launcher shortcuts "Check for updates" / "Install update": not exported, no intent filter -->
+        <activity
+            android:name=".UpdateShortcutActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+        <service
+            android:name=".utils.UpdateService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:label="@string/update_notification_channel" />
+        <receiver
+            android:name=".utils.UpdateInstallReceiver"
+            android:exported="false" />
 
         <service
             android:name=".discovery.DiscoveryService"
