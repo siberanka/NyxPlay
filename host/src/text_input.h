@@ -17,26 +17,29 @@
 #include <optional>
 #include <string_view>
 
+// local includes
+#include <moonlight-common-c/src/NyxExtensions.h>
+
 namespace text_input {
 
   /**
    * @brief Packet type of the control stream message carrying the text input state.
    * @note Chosen outside of the Sunshine (0x55xx) and Apollo (0x30xx) extension ranges.
    */
-  constexpr std::uint16_t PACKET_TYPE = 0x4E01;
+  constexpr std::uint16_t PACKET_TYPE = LI_PACKET_TYPE_SET_TEXT_INPUT_STATE;
 
   /**
    * @brief Version of the payload layout sent to clients.
    */
-  constexpr std::uint8_t PAYLOAD_VERSION = 1;
+  constexpr std::uint8_t PAYLOAD_VERSION = LI_TEXT_INPUT_PAYLOAD_VERSION;
 
   /**
    * @brief Additional hints describing the focused field.
    */
   enum flags_e : std::uint8_t {
     FLAG_NONE = 0x00,
-    FLAG_PASSWORD = 0x01,  ///< The field hides its content (password box)
-    FLAG_MULTILINE = 0x02,  ///< The field accepts multiple lines (document / rich edit)
+    FLAG_PASSWORD = LI_TEXT_INPUT_FLAG_PASSWORD,  ///< The field hides its content (password box)
+    FLAG_MULTILINE = LI_TEXT_INPUT_FLAG_MULTILINE,  ///< The field accepts multiple lines (document / rich edit)
   };
 
   /**
@@ -62,7 +65,7 @@ namespace text_input {
 
 #pragma pack(pop)
 
-  static_assert(sizeof(payload_t) == 4, "text input payload must be 4 bytes");
+  static_assert(sizeof(payload_t) == LI_TEXT_INPUT_PAYLOAD_SIZE, "text input payload must be 4 bytes");
 
   /**
    * @brief Minimal description of a focused UI element used for classification.

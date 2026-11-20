@@ -5,9 +5,14 @@
 include(dependencies/Boost_Sunshine)
 
 # submodules
-# moonlight common library
+# moonlight common library: the one copy shared with the PC and Android clients
+get_filename_component(MOONLIGHT_COMMON_C_DIR "${CMAKE_SOURCE_DIR}/../common/moonlight-common-c" ABSOLUTE)
+get_filename_component(MOONLIGHT_COMMON_ROOT "${MOONLIGHT_COMMON_C_DIR}/.." ABSOLUTE)
+if(NOT EXISTS "${MOONLIGHT_COMMON_C_DIR}/enet/CMakeLists.txt")
+    message(FATAL_ERROR "common/moonlight-common-c/enet is missing, run: git submodule update --init --recursive")
+endif()
 set(ENET_NO_INSTALL ON CACHE BOOL "Don't install any libraries built for enet")
-add_subdirectory("${CMAKE_SOURCE_DIR}/third-party/moonlight-common-c/enet")
+add_subdirectory("${MOONLIGHT_COMMON_C_DIR}/enet" "${CMAKE_BINARY_DIR}/moonlight-common-c/enet")
 
 # web server
 add_subdirectory("${CMAKE_SOURCE_DIR}/third-party/Simple-Web-Server")

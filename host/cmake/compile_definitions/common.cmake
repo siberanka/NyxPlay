@@ -53,10 +53,11 @@ file(GLOB NVENC_SOURCES CONFIGURE_DEPENDS "src/nvenc/*.cpp" "src/nvenc/*.h")
 list(APPEND PLATFORM_TARGET_FILES ${NVENC_SOURCES})
 
 set(SUNSHINE_TARGET_FILES
-        "${CMAKE_SOURCE_DIR}/third-party/moonlight-common-c/src/Input.h"
-        "${CMAKE_SOURCE_DIR}/third-party/moonlight-common-c/src/Rtsp.h"
-        "${CMAKE_SOURCE_DIR}/src/rtsp_parser.c"
-        "${CMAKE_SOURCE_DIR}/third-party/moonlight-common-c/src/Video.h"
+        "${MOONLIGHT_COMMON_C_DIR}/src/Input.h"
+        "${MOONLIGHT_COMMON_C_DIR}/src/NyxExtensions.h"
+        "${MOONLIGHT_COMMON_C_DIR}/src/Rtsp.h"
+        "${MOONLIGHT_COMMON_C_DIR}/src/RtspParser.c"
+        "${MOONLIGHT_COMMON_C_DIR}/src/Video.h"
         "${CMAKE_SOURCE_DIR}/third-party/tray/src/tray.h"
         "${CMAKE_SOURCE_DIR}/src/update_check.cpp"
         "${CMAKE_SOURCE_DIR}/src/update_check.h"
@@ -147,7 +148,10 @@ include_directories(
         BEFORE
         SYSTEM
         "${CMAKE_SOURCE_DIR}/third-party"
-        "${CMAKE_SOURCE_DIR}/third-party/moonlight-common-c/enet/include"
+        # include_directories(BEFORE ...) reverses the order, so this lands in front of third-party
+        # and hides the old moonlight-common-c submodule there
+        "${MOONLIGHT_COMMON_ROOT}"
+        "${MOONLIGHT_COMMON_C_DIR}/enet/include"
         "${CMAKE_SOURCE_DIR}/third-party/nanors"
         "${CMAKE_SOURCE_DIR}/third-party/nanors/deps/obl"
         ${FFMPEG_INCLUDE_DIRS}

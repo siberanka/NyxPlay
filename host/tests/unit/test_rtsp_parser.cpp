@@ -78,9 +78,18 @@ TEST(RtspParser, MessageEndingInsideAValueIsMalformed) {
   EXPECT_EQ(parse("SETUP streamid=video/0/0 RTSP/1.0\r\nCSeq: 2", msg), RTSP_ERROR_MALFORMED);
   EXPECT_EQ(parse("SETUP streamid=video/0/0 RTSP/1.0\r\nCSeq: 2\r\nTransport: unicast", msg), RTSP_ERROR_MALFORMED);
   EXPECT_EQ(parse("OPTIONS / RTSP/1.0", msg), RTSP_ERROR_MALFORMED);
-  // An empty header value makes the bytes after the end marker the value of that header
-  EXPECT_EQ(parse("OPTIONS x RTSP/1.0\r\nFoo:\r\n\r\nBar", msg), RTSP_ERROR_MALFORMED);
   EXPECT_EQ(parse("", msg), RTSP_ERROR_MALFORMED);
+}
+
+TEST(RtspParser, EmptyHeaderValueEndsAtTheBlankLine) {
+  // The shared library parser ends the headers at the blank line, whatever the last value is;
+  // the bytes after it are the payload (the former host parser rejected such a message)
+  RTSP_MESSAGE msg;
+  ASSERT_EQ(parse("OPTIONS x RTSP/1.0\r\nFoo:\r\n\r\nBar", msg), RTSP_ERROR_SUCCESS);
+  EXPECT_EQ(option(msg, "Foo"), "");
+  ASSERT_NE(msg.payload, nullptr);
+  EXPECT_EQ(std::string(msg.payload, msg.payloadLength), "Bar");
+  freeMessage(&msg);
 }
 
 TEST(RtspParser, RepeatedHeaderKeepsTheLastValue) {

@@ -20,6 +20,7 @@
 extern "C" {
   // clang-format off
 #include <moonlight-common-c/src/Limelight-internal.h>
+#include <rs.h>  // host nanors: DATA_SHARDS_MAX and the codec type, must precede rswrapper.h
 #include "rswrapper.h"
   // clang-format on
 }
@@ -77,13 +78,13 @@ static const short packetTypes[] = {
   0x0302,  // IDR frame
   0x0001,  // fully encrypted
   0x010e,  // HDR mode
-  0x5500,  // Rumble triggers (Sunshine protocol extension)
-  0x5501,  // Set motion event (Sunshine protocol extension)
-  0x5502,  // Set RGB LED (Sunshine protocol extension)
-  0x3000,  // Execute Server Command (Apollo protocol extension)
-  0x3001,  // Set Clipboard (Apollo protocol extension)
-  0x3002,  // File transfer nonce request (Apollo protocol extension)
-  0x5503,  // Set Adaptive triggers (Sunshine protocol extension)
+  LI_PACKET_TYPE_RUMBLE_TRIGGERS,  // Rumble triggers (Sunshine protocol extension)
+  LI_PACKET_TYPE_SET_MOTION_EVENT,  // Set motion event (Sunshine protocol extension)
+  LI_PACKET_TYPE_SET_RGB_LED,  // Set RGB LED (Sunshine protocol extension)
+  LI_PACKET_TYPE_EXEC_SERVER_CMD,  // Execute Server Command (Apollo protocol extension)
+  LI_PACKET_TYPE_SET_CLIPBOARD,  // Set Clipboard (Apollo protocol extension)
+  LI_PACKET_TYPE_FILE_TRANSFER_NONCE_REQUEST,  // File transfer nonce request (Apollo protocol extension)
+  LI_PACKET_TYPE_SET_ADAPTIVE_TRIGGERS,  // Set Adaptive triggers (Sunshine protocol extension)
   text_input::PACKET_TYPE,  // Set text input state (NyxPlay protocol extension)
 };
 
