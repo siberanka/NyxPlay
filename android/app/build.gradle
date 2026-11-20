@@ -12,8 +12,8 @@ android {
         targetSdk 34
 
         // NyxPlay calendar versioning: YYYY.MM.DD.BUILD, versionCode = YYYYMMDDBB
-        versionName "2026.11.19.1"
-        versionCode = 2026111901
+        versionName "2026.11.20.1"
+        versionCode = 2026112001
 
         // Generate native debug symbols to allow Google Play to symbolicate our native crashes
         ndk.debugSymbolLevel = 'FULL'

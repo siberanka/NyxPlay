@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026.11.20.1
+
+### Added
+- **Update checks** in all three components. The host checks daily and shows a tray notice, the PC client shows a notice next to its toolbar button, and the Android app checks on the host list. Each uses GitHub with the GitLab mirror as fallback, and each can be turned off in the settings.
+- **One-click updates:**
+  - Host: from the tray or the Web UI dashboard. Installs silently through the service, keeps settings and paired devices, and waits for a running stream.
+  - PC client: from the notice or the taskbar/Start jump list. The portable folder is updated in place, with rollback on failure.
+  - Android: from the update dialog or the launcher shortcut, through the system package installer.
+- **Signed releases:** every update is checked against an Ed25519-signed `SHA256SUMS.txt` before it is installed.
+- **Installer:** re-running a newer installer explains that it updates and keeps settings. A new `/UPDATE` mode keeps component choices and refuses downgrades.
+- **PC portable package:** now includes the Visual C++ runtime, a README, and an integrity check that runs during packaging.
+
+### Security
+- Host, PC client and Android now share one copy of moonlight-common-c (`common/moonlight-common-c`), based on the latest upstream. It brings upstream hardening:
+  - bounded frame reassembly
+  - short ENet header handling
+  - controller packet lifetime
+  - replay windows
+  - STUN validation
+  - empty audio packets
+- Dependency updates:
+  - Android: Bouncy Castle 1.87 (CVE-2026-8763, CVE-2026-13506, CVE-2026-5598, CVE-2026-5588) and commons-lang3 3.18.0 (CVE-2025-48924).
+  - PC: Qt 6.12.1 (CVE-2026-116337, CVE-2026-105924).
+  - Host Web UI: vue-i18n 11.4.23 (GHSA-83rm-6c8r-g728).
+
+### Fixed
+- Host: the tray icon now appears when the host started before anyone logged on, and comes back after Explorer restarts.
+- Host service: the log names the cause when a missing or damaged DLL stops the host from starting.
+- PC client:
+  - starts even if an antivirus removed `AntiHooking.dll`, which is now loaded only from the application folder;
+  - portable mode is detected from the folder of `NyxPlay.exe`.
+- Host Web UI: the dashboard no longer reports the latest version when the release list could not be loaded, and it orders pre-releases correctly.
+
+### Known issues
+- 2026.11.19.1 and older do not contain the updater. Install 2026.11.20.1 manually once; later versions can be installed from inside the apps.
+
 ## 2026.11.19.1
 
 ### Added
