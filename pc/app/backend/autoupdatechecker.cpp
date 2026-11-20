@@ -1,5 +1,6 @@
 #include "autoupdatechecker.h"
 
+#include <QCoreApplication>
 #include <QNetworkReply>
 #include <QSysInfo>
 #include <QUrl>
@@ -23,15 +24,22 @@ AutoUpdateChecker::AutoUpdateChecker(QObject *parent) :
     m_CurrentVersion = currentVersion;
 }
 
-void AutoUpdateChecker::start()
+AutoUpdateChecker* AutoUpdateChecker::instance()
+{
+    static AutoUpdateChecker* checker = new AutoUpdateChecker(QCoreApplication::instance());
+    return checker;
+}
+
+void AutoUpdateChecker::start(bool userInitiated)
 {
     if (m_Nam || m_Reply) {
-        // Already running (or done)
+        // Already running
         return;
     }
+    m_UserInitiated = userInitiated;
 
 #if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN) || defined(STEAM_LINK) || defined(APP_IMAGE) // Only run update checker on platforms without auto-update
-    if (!StreamingPreferences::get()->checkForUpdates) {
+    if (!userInitiated && !StreamingPreferences::get()->checkForUpdates) {
         qDebug() << "Update checking is disabled in the settings";
         return;
     }
@@ -84,6 +92,7 @@ void AutoUpdateChecker::fetchNext()
 {
     if (m_NextUrl >= m_Urls.count()) {
         finish();
+        emit checkFinished(false, true);
         return;
     }
 
@@ -155,11 +164,14 @@ void AutoUpdateChecker::handleFinished()
     if (result.status == UpdateLogic::Status::UpdateAvailable) {
         qDebug() << "Update available:" << result.version;
         finish();
+        emit updateFound(result);
         emit onUpdateAvailable(result.version, result.url);
+        emit checkFinished(true, false);
     }
     else {
         qDebug() << "Already running the latest version";
         finish();
+        emit checkFinished(false, false);
     }
 }
 

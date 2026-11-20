@@ -7,6 +7,7 @@
 #include <QJsonValue>
 #include <QString>
 #include <QStringList>
+#include <QUrl>
 #include <QVector>
 
 #include "updateurl.h"
@@ -93,11 +94,106 @@ enum class Status {
     UpdateAvailable
 };
 
+// Largest portable package the client will download.
+constexpr qint64 MaxPackageBytes = 300LL * 1024 * 1024;
+
+// Everything needed to install an update in place. Only filled when the manifest entry carries
+// valid "tag", "asset_url" and "asset_size" fields; older clients ignore these fields.
+struct Package {
+    QString tag;        // "v2026.11.19.1"
+    QString assetName;  // "NyxPlayPC-2026.11.19.1-windows-x64-portable.zip"
+    QUrl assetUrl;
+    qint64 assetSize = 0;
+    bool valid() const { return !assetName.isEmpty(); }
+};
+
 struct Result {
     Status status = Status::Malformed;
     QString version;
     QString url;
+    Package package;
 };
+
+// Package architecture label used in the asset name.
+inline QString packageArch(const QString& cpuArch)
+{
+    if (cpuArch == QLatin1String("x86_64")) {
+        return QStringLiteral("x64");
+    }
+    if (cpuArch == QLatin1String("arm64")) {
+        return QStringLiteral("arm64");
+    }
+    return QString();
+}
+
+// Name of the portable package of a release.
+inline QString packageAssetName(const QString& version, const QString& cpuArch)
+{
+    const QString arch = packageArch(cpuArch);
+    return arch.isEmpty() ? QString()
+                          : QStringLiteral("NyxPlayPC-%1-windows-%2-portable.zip").arg(version, arch);
+}
+
+// Accepts only the two release asset locations of the project: GitHub
+// ".../releases/download/<tag>/<name>" and the GitLab mirror ".../-/releases/<tag>/downloads/<name>".
+inline bool isTrustedAssetUrl(const QUrl& url, const QString& tag, const QString& assetName)
+{
+    QString normalized;
+    if (!normalizeTrustedUpdateUrl(url.toString(QUrl::FullyEncoded), &normalized)) {
+        return false;
+    }
+    if (!url.query().isEmpty() || url.hasFragment()) {
+        return false;
+    }
+    const QString path = QUrl(normalized).path();
+    const QString github = QStringLiteral("/siberanka/NyxPlay/releases/download/%1/%2").arg(tag, assetName);
+    const QString gitlab = QStringLiteral("/siberanka/NyxPlay/-/releases/%1/downloads/%2").arg(tag, assetName);
+    return (url.host() == QLatin1String("github.com") && path == github) ||
+           (url.host() == QLatin1String("gitlab.com") && path == gitlab);
+}
+
+// Location of a sibling file of the same release (SHA256SUMS.txt, SHA256SUMS.txt.sig).
+inline QUrl releaseFileUrl(const Package& package, const QString& fileName)
+{
+    QUrl url = package.assetUrl;
+    QString path = url.path();
+    path.truncate(path.lastIndexOf(QLatin1Char('/')) + 1);
+    url.setPath(path + fileName);
+    return url;
+}
+
+// Validates the install fields of a manifest entry; an invalid or absent set only disables
+// the in-place install, the notice and the release page link keep working.
+inline Package parsePackage(const QJsonObject& obj, const QString& version, const QString& cpuArch)
+{
+    Package package;
+    const QJsonValue tagValue = obj.value(QLatin1String("tag"));
+    const QJsonValue urlValue = obj.value(QLatin1String("asset_url"));
+    const QJsonValue sizeValue = obj.value(QLatin1String("asset_size"));
+    if (!tagValue.isString() || !urlValue.isString() || !sizeValue.isDouble()) {
+        return package;
+    }
+
+    const QString trimmedVersion = version.trimmed();
+    const QString tag = tagValue.toString();
+    const QString name = packageAssetName(trimmedVersion, cpuArch);
+    const double size = sizeValue.toDouble();
+    if (name.isEmpty() || tag != QLatin1Char('v') + trimmedVersion ||
+            !(size >= 1 && size <= double(MaxPackageBytes)) || size != double(qint64(size))) {
+        return package;
+    }
+
+    QUrl url(urlValue.toString(), QUrl::StrictMode);
+    if (!url.isValid() || !isTrustedAssetUrl(url, tag, name)) {
+        return package;
+    }
+
+    package.tag = tag;
+    package.assetName = name;
+    package.assetUrl = url;
+    package.assetSize = qint64(size);
+    return package;
+}
 
 // A failed or unusable primary manifest should be retried against the mirror.
 inline bool shouldTryFallback(Status status)
@@ -179,6 +275,9 @@ inline Result evaluateManifest(const QByteArray& body,
         result.status = Status::UpdateAvailable;
         result.version = versionValue.toString().trimmed();
         result.url = trustedUrl;
+        if (platform == QLatin1String("windows")) {
+            result.package = parsePackage(obj, result.version, arch);
+        }
         return result;
     }
 

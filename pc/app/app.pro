@@ -200,6 +200,10 @@ SOURCES += \
     streaming/bandwidth.cpp \
     streaming/streamutils.cpp \
     backend/autoupdatechecker.cpp \
+    backend/updatecommand.cpp \
+    backend/updateinstaller.cpp \
+    backend/updateinstaller_app.cpp \
+    backend/jumplist.cpp \
     backend/releaseverify.cpp \
     path.cpp \
     settings/mappingmanager.cpp \
@@ -241,6 +245,9 @@ HEADERS += \
     streaming/bandwidth.h \
     streaming/streamutils.h \
     backend/autoupdatechecker.h \
+    backend/updatecommand.h \
+    backend/updateinstaller.h \
+    backend/jumplist.h \
     backend/updateurl.h \
     backend/releaseverify.h \
     backend/updatelogic.h \
@@ -397,6 +404,14 @@ config_SL {
 }
 win32 {
     HEADERS += streaming/video/ffmpeg-renderers/dxutil.h
+}
+win32 {
+    # In-place update of the portable client: staging and the file replacement logic that
+    # NyxPlayUpdater.exe shares. QZipReader is a private Qt API of QtCore.
+    QT += core-private
+    SOURCES += backend/updatestage.cpp ../updater/applyupdate.cpp
+    HEADERS += backend/updatestage.h ../updater/applyupdate.h
+    LIBS += -lversion -lpropsys -lole32 -lshell32 -luuid -ladvapi32
 }
 win32:!winrt {
     message(DXVA2 and D3D11VA renderers selected)

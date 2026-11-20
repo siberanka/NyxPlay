@@ -15,6 +15,9 @@
 #include <QElapsedTimer>
 #include <QTemporaryFile>
 #include <QRegularExpression>
+#include <QTimer>
+#include <QFileInfo>
+#include <QWindow>
 
 #include <chrono>
 #include <cstdlib>
@@ -53,6 +56,9 @@
 #include "gui/computermodel.h"
 #include "gui/appmodel.h"
 #include "backend/autoupdatechecker.h"
+#include "backend/jumplist.h"
+#include "backend/updatecommand.h"
+#include "backend/updateinstaller.h"
 #include "backend/computermanager.h"
 #include "backend/moonlightimport.h"
 #include "backend/systemproperties.h"
@@ -451,6 +457,31 @@ static bool loadAntiHookingProtection()
 }
 #endif
 
+// Folder of the running executable; empty if it cannot be determined (needs no QCoreApplication).
+static QString executableDirectory()
+{
+#ifdef Q_OS_WIN32
+    std::wstring path(1024, L'\0');
+    for (;;) {
+        DWORD length = GetModuleFileNameW(nullptr, &path[0], (DWORD)path.size());
+        if (length == 0) {
+            return QString();
+        }
+        if (length < path.size()) {
+            path.resize(length);
+            break;
+        }
+        if (path.size() >= 32768) {
+            return QString();
+        }
+        path.resize(path.size() * 2);
+    }
+    return QFileInfo(QString::fromStdWString(path)).absolutePath();
+#else
+    return QString();
+#endif
+}
+
 int main(int argc, char *argv[])
 {
 #ifdef Q_OS_WIN32
@@ -470,13 +501,16 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationDomain("nyxplay.siberanka");
     QCoreApplication::setApplicationName("NyxPlay");
 
-    if (QFile(QDir::currentPath() + "/portable.dat").exists()) {
+    // The portable marker is looked up next to the executable on Windows: shortcuts, jump list tasks
+    // and the updater start NyxPlay with another working directory.
+    const QString portableDir = Path::findPortableDir(executableDirectory(), QDir::currentPath());
+    if (!portableDir.isEmpty()) {
         QSettings::setDefaultFormat(QSettings::IniFormat);
-        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, QDir::currentPath());
-        QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, QDir::currentPath());
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, portableDir);
+        QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, portableDir);
 
         // Initialize paths for portable mode
-        Path::initialize(true);
+        Path::initialize(true, portableDir);
     }
     else {
         // Initialize paths for standard installation
@@ -859,8 +893,19 @@ int main(int argc, char *argv[])
     }
 #endif
 
+    // --check-update and --install-update (jump list tasks) go to the instance that already runs from this
+    // folder; without one, this instance carries the command out after it has started.
+    QStringList commandLineArguments = app.arguments();
+    const UpdateCommand::Command updateCommand = UpdateCommand::extract(commandLineArguments);
+    const QString updateServerName = UpdateCommand::serverName(UpdateCommand::currentUserSid(),
+                                                               QCoreApplication::applicationDirPath());
+    if (updateCommand != UpdateCommand::Command::None &&
+            UpdateCommand::sendToRunningInstance(updateServerName, updateCommand)) {
+        return 0;
+    }
+
     GlobalCommandLineParser parser;
-    GlobalCommandLineParser::ParseResult commandLineParserResult = parser.parse(app.arguments());
+    GlobalCommandLineParser::ParseResult commandLineParserResult = parser.parse(commandLineArguments);
     switch (commandLineParserResult) {
     case GlobalCommandLineParser::ListRequested:
         // Don't log to the console since it will jumble the command output
@@ -998,8 +1043,17 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonType<AutoUpdateChecker>("AutoUpdateChecker", 1, 0,
                                                 "AutoUpdateChecker",
                                                 [](QQmlEngine*, QJSEngine*) -> QObject* {
-                                                    return new AutoUpdateChecker();
+                                                    QObject* checker = AutoUpdateChecker::instance();
+                                                    QQmlEngine::setObjectOwnership(checker, QQmlEngine::CppOwnership);
+                                                    return checker;
                                                 });
+    qmlRegisterSingletonType<UpdateInstaller>("UpdateInstaller", 1, 0,
+                                              "UpdateInstaller",
+                                              [](QQmlEngine*, QJSEngine*) -> QObject* {
+                                                  QObject* installer = UpdateInstaller::instance();
+                                                  QQmlEngine::setObjectOwnership(installer, QQmlEngine::CppOwnership);
+                                                  return installer;
+                                              });
     qmlRegisterSingletonType<SystemProperties>("SystemProperties", 1, 0,
                                                "SystemProperties",
                                                [](QQmlEngine*, QJSEngine*) -> QObject* {
@@ -1100,6 +1154,45 @@ int main(int argc, char *argv[])
         engine.load(QUrl(QStringLiteral("qrc:/gui/main.qml")));
         if (engine.rootObjects().isEmpty())
             return -1;
+    }
+
+    // Updates are only managed by a regular GUI start, not by the scripted commands
+    UpdateCommand::Server updateServer;
+    if (hasGUI && commandLineParserResult == GlobalCommandLineParser::NormalStartRequested) {
+        UpdateInstaller* installer = UpdateInstaller::instance();
+        installer->setStreamProbe([]() { return Session::get() != nullptr; });
+        installer->startupMaintenance();
+
+#ifdef Q_OS_WIN32
+        auto refreshJumpList = [installer]() {
+            JumpList::update(installer->canInstall() ? installer->version() : QString());
+        };
+        QObject::connect(installer, &UpdateInstaller::offerChanged, &app, refreshJumpList);
+        refreshJumpList();
+#endif
+
+        auto handleCommand = [&app, installer](UpdateCommand::Command command) {
+            // Bring the window back first: the command comes from the taskbar
+            const QWindowList windows = app.topLevelWindows();
+            if (!windows.isEmpty() && Session::get() == nullptr) {
+                QWindow* window = windows.first();
+                if (window->windowStates() & Qt::WindowMinimized) {
+                    window->showNormal();
+                }
+                else {
+                    window->show();
+                }
+                window->raise();
+                window->requestActivate();
+            }
+            installer->checkNow(command == UpdateCommand::Command::InstallUpdate);
+        };
+        if (updateServer.listen(updateServerName)) {
+            QObject::connect(&updateServer, &UpdateCommand::Server::commandReceived, &app, handleCommand);
+        }
+        if (updateCommand != UpdateCommand::Command::None) {
+            QTimer::singleShot(0, &app, [handleCommand, updateCommand]() { handleCommand(updateCommand); });
+        }
     }
 
     int err = app.exec();

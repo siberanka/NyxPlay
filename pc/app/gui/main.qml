@@ -6,6 +6,7 @@ import QtQuick.Controls.Material 2.2
 
 import ComputerManager 1.0
 import AutoUpdateChecker 1.0
+import UpdateInstaller 1.0
 import StreamingPreferences 1.0
 import SystemProperties 1.0
 import SdlGamepadKeyNavigation 1.0
@@ -344,7 +345,10 @@ ApplicationWindow {
                 visible: false
 
                 onClicked: {
-                    if (SystemProperties.hasBrowser) {
+                    if (UpdateInstaller.canInstall) {
+                        updateMenu.open()
+                    }
+                    else if (SystemProperties.hasBrowser) {
                         Qt.openUrlExternally(browserUrl);
                     }
                 }
@@ -474,35 +478,105 @@ ApplicationWindow {
 
     // Non-modal, dismissible notice shown once per new version. It never takes the focus by itself;
     // it is reachable with the Down key (or gamepad) from the update button in the toolbar.
+    // It also shows the progress of an in-place update and asks before restarting.
     Popup {
         id: updateNotice
         x: window.width - width - 10
         y: 10
-        width: Math.min(360, window.width - 20)
+        width: Math.min(380, window.width - 20)
         modal: false
         focus: false
         closePolicy: Popup.NoAutoClose
         padding: 12
 
+        property int installState: UpdateInstaller.state
+        property bool busy: installState === UpdateInstaller.Downloading ||
+                            installState === UpdateInstaller.Verifying ||
+                            installState === UpdateInstaller.Extracting ||
+                            installState === UpdateInstaller.Restarting
+        property bool failed: installState === UpdateInstaller.Failed
+        property bool folderProblem: failed && (UpdateInstaller.error === UpdateInstaller.NotWritable ||
+                                                UpdateInstaller.error === UpdateInstaller.NotInstallable)
+
         function dismiss() {
-            StreamingPreferences.dismissUpdateNotice(updateButton.newVersion)
+            if (installState === UpdateInstaller.Available) {
+                StreamingPreferences.dismissUpdateNotice(updateButton.newVersion)
+            }
+            else if (failed) {
+                UpdateInstaller.dismissError()
+            }
             close()
             updateButton.forceActiveFocus(Qt.TabFocus)
+        }
+
+        function errorText(code) {
+            switch (code) {
+            case UpdateInstaller.NotWritable:
+                return qsTr("NyxPlay cannot update itself because its folder is not writable. Download the new version from the release page instead.")
+            case UpdateInstaller.NoConnection:
+                return qsTr("No connection. Check your network and try again.")
+            case UpdateInstaller.DownloadFailed:
+                return qsTr("The download failed.")
+            case UpdateInstaller.VerifyFailed:
+                return qsTr("The download could not be verified and was deleted.")
+            case UpdateInstaller.NoSpace:
+                return qsTr("Not enough disk space.")
+            case UpdateInstaller.PackageInvalid:
+                return qsTr("The update package is incomplete and was deleted.")
+            case UpdateInstaller.LaunchFailed:
+                return qsTr("The updater could not be started.")
+            case UpdateInstaller.Busy:
+                return qsTr("Another NyxPlay window is already installing an update.")
+            default:
+                return qsTr("This update cannot be installed from inside NyxPlay. Download it from the release page.")
+            }
+        }
+
+        function bodyText() {
+            switch (installState) {
+            case UpdateInstaller.WaitingForStream:
+                return qsTr("The update continues after the stream ends.")
+            case UpdateInstaller.Downloading:
+                return qsTr("Downloading… (%1 %)").arg(UpdateInstaller.progress)
+            case UpdateInstaller.Verifying:
+                return qsTr("Verifying…")
+            case UpdateInstaller.Extracting:
+                return qsTr("Preparing the update…")
+            case UpdateInstaller.ReadyToRestart:
+                return qsTr("Restart now to finish the update?")
+            case UpdateInstaller.Restarting:
+                return qsTr("Restarting…")
+            case UpdateInstaller.Failed:
+                return errorText(UpdateInstaller.error)
+            default:
+                return UpdateInstaller.canInstall
+                        ? qsTr("A newer version of NyxPlay is available. Your settings and pairings are kept.")
+                        : qsTr("A newer version of NyxPlay is available. You can download it from the releases page.")
+            }
         }
 
         contentItem: ColumnLayout {
             spacing: 10
 
             Label {
-                text: qsTr("Update available for NyxPlay: Version %1").arg(updateButton.newVersion)
+                text: updateNotice.installState === UpdateInstaller.ReadyToRestart
+                      ? qsTr("Update ready: NyxPlay %1").arg(updateButton.newVersion)
+                      : qsTr("Update available for NyxPlay: Version %1").arg(updateButton.newVersion)
                 font.bold: true
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
 
             Label {
-                text: qsTr("A newer version of NyxPlay is available. You can download it from the releases page.")
+                text: updateNotice.bodyText()
                 wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+
+            ProgressBar {
+                visible: updateNotice.installState === UpdateInstaller.Downloading
+                value: UpdateInstaller.progress / 100
+                indeterminate: UpdateInstaller.progress === 0
                 Layout.fillWidth: true
             }
 
@@ -512,9 +586,10 @@ ApplicationWindow {
 
                 Button {
                     id: updateNoticeDismiss
-                    text: qsTr("Dismiss")
+                    text: updateNotice.installState === UpdateInstaller.ReadyToRestart ? qsTr("Later") : qsTr("Dismiss")
                     flat: true
                     activeFocusOnTab: true
+                    visible: !updateNotice.busy && updateNotice.installState !== UpdateInstaller.WaitingForStream
 
                     onClicked: updateNotice.dismiss()
                     Keys.onReturnPressed: clicked()
@@ -525,10 +600,28 @@ ApplicationWindow {
                 }
 
                 Button {
+                    id: updateNoticeCancel
+                    text: qsTr("Cancel")
+                    flat: true
+                    activeFocusOnTab: true
+                    visible: updateNotice.installState === UpdateInstaller.Downloading ||
+                             updateNotice.installState === UpdateInstaller.WaitingForStream
+
+                    onClicked: UpdateInstaller.cancel()
+                    Keys.onReturnPressed: clicked()
+                    Keys.onEnterPressed: clicked()
+                    Keys.onEscapePressed: clicked()
+                    Keys.onUpPressed: updateButton.forceActiveFocus(Qt.TabFocus)
+                }
+
+                Button {
                     id: updateNoticeDownload
                     text: qsTr("Download")
                     activeFocusOnTab: true
-                    visible: SystemProperties.hasBrowser
+                    visible: SystemProperties.hasBrowser && !updateNotice.busy &&
+                             updateNotice.installState !== UpdateInstaller.WaitingForStream &&
+                             updateNotice.installState !== UpdateInstaller.ReadyToRestart &&
+                             (!UpdateInstaller.canInstall || updateNotice.folderProblem)
 
                     onClicked: {
                         Qt.openUrlExternally(updateButton.browserUrl)
@@ -540,7 +633,128 @@ ApplicationWindow {
                     Keys.onLeftPressed: updateNoticeDismiss.forceActiveFocus(Qt.TabFocus)
                     Keys.onUpPressed: updateButton.forceActiveFocus(Qt.TabFocus)
                 }
+
+                Button {
+                    id: updateNoticeInstall
+                    text: updateNotice.failed ? qsTr("Try again") : qsTr("Install update")
+                    activeFocusOnTab: true
+                    visible: UpdateInstaller.canInstall && !updateNotice.folderProblem &&
+                             (updateNotice.installState === UpdateInstaller.Available || updateNotice.failed)
+
+                    onClicked: UpdateInstaller.install()
+                    Keys.onReturnPressed: clicked()
+                    Keys.onEnterPressed: clicked()
+                    Keys.onEscapePressed: updateNoticeDismiss.clicked()
+                    Keys.onLeftPressed: updateNoticeDismiss.forceActiveFocus(Qt.TabFocus)
+                    Keys.onUpPressed: updateButton.forceActiveFocus(Qt.TabFocus)
+                }
+
+                Button {
+                    id: updateNoticeRestart
+                    text: qsTr("Restart now")
+                    activeFocusOnTab: true
+                    visible: updateNotice.installState === UpdateInstaller.ReadyToRestart
+
+                    onClicked: UpdateInstaller.restartNow()
+                    Keys.onReturnPressed: clicked()
+                    Keys.onEnterPressed: clicked()
+                    Keys.onEscapePressed: updateNoticeDismiss.clicked()
+                    Keys.onLeftPressed: updateNoticeDismiss.forceActiveFocus(Qt.TabFocus)
+                    Keys.onUpPressed: updateButton.forceActiveFocus(Qt.TabFocus)
+                }
             }
+        }
+    }
+
+    NavigableMessageDialog {
+        id: updateInfoDialog
+        standardButtons: Dialog.Ok
+    }
+
+    NavigableMenu {
+        id: updateMenu
+        initiator: updateButton
+        y: updateButton.height
+
+        NavigableMenuItem {
+            text: qsTr("Install update %1").arg(updateButton.newVersion)
+            visible: UpdateInstaller.canInstall &&
+                     (UpdateInstaller.state === UpdateInstaller.Available || UpdateInstaller.state === UpdateInstaller.Failed)
+            height: visible ? implicitHeight : 0
+            onTriggered: {
+                updateNotice.open()
+                UpdateInstaller.install()
+            }
+        }
+        NavigableMenuItem {
+            text: qsTr("Restart now")
+            visible: UpdateInstaller.state === UpdateInstaller.ReadyToRestart
+            height: visible ? implicitHeight : 0
+            onTriggered: updateNotice.open()
+        }
+        NavigableMenuItem {
+            text: qsTr("Show details")
+            visible: updateNotice.busy || UpdateInstaller.state === UpdateInstaller.WaitingForStream
+            height: visible ? implicitHeight : 0
+            onTriggered: updateNotice.open()
+        }
+        NavigableMenuItem {
+            text: qsTr("Check for updates")
+            onTriggered: UpdateInstaller.checkNow(false)
+        }
+        NavigableMenuItem {
+            text: qsTr("Download")
+            visible: SystemProperties.hasBrowser && updateButton.browserUrl !== ""
+            height: visible ? implicitHeight : 0
+            onTriggered: Qt.openUrlExternally(updateButton.browserUrl)
+        }
+    }
+
+    Connections {
+        target: UpdateInstaller
+
+        function onStateChanged() {
+            // Progress, errors and the restart question are always shown to the user
+            if (UpdateInstaller.state === UpdateInstaller.ReadyToRestart ||
+                    UpdateInstaller.state === UpdateInstaller.Failed ||
+                    UpdateInstaller.state === UpdateInstaller.Downloading ||
+                    UpdateInstaller.state === UpdateInstaller.WaitingForStream) {
+                updateNotice.open()
+            }
+        }
+
+        function onCheckReported(available, failed) {
+            if (available) {
+                updateNotice.open()
+            }
+            else {
+                updateInfoDialog.text = failed ? qsTr("The update check failed. Check your network and try again.")
+                                               : qsTr("NyxPlay is up to date.")
+                updateInfoDialog.open()
+            }
+        }
+
+        function onLastResultChanged() {
+            var parts = UpdateInstaller.lastResult.split("|")
+            if (parts[0] === "ok") {
+                updateInfoDialog.text = qsTr("NyxPlay was updated to version %1.").arg(parts[1])
+            }
+            else if (parts[0] === "failed") {
+                var reasons = {
+                    "locked": qsTr("A file was in use."),
+                    "write-failed": qsTr("A file could not be written."),
+                    "stage-invalid": qsTr("The update package was incomplete."),
+                    "wait-timeout": qsTr("NyxPlay did not close in time."),
+                    "rollback-incomplete": qsTr("Some files could not be restored. Download NyxPlay again from the release page.")
+                }
+                updateInfoDialog.text = qsTr("The update could not be installed and the previous version was restored.") + "\n" +
+                        (reasons[parts[1]] !== undefined ? reasons[parts[1]] : qsTr("The update failed."))
+            }
+            else {
+                return
+            }
+            updateInfoDialog.open()
+            UpdateInstaller.clearLastResult()
         }
     }
 

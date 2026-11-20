@@ -1424,5 +1424,156 @@
         <source>Enter the IP address of your host PC:</source>
         <translation>Host bilgisayarınızın IP adresini girin:</translation>
     </message>
+    <message>
+        <source>NyxPlay cannot update itself because its folder is not writable. Download the new version from the release page instead.</source>
+        <translation>NyxPlay klasörü yazılabilir olmadığı için kendini güncelleyemiyor. Bunun yerine yeni sürümü sürümler sayfasından indirin.</translation>
+    </message>
+    <message>
+        <source>No connection. Check your network and try again.</source>
+        <translation>Bağlantı yok. Ağınızı kontrol edip yeniden deneyin.</translation>
+    </message>
+    <message>
+        <source>The download failed.</source>
+        <translation>İndirme başarısız oldu.</translation>
+    </message>
+    <message>
+        <source>The download could not be verified and was deleted.</source>
+        <translation>İndirilen dosya doğrulanamadı ve silindi.</translation>
+    </message>
+    <message>
+        <source>Not enough disk space.</source>
+        <translation>Yeterli disk alanı yok.</translation>
+    </message>
+    <message>
+        <source>The update package is incomplete and was deleted.</source>
+        <translation>Güncelleme paketi eksik ve silindi.</translation>
+    </message>
+    <message>
+        <source>The updater could not be started.</source>
+        <translation>Güncelleyici başlatılamadı.</translation>
+    </message>
+    <message>
+        <source>This update cannot be installed from inside NyxPlay. Download it from the release page.</source>
+        <translation>Bu güncelleme NyxPlay içinden yüklenemiyor. Sürümler sayfasından indirin.</translation>
+    </message>
+    <message>
+        <source>The update continues after the stream ends.</source>
+        <translation>Güncelleme yayın bittikten sonra devam edecek.</translation>
+    </message>
+    <message>
+        <source>Downloading… (%1 %)</source>
+        <translation>İndiriliyor… (%1 %)</translation>
+    </message>
+    <message>
+        <source>Verifying…</source>
+        <translation>Doğrulanıyor…</translation>
+    </message>
+    <message>
+        <source>Preparing the update…</source>
+        <translation>Güncelleme hazırlanıyor…</translation>
+    </message>
+    <message>
+        <source>Restart now to finish the update?</source>
+        <translation>Güncellemeyi tamamlamak için şimdi yeniden başlatılsın mı?</translation>
+    </message>
+    <message>
+        <source>Restarting…</source>
+        <translation>Yeniden başlatılıyor…</translation>
+    </message>
+    <message>
+        <source>A newer version of NyxPlay is available. Your settings and pairings are kept.</source>
+        <translation>NyxPlay&apos;in daha yeni bir sürümü mevcut. Ayarlarınız ve eşleştirmeleriniz korunur.</translation>
+    </message>
+    <message>
+        <source>Update ready: NyxPlay %1</source>
+        <translation>Güncelleme hazır: NyxPlay %1</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>Sonra</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>İptal</translation>
+    </message>
+    <message>
+        <source>Another NyxPlay window is already installing an update.</source>
+        <translation>Başka bir NyxPlay penceresi zaten güncelleme yüklüyor.</translation>
+    </message>
+    <message>
+        <source>Try again</source>
+        <translation>Yeniden dene</translation>
+    </message>
+    <message>
+        <source>Install update</source>
+        <translation>Güncellemeyi yükle</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>Şimdi yeniden başlat</translation>
+    </message>
+    <message>
+        <source>Install update %1</source>
+        <translation>%1 güncellemesini yükle</translation>
+    </message>
+    <message>
+        <source>Show details</source>
+        <translation>Ayrıntıları göster</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>Güncellemeleri denetle</translation>
+    </message>
+    <message>
+        <source>The update check failed. Check your network and try again.</source>
+        <translation>Güncelleme denetimi başarısız oldu. Ağınızı kontrol edip yeniden deneyin.</translation>
+    </message>
+    <message>
+        <source>NyxPlay is up to date.</source>
+        <translation>NyxPlay güncel.</translation>
+    </message>
+    <message>
+        <source>NyxPlay was updated to version %1.</source>
+        <translation>NyxPlay %1 sürümüne güncellendi.</translation>
+    </message>
+    <message>
+        <source>A file was in use.</source>
+        <translation>Bir dosya kullanımdaydı.</translation>
+    </message>
+    <message>
+        <source>A file could not be written.</source>
+        <translation>Bir dosya yazılamadı.</translation>
+    </message>
+    <message>
+        <source>The update package was incomplete.</source>
+        <translation>Güncelleme paketi eksikti.</translation>
+    </message>
+    <message>
+        <source>NyxPlay did not close in time.</source>
+        <translation>NyxPlay zamanında kapanmadı.</translation>
+    </message>
+    <message>
+        <source>Some files could not be restored. Download NyxPlay again from the release page.</source>
+        <translation>Bazı dosyalar geri yüklenemedi. NyxPlay&apos;i sürümler sayfasından yeniden indirin.</translation>
+    </message>
+    <message>
+        <source>The update could not be installed and the previous version was restored.</source>
+        <translation>Güncelleme yüklenemedi ve önceki sürüm geri yüklendi.</translation>
+    </message>
+    <message>
+        <source>The update failed.</source>
+        <translation>Güncelleme başarısız oldu.</translation>
+    </message>
+</context>
+<context>
+    <name>JumpList</name>
+    <message>
+        <source>Install update %1</source>
+        <translation>%1 güncellemesini yükle</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>Güncellemeleri denetle</translation>
+    </message>
 </context>
 </TS>

@@ -1094,6 +1094,8 @@ static int runSuite(int argc, char** argv)
     return QTest::qExec(&suite, args);
 }
 
+int runUpdateSuites(int argc, char** argv);
+
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
@@ -1106,6 +1108,7 @@ int main(int argc, char** argv)
     status |= runSuite<UpdateLogicTest>(argc, argv);
     status |= runSuite<MoonlightImportTest>(argc, argv);
     status |= runSuite<ReleaseVerifyTest>(argc, argv);
+    status |= runUpdateSuites(argc, argv);
     return status;
 }
 

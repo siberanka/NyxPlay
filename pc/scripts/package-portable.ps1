@@ -72,6 +72,7 @@ $stage = Join-Path $OutDir 'stage'
 $zipPath = Join-Path $OutDir "NyxPlayPC-$version-windows-$Arch-portable.zip"
 $exeSrc = Join-Path $BuildDir 'app\release\NyxPlay.exe'
 $ahSrc = Join-Path $BuildDir 'AntiHooking\release\AntiHooking.dll'
+$updSrc = Join-Path $BuildDir 'updater\release\NyxPlayUpdater.exe'
 $libDir = Join-Path $pcRoot "libs\windows\lib\$Arch"
 $errors = New-Object System.Collections.Generic.List[string]
 
@@ -180,7 +181,7 @@ function Test-PackageIntegrity([string]$stageDir) {
     $problems = New-Object System.Collections.Generic.List[string]
     $root = (Resolve-Path -LiteralPath $stageDir).Path
     $required = @(
-        'NyxPlay.exe', 'AntiHooking.dll', 'portable.dat', 'README.txt', 'LICENSE', 'CREDITS.md', 'THIRD-PARTY-NOTICES.txt',
+        'NyxPlay.exe', 'NyxPlayUpdater.exe', 'package-files.txt', 'AntiHooking.dll', 'portable.dat', 'README.txt', 'LICENSE', 'CREDITS.md', 'THIRD-PARTY-NOTICES.txt',
         'licenses\LGPL-3.0.txt', 'licenses\LGPL-2.1.txt', 'licenses\MIT-Microsoft-Detours.txt', 'gamecontrollerdb.txt',
         'Qt6Core.dll', 'Qt6Gui.dll', 'Qt6Qml.dll', 'Qt6Quick.dll', 'Qt6QuickControls2.dll', 'Qt6Network.dll', 'Qt6Svg.dll',
         'SDL2.dll', 'avcodec-63.dll', 'libssl-3-x64.dll', 'libcrypto-3-x64.dll',
@@ -191,6 +192,26 @@ function Test-PackageIntegrity([string]$stageDir) {
     )
     foreach ($r in $required) {
         if (-not (Test-Path -LiteralPath (Join-Path $root $r) -PathType Leaf)) { $problems.Add("Required file missing: $r") }
+    }
+    $listFile = Join-Path $root 'package-files.txt'
+    if (Test-Path -LiteralPath $listFile -PathType Leaf) {
+        $expected = @(Get-Content -LiteralPath $listFile -Encoding UTF8 | Where-Object { $_ })
+        $actual = @(Get-ChildItem -LiteralPath $root -Recurse -File |
+            ForEach-Object { $_.FullName.Substring($root.Length + 1).Replace('\', '/') } |
+            Where-Object { $_ -ne 'package-files.txt' -and $_ -ne 'portable.dat' -and $_ -notlike 'boxart/*' })
+        foreach ($d in @(Compare-Object -ReferenceObject $expected -DifferenceObject $actual)) {
+            $why = if ($d.SideIndicator -eq '<=') { 'listed but missing' } else { 'present but not listed' }
+            $problems.Add("package-files.txt does not match the package: $($d.InputObject) ($why)")
+        }
+    }
+    $upd = Join-Path $root 'NyxPlayUpdater.exe'
+    if (Test-Path -LiteralPath $upd) {
+        $uv = (Get-Item -LiteralPath $upd).VersionInfo.ProductVersion
+        if ($uv -ne $version) { $problems.Add("NyxPlayUpdater.exe ProductVersion '$uv' does not match version.txt '$version'") }
+        # The updater runs from a private copy outside the install folder, so it may only need Windows system DLLs
+        foreach ($imp in (Get-ImportNames $upd)) {
+            if (-not (Test-SystemDll $imp)) { $problems.Add("NyxPlayUpdater.exe imports $imp, which is not a Windows system DLL (link the runtime statically)") }
+        }
     }
     $missing = @{}
     $present = @{}
@@ -234,7 +255,7 @@ if (-not $VcRuntimeDir) {
 if (-not $VcRuntimeDir -or -not (Test-Path -LiteralPath $VcRuntimeDir -PathType Container)) {
     throw 'Pass -VcRuntimeDir (Redist\MSVC\<version>\<arch>\Microsoft.VC143.CRT): the package ships the Visual C++ runtime next to NyxPlay.exe.'
 }
-foreach ($p in @($exeSrc, $ahSrc, (Join-Path $QtBin 'windeployqt.exe'), $libDir)) {
+foreach ($p in @($exeSrc, $ahSrc, $updSrc, (Join-Path $QtBin 'windeployqt.exe'), $libDir)) {
     if (-not (Test-Path -LiteralPath $p)) { throw "Missing input: $p" }
 }
 
@@ -259,6 +280,7 @@ $stageFull = (Resolve-Path -LiteralPath $stage).Path
 Step 'Copying binaries'
 Copy-Item -LiteralPath $exeSrc -Destination $stage
 Copy-Item -LiteralPath $ahSrc -Destination $stage
+Copy-Item -LiteralPath $updSrc -Destination $stage
 Get-ChildItem -LiteralPath $libDir -Filter '*.dll' |
     Where-Object { $_.Name -ne 'discord-rpc.dll' } |
     Copy-Item -Destination $stage
@@ -379,6 +401,16 @@ foreach ($f in @(
     } else { Fail "Licence file missing: $($f[1])" }
 }
 [IO.File]::WriteAllText((Join-Path $stage 'THIRD-PARTY-NOTICES.txt'), $notices.ToString(), (New-Object Text.UTF8Encoding($false)))
+
+# The list of program files lets the updater of the next version recognise (and remove) the files of this one.
+# User data (portable marker, settings, caches, box art) is never part of it.
+Step 'Writing package-files.txt'
+$listPath = Join-Path $stage 'package-files.txt'
+$listed = @(Get-ChildItem -LiteralPath $stage -Recurse -File |
+    ForEach-Object { $_.FullName.Substring($stageFull.Length + 1).Replace('\', '/') } |
+    Where-Object { $_ -ne 'package-files.txt' -and $_ -ne 'portable.dat' -and $_ -notlike 'boxart/*' })
+[Array]::Sort($listed, [StringComparer]::Ordinal)
+[IO.File]::WriteAllText($listPath, (($listed -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
 
 Step 'Verifying staging directory'
 $files = @(Get-ChildItem -LiteralPath $stage -Recurse -File)

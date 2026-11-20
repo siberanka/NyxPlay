@@ -2,13 +2,15 @@
 # part of the default build; build it with:  qmake tests.pro && make check
 # (the main project and its dependencies must have been built first so that
 # ../moonlight-common-c can be linked from the same build directory layout).
-QT += core network testlib
+QT += core network testlib core-private
 CONFIG += testcase console c++17
 CONFIG -= app_bundle
 TEMPLATE = app
 TARGET = backend_tests
 
 DEFINES += RELEASE_FIXTURE_DIR=\\\"$$PWD/fixtures/release\\\"
+DEFINES += UPDATE_MANIFEST_FILE=\\\"$$PWD/../deploy/updates/qt.json\\\"
+DEFINES += NYX_UNIT_TESTS
 
 INCLUDEPATH += $$PWD/../app $$PWD/../app/backend $$PWD/../../common/moonlight-common-c/src
 
@@ -18,7 +20,7 @@ win32 {
         INCLUDEPATH += $$PWD/../libs/windows/include/x64
     }
     INCLUDEPATH += $$PWD/../libs/windows/include
-    LIBS += -llibssl -llibcrypto crypt32.lib ws2_32.lib winmm.lib
+    LIBS += -llibssl -llibcrypto crypt32.lib ws2_32.lib winmm.lib version.lib advapi32.lib
     CONFIG(release, debug|release): LIBS += -L$$MOONLIGHT_COMMON_C_DIR/release -lmoonlight-common-c
     else: LIBS += -L$$MOONLIGHT_COMMON_C_DIR/debug -lmoonlight-common-c
 }
@@ -36,6 +38,11 @@ SOURCES += \
     ../app/backend/identitystore.cpp \
     ../app/backend/moonlightimport.cpp \
     ../app/backend/releaseverify.cpp \
+    ../app/backend/updatecommand.cpp \
+    ../app/backend/updateinstaller.cpp \
+    ../app/backend/updatestage.cpp \
+    ../updater/applyupdate.cpp \
+    tst_update.cpp \
     ../app/settings/compatfetcher.cpp \
     ../app/path.cpp
 
@@ -48,5 +55,9 @@ HEADERS += \
     ../app/backend/identitystore.h \
     ../app/backend/moonlightimport.h \
     ../app/backend/releaseverify.h \
+    ../app/backend/updatecommand.h \
+    ../app/backend/updateinstaller.h \
+    ../app/backend/updatestage.h \
+    ../updater/applyupdate.h \
     ../app/settings/compatfetcher.h \
     ../app/path.h

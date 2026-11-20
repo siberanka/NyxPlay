@@ -29,6 +29,23 @@ QString Path::getQmlCacheDir()
     return s_QmlCacheDir;
 }
 
+QString Path::getUpdateDir()
+{
+    Q_ASSERT(!s_CacheDir.isEmpty());
+    return s_CacheDir + "/update";
+}
+
+QString Path::findPortableDir(const QString& exeDir, const QString& currentDir)
+{
+#ifdef Q_OS_WIN32
+    Q_UNUSED(currentDir);
+    return (!exeDir.isEmpty() && QFile::exists(QDir(exeDir).filePath("portable.dat"))) ? QDir::cleanPath(exeDir) : QString();
+#else
+    Q_UNUSED(exeDir);
+    return QFile::exists(QDir(currentDir).filePath("portable.dat")) ? currentDir : QString();
+#endif
+}
+
 QByteArray Path::readDataFile(QString fileName)
 {
     QFile dataFile(getDataFilePath(fileName));
@@ -102,16 +119,17 @@ QString Path::getDataFilePath(QString fileName)
     return QString(candidatePath);
 }
 
-void Path::initialize(bool portable)
+void Path::initialize(bool portable, const QString& portableDir)
 {
     if (portable) {
-        s_LogDir = QDir::currentPath();
-        s_BoxArtCacheDir = QDir::currentPath() + "/boxart";
-        s_QmlCacheDir = QDir::currentPath() + "/qmlcache";
+        const QString base = portableDir.isEmpty() ? QDir::currentPath() : portableDir;
+        s_LogDir = base;
+        s_BoxArtCacheDir = base + "/boxart";
+        s_QmlCacheDir = base + "/qmlcache";
 
         // In order for the If-Modified-Since logic to work in MappingFetcher,
         // the cache directory must be different than the current directory.
-        s_CacheDir = QDir::currentPath() + "/cache";
+        s_CacheDir = base + "/cache";
     }
     else {
 #ifdef Q_OS_DARWIN

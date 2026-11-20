@@ -9,6 +9,10 @@ English
    folder. NyxPlay still runs without it, but with less protection against injected overlays.
 3. Your data (settings, paired hosts, logs) stays in this folder (portable mode). Delete the
    folder to remove everything.
+4. Updates: when a new version is announced, choose "Install update" in the notice, in the menu of
+   the update button, or in the right-click menu of the taskbar icon. NyxPlay downloads the update,
+   checks its signature, asks before it restarts and keeps your settings and pairings. If this folder
+   cannot be written (for example under Program Files), download the new version from the releases page.
 
 Türkçe
 ------
@@ -19,3 +23,8 @@ Türkçe
    katmanlara karşı koruma azalır.
 3. Verileriniz (ayarlar, eşleştirilmiş host bilgisayarlar, günlükler) bu klasörde kalır
    (taşınabilir mod). Her şeyi kaldırmak için klasörü silin.
+4. Güncellemeler: yeni bir sürüm duyurulduğunda bildirimdeki, güncelleme düğmesinin menüsündeki veya
+   görev çubuğu simgesinin sağ tık menüsündeki "Güncellemeyi yükle" seçeneğini kullanın. NyxPlay
+   güncellemeyi indirir, imzasını denetler, yeniden başlatmadan önce sorar ve ayarlarınızı ile
+   eşleştirmelerinizi korur. Bu klasöre yazılamıyorsa (örneğin Program Files altında), yeni sürümü
+   sürümler sayfasından indirin.
