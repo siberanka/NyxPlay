@@ -84,7 +84,7 @@ for the input method:
 
 ### Protocol core fixes
 
-The Android copy of `moonlight-common-c` now sends UTF-8 text on the keyboard channel and no longer
+The shared `moonlight-common-c` now sends UTF-8 text on the keyboard channel and no longer
 waits 50 ms before every UTF-8 event when talking to Sunshine based hosts (cherry-picked from upstream
 `4a95eb3` and `0405384`). Mixed key and text input therefore arrives in order and without delay.
 
@@ -94,7 +94,7 @@ waits 50 ms before every UTF-8 event when talking to Sunshine based hosts (cherr
 |------|------|
 | Host focus monitor | `host/src/text_input.{h,cpp}` |
 | Host message sending | `host/src/stream.cpp` (`send_text_input_state`) |
-| Protocol core | `*/moonlight-common-c/src/ControlStream.c`, `Limelight.h` |
+| Protocol core | `common/moonlight-common-c/src/ControlStream.c`, `Limelight.h` |
 | Android bridge | `android/app/src/main/jni/moonlight-core/callbacks.c`, `MoonBridge.java` |
 | Keyboard controller | `android/.../binding/input/text/AutoKeyboardController.java` |
 | Layout tables | `android/.../binding/input/text/KeyboardLayouts.java` |

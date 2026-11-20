@@ -18,15 +18,12 @@ Rules:
 ### One-copy guard
 
 ```
-powershell -NoProfile -File common/check-single-copy.ps1           # transitional: old copies only warn
-powershell -NoProfile -File common/check-single-copy.ps1 -Strict   # no other copy may exist
+powershell -NoProfile -File common/check-single-copy.ps1
 ```
 
 The guard fails when a second `Limelight.h` is tracked, when `.gitmodules` registers a
 library checkout outside `common/`, when the shared copy lacks required files or carries a
-`.github` directory, or when the ENet or nanors submodule differs from `VENDORED.md`. The
-transitional mode tolerates the three old locations until they are removed; switch the
-guard to `-Strict` in the same change that removes them.
+`.github` directory, or when the ENet or nanors submodule differs from `VENDORED.md`.
 
 ### Tests
 
@@ -40,3 +37,13 @@ the way the PC client does.
 # MSYS2 UCRT64 shell
 common/tests/run-tests.sh
 ```
+
+### Stream harness
+
+`tests/stream_harness.c` is a minimal client on top of the library with fake renderers. It does not
+pair or launch: a launcher performs `/launch` with a remote input key and passes the session URL and
+key. It reports the connection stages, the frames, audio packets and a checksum of the video
+buffers, and with `--ext` it sends every client side message of the protocol extensions once.
+Build it by compiling `tests/stream_harness.c` together with the library sources, ENet and nanors
+(the file list of `tests/run-tests.sh`) and linking `-lcrypto` (plus `-lws2_32 -lwinmm` on Windows).
+It is not part of `run-tests.sh` because it needs a running host.

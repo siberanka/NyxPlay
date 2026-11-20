@@ -41,8 +41,9 @@ After a pull:
 1. Re-apply submodule changes: compare the upstream `.gitmodules` of the pulled component with the root
    `.gitmodules` (the only file git reads, paths carry the component prefix) and update the gitlinks with
    `git update-index --cacheinfo 160000,<sha>,<path>`.
-2. Vendored `moonlight-common-c` copies are not updated automatically. Merge upstream changes manually;
-   NyxPlay changes are marked with `NyxPlay` comments and listed in each `VENDORED.md`.
+2. The shared `common/moonlight-common-c` is not updated automatically. Merge upstream changes manually;
+   NyxPlay changes are marked with `NyxPlay` comments and listed in `common/moonlight-common-c/VENDORED.md`.
+   Run `common/check-single-copy.ps1` and `common/tests/run-tests.sh` afterwards.
 3. Search for new user visible "Apollo", "Artemis" or "Moonlight" strings and keep the NyxPlay names
    (the web UI locale files, Android `strings.xml` and the Qt `.ts` files).
 4. Run the test suites described in [TESTING.md](TESTING.md).

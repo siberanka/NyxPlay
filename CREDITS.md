@@ -14,11 +14,11 @@ the same license (see [`LICENSE`](LICENSE)).
 | | [Moonlight for Android](https://github.com/moonlight-stream/moonlight-android) (Artemis' upstream) | Cameron Gutman, Diego Waxemberg, Aaron Neyer, Andrew Hennessy and the Moonlight Game Streaming Project | GPL-3.0 |
 | | Fork base of this repository: [MobinYengejehi/Artemis](https://github.com/MobinYengejehi/Artemis) | Mobin Yengejehi | GPL-3.0 |
 | NyxPlay for PC (`pc/`) | [Moonlight PC](https://github.com/moonlight-stream/moonlight-qt) | Cameron Gutman and the Moonlight Game Streaming Project | GPL-3.0 |
-| Shared protocol core | [moonlight-common-c](https://github.com/moonlight-stream/moonlight-common-c) and the [Artemis fork](https://github.com/ClassicOldSong/moonlight-common-c) | Cameron Gutman, Yukino Song and contributors | GPL-3.0 with an App Store distribution exception (see the vendored `LICENSE.txt`) |
+| Shared protocol core | [moonlight-common-c](https://github.com/moonlight-stream/moonlight-common-c) and the [Artemis fork](https://github.com/ClassicOldSong/moonlight-common-c) | Cameron Gutman, Diego Waxemberg, Michelle Bergeron, Iwan Timmer, Sunguk Lee, the Moonlight Game Streaming Project (upstream, base `94c65fd`), Yukino Song (Apollo extensions) and contributors. One copy in `common/moonlight-common-c`, used by all three components | GPL-3.0 with an App Store distribution exception (see `common/moonlight-common-c/LICENSE.txt`) |
 
 The original license files are kept unchanged in every component:
 [`host/LICENSE`](host/LICENSE), [`host/NOTICE`](host/NOTICE), [`android/LICENSE.txt`](android/LICENSE.txt),
-[`pc/LICENSE`](pc/LICENSE) and the `LICENSE.txt` files of the vendored `moonlight-common-c` copies.
+[`pc/LICENSE`](pc/LICENSE) and [`common/moonlight-common-c/LICENSE.txt`](common/moonlight-common-c/LICENSE.txt) (the shared `moonlight-common-c`).
 Third party libraries pulled in as git submodules keep their own licenses.
 
 ## Third party components shipped in NyxPlay for Android
@@ -27,8 +27,8 @@ Third party libraries pulled in as git submodules keep their own licenses.
 |-----------|---------|---------|---------|
 | [OpenSSL](https://www.openssl.org/) (static, AES and random numbers only) | 1.1.1q | The OpenSSL Project Authors, Eric Young, Tim Hudson | OpenSSL License and original SSLeay License |
 | [Opus](https://opus-codec.org/) (static) | 1.5.2 | Xiph.Org Foundation, Skype Limited, Broadcom and contributors | BSD-3-Clause |
-| [ENet](https://github.com/lsalzman/enet) ([Moonlight fork](https://github.com/cgutman/enet)) | submodule `115a10b` | Lee Salzman, Cameron Gutman | MIT |
-| Reed-Solomon FEC (`reedsolomon/`, derived from [nanors](https://github.com/sleepybishop/nanors)) | vendored | Luigi Rizzo, Alain Knaff, Christopher Taylor | BSD-2-Clause (header of `rs.c`) |
+| [ENet](https://github.com/lsalzman/enet) ([Moonlight fork](https://github.com/cgutman/enet)) | submodule `98dbb89` of `common/moonlight-common-c` | Lee Salzman, Cameron Gutman | MIT |
+| [nanors](https://github.com/sleepybishop/nanors) (Reed-Solomon FEC; the local `reedsolomon/` copy was replaced) | submodule `a9b1636` of `common/moonlight-common-c` | Joseph Calderon; lineage: Luigi Rizzo, Alain Knaff, Christopher Taylor | MIT (BSD-2-Clause headers in `rs.c`) |
 | [Bouncy Castle](https://www.bouncycastle.org/) (`bcprov`, `bcpkix`, `bcutil`) | 1.87 | The Legion of the Bouncy Castle Inc. | MIT |
 | [OkHttp](https://square.github.io/okhttp/) and [Okio](https://square.github.io/okio/) | 4.12.0 and 3.6.0 | Square, Inc. | Apache-2.0 |
 | [JmDNS](https://github.com/jmdns/jmdns) | 3.6.2 | Arthur van Hoff, Rick Blair, Werner Randelshofer, Pierre Frisch and contributors | Apache-2.0 |

@@ -49,15 +49,9 @@ A fork of Moonlight PC (Qt/QML). NyxPlay additions: branding (name, icons, setti
 
 ## Protocol core (`moonlight-common-c`)
 
-Two vendored copies are maintained:
+One copy, `common/moonlight-common-c`, is compiled by the host (CMake), the PC client (qmake) and the Android client (ndk-build). Base: upstream `94c65fd` plus the Apollo extension commits `84af637` and `c999436` and the NyxPlay changes (see `common/moonlight-common-c/VENDORED.md`). ENet (`98dbb89`) and nanors (`a9b1636`) are submodules of that directory. The host keeps its own nanors (`host/third-party/nanors`) for its FEC encoder; `common/tests` proves both produce identical shards. `common/check-single-copy.ps1` fails if a second copy or a submodule outside `common/` appears.
 
-| Copy | Base | Notes |
-|------|------|-------|
-| `android/app/src/main/jni/moonlight-core/moonlight-common-c` | Artemis fork (`c999436`) | Apollo extensions (server commands), upstream UTF-8 fixes, text input state |
-| `pc/moonlight-common-c/moonlight-common-c` | upstream (`0405384`) | text input state, padded legacy packet tables |
-
-NyxPlay Host keeps using its `third-party/moonlight-common-c` submodule (protocol headers, RTSP parser
-and ENet) because the host side implementation of the extension lives in `host/src`.
+The host side of the extensions lives in `host/src` (`control_intercept`, `replay_window`, text input).
 
 ## Compatibility matrix
 

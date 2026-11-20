@@ -173,7 +173,7 @@ if wanted fec_roundtrip && [ -f "$HOSTDIR/src/rswrapper.c" ] && [ -d "$HOSTDIR/t
                 FAILED=1
             fi
         done
-        cmp "$OUT/host.bin" "$OUT/lib.bin" > /dev/null 2>&1 && note "fec: host and library files are byte identical" || { note "TEST FAIL fec files differ"; FAILED=1; }
+        if [ "$(sha256sum < "$OUT/host.bin")" = "$(sha256sum < "$OUT/lib.bin")" ]; then note "fec: host and library files are byte identical"; else note "TEST FAIL fec files differ"; FAILED=1; fi
     else
         FAILED=1
     fi

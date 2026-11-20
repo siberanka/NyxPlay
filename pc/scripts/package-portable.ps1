@@ -325,7 +325,7 @@ $components = @(
     @('SDL2, SDL3, SDL2_ttf', 'zlib', 'https://libsdl.org'),
     @('OpenSSL (libssl, libcrypto)', 'Apache-2.0', 'https://www.openssl.org'),
     @('SDL_GameControllerDB (gamecontrollerdb.txt)', 'zlib', 'https://github.com/mdqinc/SDL_GameControllerDB'),
-    @('moonlight-common-c', 'GPL-3.0', 'https://github.com/moonlight-stream/moonlight-common-c'),
+    @('moonlight-common-c, ENet, nanors', 'GPL-3.0 with App Store exception; MIT; MIT', 'https://github.com/moonlight-stream/moonlight-common-c'),
     @('QmDnsEngine', 'MIT', 'https://github.com/nitroshare/qmdnsengine'),
     @('h264bitstream', 'LGPL-2.1', 'https://github.com/aizvorski/h264bitstream'),
     @('Microsoft Detours 4.0.1 (AntiHooking.dll)', 'MIT (MIT-Microsoft-Detours.txt)', 'https://github.com/microsoft/Detours'),
@@ -366,7 +366,7 @@ else {
         [void]$notices.AppendLine((Get-Content -LiteralPath $f.FullName -Raw))
     }
 }
-$mcc = Join-Path $pcRoot 'moonlight-common-c\moonlight-common-c'
+$mcc = Join-Path (Split-Path -Parent $pcRoot) 'common/moonlight-common-c'
 foreach ($f in @(
         @('enet', (Join-Path $mcc 'enet\LICENSE')),
         @('nanors', (Join-Path $mcc 'nanors\LICENSE')),

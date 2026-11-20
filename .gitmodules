@@ -1,6 +1,3 @@
-[submodule "android/app/src/main/jni/moonlight-core/moonlight-common-c/enet"]
-	path = android/app/src/main/jni/moonlight-core/moonlight-common-c/enet
-	url = https://github.com/cgutman/enet.git
 [submodule "host/packaging/linux/flatpak/deps/flatpak-builder-tools"]
 	path = host/packaging/linux/flatpak/deps/flatpak-builder-tools
 	url = https://github.com/flatpak/flatpak-builder-tools.git
@@ -28,10 +25,6 @@
 [submodule "host/third-party/libdisplaydevice"]
 	path = host/third-party/libdisplaydevice
 	url = https://github.com/LizardByte/libdisplaydevice.git
-	branch = master
-[submodule "host/third-party/moonlight-common-c"]
-	path = host/third-party/moonlight-common-c
-	url = https://github.com/ClassicOldSong/moonlight-common-c
 	branch = master
 [submodule "host/third-party/nanors"]
 	path = host/third-party/nanors
@@ -72,12 +65,6 @@
 [submodule "pc/app/SDL_GameControllerDB"]
 	path = pc/app/SDL_GameControllerDB
 	url = https://github.com/gabomdq/SDL_GameControllerDB.git
-[submodule "pc/moonlight-common-c/moonlight-common-c/enet"]
-	path = pc/moonlight-common-c/moonlight-common-c/enet
-	url = https://github.com/cgutman/enet.git
-[submodule "pc/moonlight-common-c/moonlight-common-c/nanors"]
-	path = pc/moonlight-common-c/moonlight-common-c/nanors
-	url = https://github.com/sleepybishop/nanors.git
 [submodule "pc/qmdnsengine/qmdnsengine"]
 	path = pc/qmdnsengine/qmdnsengine
 	url = https://github.com/cgutman/qmdnsengine.git

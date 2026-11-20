@@ -19,7 +19,8 @@ Opus                                       BSD-3-Clause                         
 zlib (zlib1.dll)                           zlib                                     zlib.txt
 mingw-w64 winpthreads                      MIT-style                                MIT-mingw-w64-winpthreads.txt
 GCC runtime libraries (libgcc, libstdc++)  GPL-3.0 with Runtime Library Exception   GCC-Runtime-Library-Exception.txt
-moonlight-common-c (incl. ENet, nanors)    GPL-3.0 with exception                   GPL-3.0-with-exception-moonlight-common-c.txt
+moonlight-common-c                         GPL-3.0 with exception                   GPL-3.0-with-exception-moonlight-common-c.txt
+ENet                                       MIT                                      MIT-ENet.txt
 nanors                                     MIT                                      MIT-nanors.txt
 Simple-Web-Server                          MIT                                      MIT-Simple-Web-Server.txt
 tray                                       MIT                                      MIT-tray.txt
